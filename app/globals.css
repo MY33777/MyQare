@@ -1,0 +1,305 @@
+@import "tailwindcss";
+
+/* ============================================================
+   MyQare theme — clinical, calm, high-legibility.
+
+   Deliberately not a "startup" look. The people using this are care
+   coordinators filling a gap in tomorrow's roster and freelancers
+   checking a shift on a phone in a corridor. That means: strong
+   contrast, large hit targets, no thin grey-on-grey text, and no
+   decoration competing with the data.
+
+   Light is the default because this is largely daytime office work,
+   but dark is fully supported rather than bolted on — night shifts
+   are real, and a blazing white screen at 03:00 is hostile.
+   ============================================================ */
+
+:root {
+  color-scheme: light;
+
+  --bg: #f6f8f8;
+  --surface: #ffffff;
+  --surface-sunken: #eef2f2;
+  --border: #d5dedd;
+  --border-strong: #b3c1c0;
+
+  --text: #10201f;
+  --text-muted: #566a68;
+
+  /* Teal rather than hospital blue: reads healthcare without looking
+     like an insurance portal, and stays distinguishable from the blue
+     that every browser paints on links and focus rings. */
+  --brand: #0f6f6a;
+  --brand-hover: #0b5651;
+  --brand-subtle: #e2f1f0;
+  --brand-text: #0b4f4b;
+
+  /* Verified / compliant. The single most important state in the
+     product, so it gets its own colour rather than sharing the brand. */
+  --ok: #1c7a45;
+  --ok-subtle: #e3f4e9;
+
+  --warn: #8a5a00;
+  --warn-subtle: #fdf1da;
+
+  --danger: #a3201c;
+  --danger-subtle: #fbe6e5;
+
+  --radius: 10px;
+  --shadow-card: 0 1px 2px rgba(16, 32, 31, 0.05), 0 1px 8px rgba(16, 32, 31, 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --bg: #0c1413;
+    --surface: #131e1d;
+    --surface-sunken: #0f1817;
+    --border: #263635;
+    --border-strong: #3a4f4d;
+
+    --text: #e6f0ef;
+    --text-muted: #97aaa8;
+
+    --brand: #3fb8ae;
+    --brand-hover: #58c9c0;
+    --brand-subtle: #14302e;
+    --brand-text: #7fd8d0;
+
+    --ok: #45c47a;
+    --ok-subtle: #122b1d;
+
+    --warn: #d9a441;
+    --warn-subtle: #2d2312;
+
+    --danger: #f0736e;
+    --danger-subtle: #2f1616;
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-subtle: var(--brand-subtle);
+  --color-brand-text: var(--brand-text);
+  --color-ok: var(--ok);
+  --color-ok-subtle: var(--ok-subtle);
+  --color-warn: var(--warn);
+  --color-warn-subtle: var(--warn-subtle);
+  --color-danger: var(--danger);
+  --color-danger-subtle: var(--danger-subtle);
+  --radius-card: var(--radius);
+  --font-sans: var(--font-inter);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabular figures everywhere money, hours and dates are shown. Without
+   this, a column of amounts jitters horizontally as digits change width,
+   which makes scanning an invoice list genuinely harder. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- shared component classes ----------
+   This app is mostly forms and tables. Defining these once keeps the
+   page files about behaviour rather than forty repeated utility strings,
+   and means a change to input styling happens in one place. */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+.label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.375rem;
+}
+
+.hint {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-top: 0.375rem;
+}
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  /* 0.625rem vertical lands the control at ~42px tall. Below about 40px
+     it becomes fiddly to tap accurately on a phone, which is where
+     freelancers accept shifts. */
+  padding: 0.625rem 0.75rem;
+  font: inherit;
+}
+
+.input:focus-visible,
+.select:focus-visible,
+.textarea:focus-visible,
+.btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.input:disabled,
+.select:disabled,
+.textarea:disabled {
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 8px;
+  padding: 0.625rem 1rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: var(--brand);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--brand-hover);
+}
+
+@media (prefers-color-scheme: dark) {
+  /* The dark brand tone is light enough that white text on it fails
+     contrast; flip to dark ink instead of dimming the button. */
+  .btn-primary {
+    color: #08201e;
+  }
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.btn-secondary:hover {
+  background: var(--surface-sunken);
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.btn-danger:hover {
+  background: var(--danger-subtle);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 999px;
+  padding: 0.1875rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-ok {
+  background: var(--ok-subtle);
+  color: var(--ok);
+}
+
+.badge-warn {
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+
+.badge-danger {
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+.badge-neutral {
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+
+.badge-brand {
+  background: var(--brand-subtle);
+  color: var(--brand-text);
+}
+
+/* Wide tables must scroll inside their own box. Letting the page body
+   scroll sideways breaks every layout on a phone. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.table th {
+  text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 700;
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+a {
+  color: var(--brand-text);
+}

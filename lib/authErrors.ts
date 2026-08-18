@@ -41,6 +41,7 @@ const MESSAGES: Record<string, string> = {
   too_large: "Het bestand is te groot. Maximaal 5 MB.",
   bad_type: "Alleen PDF of een foto (JPG, PNG, HEIC, WebP).",
   cannot_delete: "Dit document kan niet worden verwijderd. Goedgekeurde documenten blijven staan.",
+  already_approved: "De uren zijn al goedgekeurd. Annuleren kan niet meer.",
   unknown: "Er ging iets mis. Probeer het opnieuw.",
 };
 

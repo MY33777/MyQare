@@ -11,6 +11,7 @@ import { formatEuros } from "@/lib/money";
 import { qualificationLabel } from "@/lib/qualifications";
 import { RatingForm } from "@/components/RatingForm";
 import { submitRatingAction } from "@/lib/ratingActions";
+import { cancelAssignmentAction } from "@/lib/cancelActions";
 import { submitTimesheetAction } from "./actions";
 
 export const metadata: Metadata = { title: "Dienst" };
@@ -44,7 +45,7 @@ export default async function AssignmentDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; submitted?: string; accepted?: string; rated?: string }>;
+  searchParams: Promise<{ error?: string; submitted?: string; accepted?: string; rated?: string; cancelled?: string }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
@@ -97,6 +98,11 @@ export default async function AssignmentDetailPage({
       ) : null}
       {query.submitted ? (
         <FormMessage kind="ok">Uren ingediend. De instelling keurt ze goed of stelt een vraag.</FormMessage>
+      ) : null}
+      {query.cancelled ? (
+        <FormMessage kind="ok">
+          Dienst geannuleerd. De bemiddelingsvergoeding is teruggestort op je saldo.
+        </FormMessage>
       ) : null}
       {query.error ? <FormMessage kind="error">{authErrorMessage(query.error)}</FormMessage> : null}
 
@@ -253,6 +259,41 @@ export default async function AssignmentDetailPage({
           </button>
         </form>
       )}
+
+      {/*
+        Cancelling is a normal event in shift work, so it stays visible rather than
+        hidden behind a support request — but only until the shift has been worked.
+        Once hours are approved there is nothing to cancel; undoing that is a credit
+        note, not a cancellation.
+      */}
+      {assignment.status === "confirmed" && !sheet?.approved_at ? (
+        <details className="card p-5 mt-6">
+          <summary className="cursor-pointer font-semibold">Dienst annuleren</summary>
+          <p className="text-sm mt-3" style={{ color: "var(--text-muted)" }}>
+            De bemiddelingsvergoeding krijg je volledig terug. Annuleren heeft geen gevolgen voor je
+            beoordeling — maar laat het de instelling zo vroeg mogelijk weten, zij moeten de dienst
+            opnieuw invullen.
+          </p>
+          <form action={cancelAssignmentAction} className="mt-4 flex flex-wrap gap-2 items-end">
+            <input type="hidden" name="assignment_id" value={assignment.id} />
+            <div className="flex-1 min-w-56">
+              <label className="label" htmlFor="cancel_reason">
+                Reden
+              </label>
+              <input
+                className="input"
+                id="cancel_reason"
+                name="reason"
+                type="text"
+                placeholder="bijv. ziek, dubbele boeking"
+              />
+            </div>
+            <button className="btn btn-danger" type="submit">
+              Annuleren
+            </button>
+          </form>
+        </details>
+      ) : null}
     </div>
   );
 }

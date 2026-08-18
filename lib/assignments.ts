@@ -177,6 +177,39 @@ export async function declineOffer(
 }
 
 /**
+ * Cancels an accepted assignment.
+ *
+ * Refunds the whole fee, whichever side cancelled. The freelancer paid for work
+ * they will not now do, and keeping that would be indefensible — a facility
+ * cancelling at short notice is not the freelancer's fault, and a freelancer who
+ * falls ill is not choosing to.
+ *
+ * There is deliberately no penalty, no strike and no rating effect. Cancelling is
+ * a normal event in shift work, and a platform that punishes it teaches people to
+ * turn up sick rather than say so.
+ *
+ * The refund is read back from the ledger inside cancel_assignment() rather than
+ * recalculated, so it returns exactly what was charged even if the fee rate has
+ * changed since. Idempotent: a double-tap cannot refund twice.
+ */
+export async function cancelAssignment(
+  assignmentId: string,
+  cancelledBy: "facility" | "freelancer" | "staff",
+  reason: string | null,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const admin = getSupabaseAdmin();
+
+  const { error } = await admin.rpc("cancel_assignment", {
+    p_assignment_id: assignmentId,
+    p_cancelled_by: cancelledBy,
+    p_reason: reason,
+  });
+
+  if (error) return { ok: false, reason: "unknown" };
+  return { ok: true };
+}
+
+/**
  * Approves a timesheet and settles the fee difference.
  *
  * Scheduled minutes come from the assignment's own snapshot of the shift, not

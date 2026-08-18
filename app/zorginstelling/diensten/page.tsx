@@ -101,6 +101,7 @@ export default async function ShiftsPage({
                 <th>Tarief</th>
                 <th>Aangeboden</th>
                 <th>Status</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -124,6 +125,11 @@ export default async function ShiftsPage({
                       <span className={statusBadgeClass(shift.status)}>
                         {SHIFT_STATUS_LABELS[shift.status] ?? shift.status}
                       </span>
+                    </td>
+                    <td>
+                      <Link className="btn btn-secondary" href={`/zorginstelling/diensten/${shift.id}`}>
+                        Openen
+                      </Link>
                     </td>
                   </tr>
                 );

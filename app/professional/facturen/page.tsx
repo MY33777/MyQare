@@ -56,6 +56,24 @@ export default async function FreelancerInvoicesPage() {
         </div>
       ) : null}
 
+      <form action="/professional/facturen/export" method="get" className="card p-4 mb-6">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="label" htmlFor="from">Vanaf</label>
+            <input className="input" id="from" name="from" type="date" />
+          </div>
+          <div>
+            <label className="label" htmlFor="to">Tot en met</label>
+            <input className="input" id="to" name="to" type="date" />
+          </div>
+          <button className="btn btn-secondary" type="submit">Exporteer naar CSV</button>
+        </div>
+        <p className="hint">
+          Voor je boekhouder of je btw-aangifte. Btw is per regel apart vermeld, omdat
+          vrijgestelde en belaste omzet los van elkaar worden aangegeven.
+        </p>
+      </form>
+
       {!invoices || invoices.length === 0 ? (
         <EmptyState
           title="Nog geen facturen"

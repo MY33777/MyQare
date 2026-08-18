@@ -53,6 +53,23 @@ export default async function FacilityInvoicesPage() {
         <p className="text-2xl font-bold tnum mt-1">{formatEuros(outstanding)}</p>
       </div>
 
+      <form action="/zorginstelling/facturen/export" method="get" className="card p-4 mb-6">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="label" htmlFor="from">Vanaf</label>
+            <input className="input" id="from" name="from" type="date" />
+          </div>
+          <div>
+            <label className="label" htmlFor="to">Tot en met</label>
+            <input className="input" id="to" name="to" type="date" />
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="unpaid" value="1" /> Alleen openstaand
+          </label>
+          <button className="btn btn-secondary" type="submit">Exporteer naar CSV</button>
+        </div>
+      </form>
+
       {!invoices || invoices.length === 0 ? (
         <EmptyState
           title="Nog geen facturen"

@@ -226,3 +226,42 @@ export async function sendDocumentExpiryEmail(input: {
 export function emailConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY);
 }
+
+/** Where messages from the public contact form land. */
+export function contactInbox(): string | null {
+  return process.env.CONTACT_EMAIL || null;
+}
+
+/**
+ * Forwards a message from the public contact form.
+ *
+ * The sender's address goes in the body rather than in `from`, because Resend
+ * will only send from a verified domain — putting a stranger's address there
+ * fails outright, and putting it in Reply-To would let anyone who can reach the
+ * form choose where a reply from our domain goes.
+ */
+export async function sendContactMessage(input: {
+  name: string;
+  email: string;
+  organisation: string | null;
+  role: string;
+  message: string;
+}): Promise<boolean> {
+  const to = contactInbox();
+  if (!to) return false;
+
+  return send({
+    to,
+    subject: `Contactformulier: ${input.name}`,
+    heading: "Nieuw bericht via het contactformulier",
+    body: [
+      `Naam: ${input.name}`,
+      `E-mail: ${input.email}`,
+      `Organisatie: ${input.organisation || "—"}`,
+      `Rol: ${input.role}`,
+      "",
+      input.message,
+    ],
+    footnote: "Beantwoord dit bericht door rechtstreeks naar het opgegeven adres te mailen.",
+  });
+}

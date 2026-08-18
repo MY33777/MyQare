@@ -27,20 +27,30 @@ const ALLOWED_TYPES: Record<string, string> = {
   "image/webp": "webp",
 };
 
-export type DocumentKind =
-  | "vog"
-  | "diploma"
-  | "certificate"
-  | "insurance"
-  | "id"
-  | "kvk_extract";
+/*
+ * NO IDENTITY DOCUMENTS. Removed deliberately — see migration 007.
+ *
+ * This used to offer "Identiteitsbewijs" as an upload, which stored a scan of a
+ * passport or ID card and — because pool members can read approved documents
+ * (migration 001) — handed the BSN and photo of every freelancer to every
+ * facility that had them in its pool.
+ *
+ * A werkgever may keep an ID copy; that duty comes from the loonheffing. An
+ * opdrachtgever hiring a zelfstandige has no such duty and therefore no basis to
+ * retain one. The BSN on it may only be processed where a law prescribes it
+ * (art. 46 UAVG), and nothing here does. Verifying identity by looking at the
+ * document is allowed; keeping the copy is not.
+ *
+ * The KvK extract already establishes who someone is as a contracting party,
+ * which is the question this platform actually needs answered.
+ */
+export type DocumentKind = "vog" | "diploma" | "certificate" | "insurance" | "kvk_extract";
 
 export const DOCUMENT_KIND_LABELS: Record<DocumentKind, string> = {
   vog: "VOG (Verklaring Omtrent het Gedrag)",
   diploma: "Diploma",
   certificate: "Certificaat",
   insurance: "Beroepsaansprakelijkheidsverzekering",
-  id: "Identiteitsbewijs",
   kvk_extract: "KvK-uittreksel",
 };
 

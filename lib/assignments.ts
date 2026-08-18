@@ -9,8 +9,19 @@ import { billableMinutes } from "@/lib/hours";
  * for different wording. A dossier's whole value is being able to say which terms
  * applied on a given date — if two different agreements ever shared a version
  * string, every record carrying it becomes unprovable.
+ *
+ * DELIBERATELY NOT A VERSION NUMBER YET. This used to read "2026-08-v1", which
+ * every dossier then printed as though a modelovereenkomst existed and had applied
+ * to that assignment. No such document exists — it has to be drafted and approved
+ * by a lawyer (see /modelovereenkomst).
+ *
+ * A dossier is evidence. Citing an agreement that was never written is worse than
+ * citing none: it is the kind of thing that, once noticed, makes an inspector
+ * doubt everything else in the document. So the record says plainly that no
+ * agreement was on file, and the value changes to a real version the day there is
+ * one.
  */
-export const MODEL_AGREEMENT_VERSION = "2026-08-v1";
+export const MODEL_AGREEMENT_VERSION = "geen-modelovereenkomst";
 
 export type AcceptFailure =
   | "shift_unavailable"

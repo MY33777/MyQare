@@ -177,7 +177,10 @@ create table if not exists freelancers (
 create table if not exists documents (
   id uuid primary key default gen_random_uuid(),
   freelancer_id uuid not null references freelancers(profile_id) on delete cascade,
-  kind text not null check (kind in ('vog', 'diploma', 'certificate', 'insurance', 'id', 'kvk_extract')),
+  -- No 'id': an opdrachtgever has no basis to retain a copy of a zelfstandige's
+  -- passport, and the BSN on it may only be processed where a law prescribes it
+  -- (art. 46 UAVG). See migration 007.
+  kind text not null check (kind in ('vog', 'diploma', 'certificate', 'insurance', 'kvk_extract')),
   -- Path inside the private Storage bucket, not a public URL. Files are served
   -- through signed URLs generated per request so a leaked path expires.
   file_path text not null,

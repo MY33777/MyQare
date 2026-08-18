@@ -129,7 +129,14 @@ export function renderDossierPdf(input: DossierInput): Promise<Buffer> {
         "Gelijktijdig aangeboden aan",
         `${entry.declinedOtherOffers} andere zorgprofessional(s)`,
       );
-      line("Modelovereenkomst", entry.modelAgreementVersion);
+      // Says so plainly when there is no agreement, rather than printing a version
+      // string that implies one existed. See MODEL_AGREEMENT_VERSION.
+      line(
+        "Modelovereenkomst",
+        entry.modelAgreementVersion === "geen-modelovereenkomst"
+          ? "Geen — niet vastgelegd voor deze opdracht"
+          : entry.modelAgreementVersion,
+      );
 
       doc.moveDown(0.8);
     }

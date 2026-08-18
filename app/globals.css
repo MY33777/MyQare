@@ -316,3 +316,66 @@ body {
 a {
   color: var(--brand-text);
 }
+
+/*
+ * Long-form text: privacy statement, terms, the model agreement.
+ *
+ * Scoped to .prose-myqare rather than applied to bare h2/p, because the app's
+ * screens are dense UI where a 2rem heading margin would wreck the layout. These
+ * pages are the only place where reading-typography is the right default.
+ */
+.prose-myqare {
+  line-height: 1.7;
+}
+
+.prose-myqare h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-top: 2.5rem;
+  margin-bottom: 0.75rem;
+  scroll-margin-top: 5rem; /* clears the sticky header when linked to by anchor */
+}
+
+.prose-myqare h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+  scroll-margin-top: 5rem;
+}
+
+.prose-myqare p,
+.prose-myqare ul,
+.prose-myqare ol {
+  margin-bottom: 1rem;
+  max-width: 68ch;
+}
+
+.prose-myqare ul,
+.prose-myqare ol {
+  padding-left: 1.25rem;
+}
+
+.prose-myqare ul {
+  list-style: disc;
+}
+
+.prose-myqare ol {
+  list-style: decimal;
+}
+
+.prose-myqare li {
+  margin-bottom: 0.375rem;
+}
+
+.prose-myqare li::marker {
+  color: var(--text-muted);
+}
+
+.prose-myqare strong {
+  font-weight: 700;
+}
+
+.prose-myqare .table {
+  margin-bottom: 1.5rem;
+}

@@ -43,6 +43,7 @@ const MESSAGES: Record<string, string> = {
   cannot_delete: "Dit document kan niet worden verwijderd. Goedgekeurde documenten blijven staan.",
   already_approved: "De uren zijn al goedgekeurd. Annuleren kan niet meer.",
   link_expired: "Deze link is verlopen of al gebruikt. Vraag een nieuwe aan.",
+  hours_locked: "Deze uren zijn al goedgekeurd en kunnen niet meer worden aangepast. Neem contact op met de instelling.",
   unknown: "Er ging iets mis. Probeer het opnieuw.",
 };
 

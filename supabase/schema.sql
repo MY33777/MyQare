@@ -697,10 +697,18 @@ drop policy if exists assignments_select on assignments;
 create policy assignments_select on assignments for select
   using (freelancer_id = auth.uid() or org_id = current_org_id() or is_staff());
 
+/*
+ * No update policy, deliberately — see migration 003.
+ *
+ * agreed_rate_cents is an immutable snapshot and the column invoices bill from,
+ * but a row policy cannot pin columns: granting UPDATE for "my own assignment"
+ * also granted "rewrite the agreed rate after the work". Either party could
+ * inflate or deflate the invoice from an ordinary session, and a direct PATCH to
+ * status='cancelled' bypassed cancel_assignment so the fee was never refunded.
+ *
+ * Every write goes through the service role or a definer function instead.
+ */
 drop policy if exists assignments_update on assignments;
-create policy assignments_update on assignments for update
-  using (freelancer_id = auth.uid() or org_id = current_org_id() or is_staff())
-  with check (freelancer_id = auth.uid() or org_id = current_org_id() or is_staff());
 
 -- Inserts happen only via the service role in the accept action, which also
 -- writes the fee and the compliance record. No user-facing insert policy.
@@ -743,11 +751,14 @@ drop policy if exists invoices_select on invoices;
 create policy invoices_select on invoices for select
   using (freelancer_id = auth.uid() or org_id = current_org_id() or is_staff());
 
--- Only the facility marks an invoice paid, and only staff correct one.
+/*
+ * No update policy either. It existed so a facility could mark an invoice paid,
+ * but row-wide UPDATE also let the debtor rewrite total_cents and the number on a
+ * document issued in the FREELANCER's name — the one party unable to see it had
+ * been altered. markInvoicePaidAction uses the service role and checks ownership
+ * itself.
+ */
 drop policy if exists invoices_update on invoices;
-create policy invoices_update on invoices for update
-  using (org_id = current_org_id() or is_staff())
-  with check (org_id = current_org_id() or is_staff());
 
 -- Issued by server code only: the number has to be allocated without a gap.
 

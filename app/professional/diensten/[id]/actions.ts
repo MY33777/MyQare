@@ -42,14 +42,44 @@ export async function submitTimesheetAction(formData: FormData) {
   // catch this, but the admin client bypasses RLS, so the check has to be here.
   const { data: assignment } = await service
     .from("assignments")
-    .select("id, freelancer_id, status")
+    .select("id, freelancer_id, status, timesheets(approved_at)")
     .eq("id", assignmentId)
-    .maybeSingle<{ id: string; freelancer_id: string; status: string }>();
+    .maybeSingle<{
+      id: string;
+      freelancer_id: string;
+      status: string;
+      timesheets: { approved_at: string | null } | null;
+    }>();
 
   if (!assignment || assignment.freelancer_id !== freelancer.userId) {
     redirect("/professional/diensten?error=unknown");
   }
   if (assignment.status === "cancelled") redirect(`${path}?error=unknown`);
+
+  /*
+   * Refuse once the hours are approved.
+   *
+   * The upsert below writes approved_at: null, and checking only for 'cancelled'
+   * let it through: after approval the status is 'completed', not 'cancelled'.
+   * That made this the one path that could un-approve an approved timesheet, with
+   * two consequences.
+   *
+   * It defeated the idempotency guard in settle_timesheet — which returns early
+   * precisely when approved_at is set — so the row reappeared in the facility's
+   * queue and a second approval wrote a second fee adjustment, because
+   * feeAdjustmentCents always measures against the SCHEDULED baseline and never
+   * against what already settled. The freelancer paid the overtime fee twice.
+   *
+   * And the invoice was already issued, emailed and numbered.
+   * createInvoiceForAssignment is idempotent, so it would not reissue: change the
+   * minutes on resubmission and the emailed PDF says 510 minutes forever while
+   * every screen says 480, with no credit note and no ledger row explaining the
+   * gap.
+   *
+   * A correction after approval has to be a credit note plus a compensating ledger
+   * entry. It can never be a blanked column.
+   */
+  if (assignment.timesheets?.approved_at) redirect(`${path}?error=hours_locked`);
 
   // upsert: resubmitting before approval replaces the claim rather than failing
   // on the primary key. A disputed timesheet is exactly the case where someone

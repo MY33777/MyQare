@@ -35,6 +35,7 @@ const MESSAGES: Record<string, string> = {
   vat_undetermined: "De btw-behandeling van deze zorgprofessional is nog niet vastgesteld.",
   freelancer_not_found: "Geen MyQare-account gevonden met dit e-mailadres.",
   not_a_freelancer: "Dit account is geen zelfstandig zorgprofessional.",
+  invalid_amount: "Vul een geldig bedrag in, bijvoorbeeld 50,00.",
   unknown: "Er ging iets mis. Probeer het opnieuw.",
 };
 

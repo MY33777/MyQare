@@ -49,8 +49,17 @@ export async function approveTimesheetAction(formData: FormData) {
   revalidatePath(UREN_PATH);
   revalidatePath("/zorginstelling/facturen");
 
-  if (!invoice.ok && invoice.reason === "vat_undetermined") {
-    redirect(`${UREN_PATH}?approved=1&invoice=vat_undetermined`);
+  /*
+   * The hours are approved and the fee has settled either way — that cannot be
+   * undone from here. But an approval that produced NO invoice has to say so.
+   *
+   * This previously branched only on vat_undetermined and otherwise reported a
+   * bare "Uren goedgekeurd", so a failure left the work permanently unbilled with
+   * the Goedkeuren button gone from the queue. Nobody would notice until the
+   * freelancer chased payment for a shift that was never invoiced.
+   */
+  if (!invoice.ok) {
+    redirect(`${UREN_PATH}?approved=1&invoice=${invoice.reason}`);
   }
   redirect(`${UREN_PATH}?approved=1`);
 }

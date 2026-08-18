@@ -84,6 +84,21 @@ create table if not exists profiles (
 create index if not exists profiles_org_idx on profiles(org_id);
 
 /*
+ * Phone lives in its own table, NOT on profiles — see migration 004.
+ *
+ * profiles_select grants the whole row to any facility with the person in its
+ * pool, and a row policy cannot pin columns, so a phone number on profiles was
+ * one PostgREST call away for anyone who had merely typed an email address into
+ * a form. The UI rule "only once they have worked here" lived in JSX, which is
+ * not access control.
+ */
+create table if not exists profile_contact (
+  profile_id uuid primary key references profiles(id) on delete cascade,
+  phone text,
+  updated_at timestamptz not null default now()
+);
+
+/*
  * 'staff' is us — MyQare's own back office. It exists so document approval and
  * complaint handling have an actual account type instead of being done with the
  * service role key in a SQL console. Section 7.3 of the spec commits to strike
@@ -527,6 +542,33 @@ create policy profiles_select on profiles for select
       where a.freelancer_id = profiles.id and a.org_id = current_org_id()
     )
   );
+
+alter table profile_contact enable row level security;
+
+drop policy if exists profile_contact_select on profile_contact;
+create policy profile_contact_select on profile_contact for select
+  using (
+    profile_id = auth.uid()
+    or is_staff()
+    -- An actual working relationship, not merely a pool entry.
+    or exists (
+      select 1 from assignments a
+      where a.freelancer_id = profile_contact.profile_id
+        and a.org_id = current_org_id()
+        and a.status <> 'cancelled'
+    )
+    or exists (
+      select 1 from profiles p
+      where p.id = profile_contact.profile_id
+        and p.org_id is not null
+        and p.org_id = current_org_id()
+    )
+  );
+
+drop policy if exists profile_contact_write on profile_contact;
+create policy profile_contact_write on profile_contact for all
+  using (profile_id = auth.uid() or is_staff())
+  with check (profile_id = auth.uid() or is_staff());
 
 drop policy if exists profiles_insert on profiles;
 create policy profiles_insert on profiles for insert

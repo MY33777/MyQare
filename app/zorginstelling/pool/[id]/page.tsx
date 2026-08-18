@@ -28,7 +28,7 @@ type FreelancerDetail = {
   big_number: string | null;
   big_verified_at: string | null;
   hourly_rate_min_cents: number | null;
-  profiles: { full_name: string; phone: string | null } | null;
+  profiles: { full_name: string; profile_contact: { phone: string | null } | null } | null;
 };
 
 export default async function PoolMemberPage({ params }: { params: Promise<{ id: string }> }) {
@@ -52,7 +52,7 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
       supabase
         .from("freelancers")
         .select(
-          "profile_id, profession, specialisations, region, bio, kvk, big_number, big_verified_at, hourly_rate_min_cents, profiles(full_name, phone)",
+          "profile_id, profession, specialisations, region, bio, kvk, big_number, big_verified_at, hourly_rate_min_cents, profiles(full_name, profile_contact(phone))",
         )
         .eq("profile_id", id)
         .maybeSingle<FreelancerDetail>(),
@@ -187,8 +187,13 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
             <dd className="font-semibold tnum">
               {/* Only once they have actually worked here — a pool entry is not a
                   reason to hand out someone's mobile number. */}
-              {hasWorkedHere && freelancer.profiles?.phone ? (
-                <a href={`tel:${freelancer.profiles.phone}`}>{freelancer.profiles.phone}</a>
+              {/* RLS on profile_contact already requires a real assignment, so this
+                  returns null for a pool-only member rather than relying on the
+                  template to hide it. */}
+              {freelancer.profiles?.profile_contact?.phone ? (
+                <a href={`tel:${freelancer.profiles.profile_contact.phone}`}>
+                  {freelancer.profiles.profile_contact.phone}
+                </a>
               ) : (
                 "—"
               )}

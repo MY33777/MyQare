@@ -14,7 +14,7 @@ type PoolRow = {
   freelancer_id: string;
   status: string;
   note: string | null;
-  profiles: { full_name: string; phone: string | null } | null;
+  profiles: { full_name: string } | null;
   freelancers: { profession: string; big_number: string | null; big_verified_at: string | null } | null;
 };
 
@@ -36,7 +36,7 @@ export default async function PoolPage({
   const { data: pool } = await supabase
     .from("pools")
     .select(
-      "freelancer_id, status, note, profiles(full_name, phone), freelancers(profession, big_number, big_verified_at)",
+      "freelancer_id, status, note, profiles(full_name), freelancers(profession, big_number, big_verified_at)",
     )
     .eq("org_id", org.id)
     .returns<PoolRow[]>();

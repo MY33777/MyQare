@@ -37,7 +37,13 @@ type PendingRow = {
 export default async function TimesheetsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; approved?: string; disputed?: string; rated?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    approved?: string;
+    disputed?: string;
+    rated?: string;
+    invoice?: string;
+  }>;
 }) {
   const { org } = await requireFacilityAdmin("/zorginstelling/uren");
   const params = await searchParams;
@@ -83,7 +89,21 @@ export default async function TimesheetsPage({
       />
 
       {params.error ? <FormMessage kind="error">{authErrorMessage(params.error)}</FormMessage> : null}
-      {params.approved ? <FormMessage kind="ok">Uren goedgekeurd.</FormMessage> : null}
+      {params.approved && !params.invoice ? (
+        <FormMessage kind="ok">Uren goedgekeurd en factuur opgemaakt.</FormMessage>
+      ) : null}
+      {params.approved && params.invoice === "vat_undetermined" ? (
+        <FormMessage kind="error">
+          Uren goedgekeurd, maar er is nog geen factuur: de btw-behandeling van deze
+          zorgprofessional is niet vastgesteld. Vraag hen dit in hun profiel in te vullen.
+        </FormMessage>
+      ) : null}
+      {params.approved && params.invoice && params.invoice !== "vat_undetermined" ? (
+        <FormMessage kind="error">
+          Uren goedgekeurd, maar de factuur kon niet worden opgemaakt. Neem contact met ons op —
+          deze opdracht is nog niet gefactureerd.
+        </FormMessage>
+      ) : null}
       {params.rated ? <FormMessage kind="ok">Beoordeling opgeslagen.</FormMessage> : null}
       {params.disputed ? (
         <FormMessage kind="ok">

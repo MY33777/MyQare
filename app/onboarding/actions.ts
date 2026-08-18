@@ -79,8 +79,14 @@ export async function completeOnboardingAction(formData: FormData) {
     role,
     org_id: orgId,
     full_name: fullName,
-    phone: phone || null,
   });
+
+  // Phone lives in its own table with a stricter policy (migration 004).
+  if (phone) {
+    await admin
+      .from("profile_contact")
+      .upsert({ profile_id: user.id, phone }, { onConflict: "profile_id" });
+  }
 
   if (profileError) {
     /*

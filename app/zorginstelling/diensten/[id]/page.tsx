@@ -32,13 +32,18 @@ type ShiftDetail = {
     response: string | null;
     responded_at: string | null;
     viewed_at: string | null;
-    profiles: { full_name: string; phone: string | null } | null;
+    profiles: { full_name: string } | null;
   }[];
   assignments: {
     id: string;
     status: string;
     accepted_at: string;
-    profiles: { full_name: string; phone: string | null } | null;
+    /*
+     * Phone comes from profile_contact, whose policy requires an actual assignment
+     * with this facility (migration 004). The old rule lived only in JSX, so the
+     * number was one PostgREST call away for any pool facility.
+     */
+    profiles: { full_name: string; profile_contact: { phone: string | null } | null } | null;
   } | null;
 };
 
@@ -57,7 +62,7 @@ export default async function FacilityShiftDetailPage({
   const { data: shift } = await supabase
     .from("shifts")
     .select(
-      "id, profession, department, location, region, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, visibility, respond_by, shift_offers(id, response, responded_at, viewed_at, profiles(full_name, phone)), assignments(id, status, accepted_at, profiles!assignments_freelancer_id_fkey(full_name, phone))",
+      "id, profession, department, location, region, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, visibility, respond_by, shift_offers(id, response, responded_at, viewed_at, profiles(full_name)), assignments(id, status, accepted_at, profiles!assignments_freelancer_id_fkey(full_name, profile_contact(phone)))",
     )
     .eq("id", id)
     .eq("org_id", org.id)
@@ -161,9 +166,9 @@ export default async function FacilityShiftDetailPage({
         <div className="card p-6 mb-6" style={{ borderColor: "var(--ok)" }}>
           <h2 className="font-bold mb-2">Wie komt er</h2>
           <p className="text-lg font-semibold">{assignment.profiles?.full_name ?? "—"}</p>
-          {assignment.profiles?.phone ? (
+          {assignment.profiles?.profile_contact?.phone ? (
             <p className="text-sm tnum" style={{ color: "var(--text-muted)" }}>
-              <a href={`tel:${assignment.profiles.phone}`}>{assignment.profiles.phone}</a>
+              <a href={`tel:${assignment.profiles.profile_contact?.phone}`}>{assignment.profiles.profile_contact?.phone}</a>
             </p>
           ) : null}
           <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>

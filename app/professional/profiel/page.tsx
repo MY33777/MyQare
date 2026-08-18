@@ -18,6 +18,14 @@ export default async function ProfilePage({
   const params = await searchParams;
   const supabase = await createClient();
 
+  // Own contact row. profile_contact's policy allows the owner, so the user's own
+  // client reads it without the service role.
+  const { data: contact } = await supabase
+    .from("profile_contact")
+    .select("phone")
+    .eq("profile_id", userId)
+    .maybeSingle<{ phone: string | null }>();
+
   const { data: freelancer } = await supabase
     .from("freelancers")
     .select("kvk, big_number, big_verified_at, profession, region, bio, hourly_rate_min_cents, vat_exempt")
@@ -87,7 +95,7 @@ export default async function ProfilePage({
               id="phone"
               name="phone"
               type="tel"
-              defaultValue={profile.phone ?? ""}
+              defaultValue={contact?.phone ?? ""}
             />
           </div>
         </div>

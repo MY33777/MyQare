@@ -11,7 +11,11 @@ export const INVOICE_BUCKET = "documents";
 
 export type InvoiceOutcome =
   | { ok: true; invoiceId: string; number: string }
-  | { ok: false; reason: "vat_undetermined" | "already_invoiced" | "not_approved" | "unknown"; detail?: string };
+  | {
+      ok: false;
+      reason: "vat_undetermined" | "already_invoiced" | "not_approved" | "number_race" | "unknown";
+      detail?: string;
+    };
 
 /**
  * Creates the invoice for an approved assignment.
@@ -113,47 +117,85 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
   const issuedOnKey = amsterdamDateKey(issuedOn);
   const dueOnKey = addDaysToDateKey(issuedOnKey, PAYMENT_TERM_DAYS);
 
-  const { data: previous } = await admin
-    .from("invoices")
-    .select("number")
-    .eq("freelancer_id", assignment.freelancer_id)
-    .returns<{ number: string }[]>();
+  /*
+   * Allocate a number and insert, retrying on a collision.
+   *
+   * nextInvoiceNumber is a read-then-write against the unique
+   * (freelancer_id, number) index, so two approvals of the same freelancer's work
+   * within a few milliseconds both compute the same next number and one loses.
+   * That is the index doing its job.
+   *
+   * The retry used to be "the caller's problem" and no caller did it: the single
+   * call site branched only on vat_undetermined and otherwise reported success. So
+   * the loser was left approved, fee settled, assignment completed — and
+   * permanently uninvoiced, with the facility told it had worked and the Goedkeuren
+   * button gone from the queue. Nobody would notice until the freelancer chased a
+   * payment for work that had never been billed.
+   */
+  let invoice: { id: string; number: string } | null = null;
+  let lastError: { code?: string; message?: string } | null = null;
 
-  const number = nextInvoiceNumber(
-    (previous ?? []).map((row) => row.number),
-    amsterdamYear(issuedOn),
-  );
+  for (let attempt = 0; attempt < 5 && !invoice; attempt++) {
+    // Re-read inside the loop: on a retry the winning number is now committed, so
+    // this picks up the one after it.
+    const { data: previous } = await admin
+      .from("invoices")
+      .select("number")
+      .eq("freelancer_id", assignment.freelancer_id)
+      .returns<{ number: string }[]>();
 
-  const { data: invoice, error } = await admin
-    .from("invoices")
-    .insert({
-      assignment_id: assignmentId,
-      number,
-      freelancer_id: assignment.freelancer_id,
-      org_id: assignment.org_id,
-      issued_on: issuedOnKey,
-      due_on: dueOnKey,
-      minutes_billed: minutes,
-      rate_cents: assignment.agreed_rate_cents,
-      amount_ex_vat_cents: amounts.amountExVatCents,
-      vat_rate_bp: amounts.vatRateBp,
-      vat_amount_cents: amounts.vatAmountCents,
-      total_cents: amounts.totalCents,
-      vat_treatment: amounts.treatment,
-      vat_note: amounts.vatNote,
-    })
-    .select("id, number")
-    .single<{ id: string; number: string }>();
+    const number = nextInvoiceNumber(
+      (previous ?? []).map((row) => row.number),
+      amsterdamYear(issuedOn),
+    );
 
-  if (error || !invoice) {
+    const { data, error } = await admin
+      .from("invoices")
+      .insert({
+        assignment_id: assignmentId,
+        number,
+        freelancer_id: assignment.freelancer_id,
+        org_id: assignment.org_id,
+        issued_on: issuedOnKey,
+        due_on: dueOnKey,
+        minutes_billed: minutes,
+        rate_cents: assignment.agreed_rate_cents,
+        amount_ex_vat_cents: amounts.amountExVatCents,
+        vat_rate_bp: amounts.vatRateBp,
+        vat_amount_cents: amounts.vatAmountCents,
+        total_cents: amounts.totalCents,
+        vat_treatment: amounts.treatment,
+        vat_note: amounts.vatNote,
+      })
+      .select("id, number")
+      .single<{ id: string; number: string }>();
+
+    if (data) {
+      invoice = data;
+      break;
+    }
+
+    lastError = error ?? null;
+
     /*
-     * 23505 on (freelancer_id, number) means two approvals raced for the same
-     * sequence. The unique index is the real guard against a duplicate number —
-     * the read-then-write above cannot be atomic — so this is the constraint
-     * working, and the caller should simply retry to pick up the next number.
+     * 23505 is a unique violation, but on WHICH index matters. On
+     * (assignment_id) it means a concurrent call already invoiced this assignment
+     * — success, not a retry. On (freelancer_id, number) it is the number race and
+     * another attempt will pick up the next one. Anything else is not retryable.
      */
-    if (error?.code === "23505") return { ok: false, reason: "unknown", detail: "number_race" };
-    return { ok: false, reason: "unknown", detail: error?.message };
+    if (error?.code !== "23505") break;
+
+    const { data: raced } = await admin
+      .from("invoices")
+      .select("id, number")
+      .eq("assignment_id", assignmentId)
+      .maybeSingle<{ id: string; number: string }>();
+
+    if (raced) return { ok: true, invoiceId: raced.id, number: raced.number };
+  }
+
+  if (!invoice) {
+    return { ok: false, reason: "number_race", detail: lastError?.message ?? "number_race" };
   }
 
   // The PDF is a rendering of the row, not the record itself. If this fails the

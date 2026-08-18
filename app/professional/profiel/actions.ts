@@ -38,7 +38,12 @@ export async function updateProfileAction(formData: FormData) {
 
   const admin = getSupabaseAdmin();
 
-  await admin.from("profiles").update({ full_name: fullName, phone }).eq("id", freelancer.userId);
+  await admin.from("profiles").update({ full_name: fullName }).eq("id", freelancer.userId);
+
+  // Separate table, stricter policy — see migration 004.
+  await admin
+    .from("profile_contact")
+    .upsert({ profile_id: freelancer.userId, phone, updated_at: new Date().toISOString() }, { onConflict: "profile_id" });
 
   const { error } = await admin
     .from("freelancers")

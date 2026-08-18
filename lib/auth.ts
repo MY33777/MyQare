@@ -31,7 +31,11 @@ export type Profile = {
   role: Role;
   org_id: string | null;
   full_name: string;
-  phone: string | null;
+  /*
+   * No phone here. It moved to profile_contact in migration 004 because
+   * profiles_select exposes the whole row to any facility with the person in its
+   * pool, and a row policy cannot pin columns.
+   */
 };
 
 export type Organisation = {
@@ -70,7 +74,7 @@ export async function requireProfile(next?: string): Promise<{ userId: string; p
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, role, org_id, full_name, phone")
+    .select("id, role, org_id, full_name")
     .eq("id", user.id)
     .maybeSingle<Profile>();
 
@@ -145,7 +149,7 @@ export async function getFacilityAdmin(): Promise<{
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, role, org_id, full_name, phone")
+    .select("id, role, org_id, full_name")
     .eq("id", user.id)
     .maybeSingle<Profile>();
   if (!profile || profile.role !== "facility_admin" || !profile.org_id) return null;
@@ -169,7 +173,7 @@ export async function getFreelancer(): Promise<{ userId: string; profile: Profil
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, role, org_id, full_name, phone")
+    .select("id, role, org_id, full_name")
     .eq("id", user.id)
     .maybeSingle<Profile>();
   if (!profile || profile.role !== "freelancer") return null;

@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { renderDossierPdf, type DossierEntry } from "@/lib/dossierPdf";
 import { billableMinutes } from "@/lib/hours";
 import { qualificationLabel } from "@/lib/qualifications";
+import { localInputToIso } from "@/lib/timezone";
 
 /*
  * Downloads the compliance dossier as a PDF.
@@ -52,10 +53,27 @@ export async function GET(request: NextRequest) {
     .order("accepted_at", { ascending: true })
     .limit(1000);
 
-  if (from) query = query.gte("accepted_at", from);
-  // Inclusive of the end date: a period "to 31 August" must contain work accepted
-  // on 31 August, and accepted_at is a timestamp rather than a date.
-  if (to) query = query.lte("accepted_at", `${to}T23:59:59.999Z`);
+  /*
+   * Amsterdam day boundaries, not UTC ones.
+   *
+   * accepted_at is an instant; the filter dates are calendar days a Dutch user
+   * picked. Comparing against `${to}T23:59:59.999Z` ended the period one or two
+   * hours early in local terms, so an assignment accepted at 00:30 on 1 September
+   * was filed under August — and a dossier that omits assignments inside its own
+   * declared period is worse than no dossier at all.
+   */
+  if (from) {
+    const fromIso = localInputToIso(`${from}T00:00`);
+    if (fromIso) query = query.gte("accepted_at", fromIso);
+  }
+  if (to) {
+    // Exclusive start of the NEXT day, which is inclusive of everything on the
+    // chosen day without going near a 23:59:59.999 boundary.
+    const [year, month, day] = to.split("-").map(Number);
+    const nextDay = new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
+    const toIso = localInputToIso(`${nextDay}T00:00`);
+    if (toIso) query = query.lt("accepted_at", toIso);
+  }
 
   const { data, error } = await query.returns<Row[]>();
 

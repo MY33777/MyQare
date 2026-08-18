@@ -53,28 +53,28 @@ async function send(input: SendInput): Promise<boolean> {
   const html = `
 <!doctype html>
 <html lang="nl">
-  <body style="margin:0;padding:24px;background:#f6f8f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#10201f;">
-    <div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #d5dedd;border-radius:10px;padding:28px;">
+  <body style="margin:0;padding:24px;background:#f7f9ff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#101728;">
+    <div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #d9e0f0;border-radius:10px;padding:28px;">
       <p style="margin:0 0 20px;font-size:18px;font-weight:700;">
-        <span style="color:#0f6f6a;">My</span>Qare
+        <span style="color:#2a4bd8;">My</span>Qare
       </p>
       <h1 style="margin:0 0 14px;font-size:19px;line-height:1.35;">${escapeHtml(input.heading)}</h1>
       ${input.body
         .map(
           (paragraph) =>
-            `<p style="margin:0 0 12px;font-size:15px;line-height:1.55;color:#3a4b4a;">${escapeHtml(paragraph)}</p>`,
+            `<p style="margin:0 0 12px;font-size:15px;line-height:1.55;color:#3d4761;">${escapeHtml(paragraph)}</p>`,
         )
         .join("")}
       ${
         input.cta
           ? `<p style="margin:22px 0 0;">
-               <a href="${input.cta.href}" style="display:inline-block;background:#0f6f6a;color:#ffffff;text-decoration:none;padding:11px 20px;border-radius:8px;font-weight:600;font-size:15px;">${escapeHtml(input.cta.label)}</a>
+               <a href="${input.cta.href}" style="display:inline-block;background:#2a4bd8;color:#ffffff;text-decoration:none;padding:11px 20px;border-radius:8px;font-weight:600;font-size:15px;">${escapeHtml(input.cta.label)}</a>
              </p>`
           : ""
       }
       ${
         input.footnote
-          ? `<p style="margin:22px 0 0;font-size:12px;line-height:1.5;color:#7a8c8b;">${escapeHtml(input.footnote)}</p>`
+          ? `<p style="margin:22px 0 0;font-size:12px;line-height:1.5;color:#7b869d;">${escapeHtml(input.footnote)}</p>`
           : ""
       }
     </div>

@@ -9,30 +9,33 @@
    contrast, large hit targets, no thin grey-on-grey text, and no
    decoration competing with the data.
 
-   Light is the default because this is largely daytime office work,
-   but dark is fully supported rather than bolted on — night shifts
-   are real, and a blazing white screen at 03:00 is hostile.
+   White with royal blue is the brand. Dark is available but opt-in via
+   data-theme="dark" — following the OS setting meant most people never
+   saw the actual identity.
    ============================================================ */
 
 :root {
   color-scheme: light;
 
-  --bg: #f6f8f8;
+  /* White, with the faintest blue cast on the page behind the cards. Pure
+     #fff on #fff would leave every card edge doing all the work of
+     separating content, which falls apart on a dim ward monitor. */
+  --bg: #f7f9ff;
   --surface: #ffffff;
-  --surface-sunken: #eef2f2;
-  --border: #d5dedd;
-  --border-strong: #b3c1c0;
+  --surface-sunken: #eef2fb;
+  --border: #d9e0f0;
+  --border-strong: #b6c2dd;
 
-  --text: #10201f;
-  --text-muted: #566a68;
+  --text: #101728;
+  --text-muted: #55617a;
 
-  /* Teal rather than hospital blue: reads healthcare without looking
-     like an insurance portal, and stays distinguishable from the blue
-     that every browser paints on links and focus rings. */
-  --brand: #0f6f6a;
-  --brand-hover: #0b5651;
-  --brand-subtle: #e2f1f0;
-  --brand-text: #0b4f4b;
+  /* Royal blue. --brand is the fill behind white button text and clears
+     4.5:1 there; --brand-text is a darker step used for links and small
+     type on white, where the fill tone on its own would not. */
+  --brand: #2a4bd8;
+  --brand-hover: #1e3ab0;
+  --brand-subtle: #eaefff;
+  --brand-text: #1d3596;
 
   /* Verified / compliant. The single most important state in the
      product, so it gets its own colour rather than sharing the brand. */
@@ -49,35 +52,47 @@
   --shadow-card: 0 1px 2px rgba(16, 32, 31, 0.05), 0 1px 8px rgba(16, 32, 31, 0.04);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
+/*
+ * Dark is OPT-IN, not automatic.
+ *
+ * The brand is white with royal blue, and following prefers-color-scheme meant
+ * anyone whose laptop is in dark mode — which is most people — never saw the
+ * actual identity. A product's look should not depend on an OS setting made for
+ * unrelated reasons.
+ *
+ * Kept available because night shifts are real and a blazing white screen at 03:00
+ * is hostile, but it now requires data-theme="dark" on <html>.
+ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
 
-    --bg: #0c1413;
-    --surface: #131e1d;
-    --surface-sunken: #0f1817;
-    --border: #263635;
-    --border-strong: #3a4f4d;
+  --bg: #0b1020;
+  --surface: #141b2e;
+  --surface-sunken: #0f1526;
+  --border: #263250;
+  --border-strong: #3a4869;
 
-    --text: #e6f0ef;
-    --text-muted: #97aaa8;
+  --text: #e8ecf7;
+  --text-muted: #98a3bd;
 
-    --brand: #3fb8ae;
-    --brand-hover: #58c9c0;
-    --brand-subtle: #14302e;
-    --brand-text: #7fd8d0;
+  /* Lifted well off the royal blue: #2a4bd8 on a near-black panel is
+     close to unreadable, so dark mode uses a brighter step and flips the
+     button ink to dark (see .btn-primary below). */
+  --brand: #6b8cff;
+  --brand-hover: #85a1ff;
+  --brand-subtle: #1a2547;
+  --brand-text: #9db4ff;
 
-    --ok: #45c47a;
-    --ok-subtle: #122b1d;
+  --ok: #45c47a;
+  --ok-subtle: #122b1d;
 
-    --warn: #d9a441;
-    --warn-subtle: #2d2312;
+  --warn: #d9a441;
+  --warn-subtle: #2d2312;
 
-    --danger: #f0736e;
-    --danger-subtle: #2f1616;
+  --danger: #f0736e;
+  --danger-subtle: #2f1616;
 
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
-  }
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 @theme inline {
@@ -197,12 +212,10 @@ body {
   background: var(--brand-hover);
 }
 
-@media (prefers-color-scheme: dark) {
-  /* The dark brand tone is light enough that white text on it fails
-     contrast; flip to dark ink instead of dimming the button. */
-  .btn-primary {
-    color: #08201e;
-  }
+/* The dark brand tone is light enough that white text on it fails contrast;
+   flip to dark ink instead of dimming the button. */
+:root[data-theme="dark"] .btn-primary {
+  color: #0b1020;
 }
 
 .btn-secondary {

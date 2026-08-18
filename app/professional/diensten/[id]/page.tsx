@@ -9,6 +9,8 @@ import { calculateFee } from "@/lib/fees";
 import { billableMinutes, formatDateTime, formatMinutes, formatTime } from "@/lib/hours";
 import { formatEuros } from "@/lib/money";
 import { qualificationLabel } from "@/lib/qualifications";
+import { RatingForm } from "@/components/RatingForm";
+import { submitRatingAction } from "@/lib/ratingActions";
 import { submitTimesheetAction } from "./actions";
 
 export const metadata: Metadata = { title: "Dienst" };
@@ -42,7 +44,7 @@ export default async function AssignmentDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; submitted?: string; accepted?: string }>;
+  searchParams: Promise<{ error?: string; submitted?: string; accepted?: string; rated?: string }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
@@ -59,6 +61,15 @@ export default async function AssignmentDetailPage({
     .maybeSingle<AssignmentDetail>();
 
   if (!assignment || !assignment.shifts) notFound();
+
+  // Whether this side has already had its say. One rating per direction, enforced
+  // by a unique constraint — this only decides whether to show the form.
+  const { data: ownRating } = await supabase
+    .from("ratings")
+    .select("id")
+    .eq("assignment_id", id)
+    .eq("direction", "freelancer_to_facility")
+    .maybeSingle<{ id: string }>();
 
   const shift = assignment.shifts;
   const scheduled = billableMinutes(shift.starts_at, shift.ends_at, assignment.agreed_break_minutes);
@@ -139,16 +150,29 @@ export default async function AssignmentDetailPage({
       ) : null}
 
       {locked ? (
-        <div className="card p-6">
-          <p className="font-semibold">
-            {sheet?.approved_at ? "Uren goedgekeurd" : "Deze dienst is geannuleerd"}
-          </p>
-          {sheet?.approved_at ? (
-            <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
-              {formatMinutes(claimed)} goedgekeurd. De factuur wordt automatisch opgemaakt.
+        <>
+          <div className="card p-6 mb-6">
+            <p className="font-semibold">
+              {sheet?.approved_at ? "Uren goedgekeurd" : "Deze dienst is geannuleerd"}
             </p>
+            {sheet?.approved_at ? (
+              <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
+                {formatMinutes(claimed)} goedgekeurd. De factuur wordt automatisch opgemaakt.
+              </p>
+            ) : null}
+          </div>
+
+          {assignment.status === "completed" && !ownRating ? (
+            <RatingForm
+              action={submitRatingAction}
+              assignmentId={assignment.id}
+              direction="freelancer_to_facility"
+              heading={`Hoe was het werken bij ${shift.organisations?.name ?? "deze instelling"}?`}
+            />
           ) : null}
-        </div>
+
+          {query.rated ? <FormMessage kind="ok">Bedankt voor je beoordeling.</FormMessage> : null}
+        </>
       ) : (
         <form action={submitTimesheetAction} className="card p-6 space-y-5">
           <input type="hidden" name="assignment_id" value={assignment.id} />

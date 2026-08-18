@@ -44,6 +44,16 @@ export function RoleFields() {
                   borderRadius: 8,
                 }}
               >
+                {/*
+                  self-start matters: in a flex row the default align-items:stretch
+                  blows the input's box up to the full height of the card (13×56px
+                  measured), so its hit area becomes a thin vertical strip beside
+                  the text. The glyph still draws at natural size, which is why it
+                  looks fine and misses anyway.
+
+                  The whole card is inside the <label>, so tapping the text selects
+                  the option too — which is the target a thumb actually finds.
+                */}
                 <input
                   type="radio"
                   name="role"
@@ -51,7 +61,7 @@ export function RoleFields() {
                   checked={selected}
                   onChange={() => setRole(option.value)}
                   required
-                  className="mt-1"
+                  className="mt-1 self-start flex-none"
                 />
                 <span>
                   <span className="block font-semibold text-sm">{option.title}</span>

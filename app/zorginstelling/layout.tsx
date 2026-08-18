@@ -8,6 +8,7 @@ const NAV = [
   { href: "/zorginstelling/pool", label: "Mijn pool" },
   { href: "/zorginstelling/facturen", label: "Facturen" },
   { href: "/zorginstelling/dossier", label: "Dossier" },
+  { href: "/zorginstelling/instellingen", label: "Instellingen" },
 ];
 
 export default async function FacilityLayout({ children }: { children: React.ReactNode }) {

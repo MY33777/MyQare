@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
-import { calculateFee, feeAdjustmentCents } from "@/lib/fees";
+import { calculateFee } from "@/lib/fees";
 import { billableMinutes } from "@/lib/hours";
 
 /**
@@ -240,22 +240,27 @@ export async function approveTimesheet(
   if (!assignment.timesheets) return { ok: false, reason: "timesheet_missing" };
   if (!assignment.shifts) return { ok: false, reason: "unknown" };
 
-  const scheduled = billableMinutes(
-    assignment.shifts.starts_at,
-    assignment.shifts.ends_at,
-    assignment.agreed_break_minutes,
-  );
-  const actual = Math.max(
+  // Hours actually worked, from the freelancer's claim minus their break.
+  const actualMinutes = Math.max(
     0,
     assignment.timesheets.minutes_claimed - assignment.timesheets.break_minutes,
   );
 
-  const adjustment = feeAdjustmentCents(scheduled, actual, assignment.agreed_rate_cents);
+  /*
+   * The TOTAL fee owed for those hours, not the difference from the schedule.
+   *
+   * settle_timesheet subtracts what the ledger already holds, so a replayed
+   * approval reconciles to zero and writes nothing. Passing a delta measured
+   * against the SCHEDULE — as this did — meant a replay charged the same amount
+   * again, and the guard that stopped the replay turned out to depend on a column
+   * an attacker could clear. See migration 005.
+   */
+  const owedTotalCents = calculateFee(actualMinutes, assignment.agreed_rate_cents).feeTotalCents;
 
   const { error } = await admin.rpc("settle_timesheet", {
     p_assignment_id: assignmentId,
     p_approver_id: approverId,
-    p_fee_adjustment_cents: adjustment,
+    p_fee_total_owed_cents: owedTotalCents,
   });
 
   if (error) return { ok: false, reason: "unknown" };

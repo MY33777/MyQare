@@ -61,26 +61,3 @@ export function calculateFee(minutes: number, rateCents: number): FeeBreakdown {
     feeTotalCents: feeExVat + feeVat,
   };
 }
-
-/**
- * Difference to settle once the real hours are known.
- *
- * The fee is charged at acceptance on the *scheduled* duration, because that is
- * when we know the freelancer has committed and it is the only moment we can
- * refuse for insufficient balance. Shifts then routinely run short or long, so
- * the ledger gets a second, smaller entry rather than the first one being
- * rewritten — see the append-only note in supabase/schema.sql.
- *
- * Positive means charge more; negative means refund. Zero means do not write a
- * ledger row at all, which is the common case and worth short-circuiting so the
- * ledger doesn't fill with no-op entries.
- */
-export function feeAdjustmentCents(
-  scheduledMinutes: number,
-  actualMinutes: number,
-  rateCents: number,
-): number {
-  const charged = calculateFee(scheduledMinutes, rateCents).feeTotalCents;
-  const owed = calculateFee(actualMinutes, rateCents).feeTotalCents;
-  return owed - charged;
-}

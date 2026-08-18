@@ -150,10 +150,28 @@ $fn$;
 -- the only moment we can refuse for insufficient balance. Shifts then routinely
 -- run short or long, so the difference is settled here as a second ledger entry
 -- rather than by rewriting the first — see the append-only note in schema.sql.
+-- Takes the TOTAL fee owed for the hours actually worked, not a delta.
+--
+-- The earlier version took the adjustment, computed in TypeScript as
+-- (owed for actual - owed for scheduled). That measures against the schedule and
+-- carries no memory of what has already been charged, so replaying an approval
+-- charged the same amount a second time. A guard on approved_at was added to stop
+-- the replay — and clearing that column turned out to be exactly what an attacker
+-- could do (see migration 005).
+--
+-- Deriving the movement from the ledger removes the need for the guard to hold:
+--
+--     delta = owed_total - already_charged
+--
+-- A replay computes already_charged == owed_total, so nothing is written. The fee
+-- arithmetic still lives in lib/fees.ts; only the reconciliation moved to where
+-- the ledger is.
+drop function if exists settle_timesheet(uuid, uuid, integer);
+
 create or replace function settle_timesheet(
   p_assignment_id uuid,
   p_approver_id uuid,
-  p_fee_adjustment_cents integer
+  p_fee_total_owed_cents integer
 )
 returns void
 language plpgsql
@@ -162,26 +180,13 @@ set search_path = public
 as $fn$
 declare
   v_assignment assignments%rowtype;
-  v_already_approved timestamptz;
+  v_already_charged integer;
+  v_delta integer;
 begin
   select * into v_assignment from assignments where id = p_assignment_id for update;
 
   if not found then
     raise exception 'Opdracht niet gevonden.' using errcode = 'P0002';
-  end if;
-
-  /*
-   * Idempotent. A double-click, a retry or a stale tab previously wrote a SECOND
-   * fee adjustment for a timesheet that had already settled — the invoice side was
-   * idempotent but the ledger side was not, so the freelancer paid the difference
-   * twice. Checked inside the transaction holding the row lock, so two concurrent
-   * approvals cannot both get past it.
-   */
-  select approved_at into v_already_approved
-  from timesheets where assignment_id = p_assignment_id;
-
-  if v_already_approved is not null then
-    return;
   end if;
 
   update timesheets
@@ -190,14 +195,23 @@ begin
 
   update assignments set status = 'completed' where id = p_assignment_id;
 
-  if p_fee_adjustment_cents <> 0 then
+  -- Fee rows are negative (money leaving the balance), so negating the sum gives
+  -- the positive total charged so far across the original fee and any corrections.
+  select coalesce(-sum(delta_cents), 0)::integer into v_already_charged
+  from credit_ledger
+  where assignment_id = p_assignment_id
+    and reason in ('fee', 'fee_adjustment', 'fee_refund');
+
+  v_delta := p_fee_total_owed_cents - v_already_charged;
+
+  -- Zero on a replay: no row, no double charge, nothing to reconcile afterwards.
+  if v_delta <> 0 then
     insert into credit_ledger (profile_id, delta_cents, reason, assignment_id, note)
     values (
       v_assignment.freelancer_id,
-      -- Sign convention: a POSITIVE adjustment means the shift ran long and more
-      -- fee is owed, so it leaves the balance. Negative means a refund.
-      -p_fee_adjustment_cents,
-      case when p_fee_adjustment_cents > 0 then 'fee_adjustment' else 'fee_refund' end,
+      -- A positive delta means more fee is owed, so it leaves the balance.
+      -v_delta,
+      case when v_delta > 0 then 'fee_adjustment' else 'fee_refund' end,
       p_assignment_id,
       'Correctie na goedkeuring van de gewerkte uren'
     );
@@ -262,10 +276,10 @@ $fn$;
 -- ============================================================================
 -- These are security definer: they run with the owner's rights and bypass RLS.
 -- Their signatures also let the caller supply what should have been derived —
--- settle_timesheet takes the fee adjustment as a parameter, so a negative value
--- inserts a positive ledger row, and accept_shift takes both the freelancer id and
--- the fee. Granting execute to  therefore let any signed-in user
--- mint credit or accept work as someone else, straight through PostgREST.
+-- accept_shift takes both the freelancer id and the fee as parameters, and
+-- settle_timesheet takes an amount. Granting execute to `authenticated` therefore
+-- let any signed-in user accept work as someone else, or move credit, straight
+-- through PostgREST with the public anon key.
 --
 -- They are only ever invoked from server code holding the SERVICE ROLE key
 -- (lib/assignments.ts), which these grants do not constrain. Authorization lives

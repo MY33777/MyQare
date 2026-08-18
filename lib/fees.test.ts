@@ -3,7 +3,6 @@ import {
   PLATFORM_FEE_BP,
   assignmentValueCents,
   calculateFee,
-  feeAdjustmentCents,
 } from "@/lib/fees";
 
 describe("assignmentValueCents", () => {
@@ -67,44 +66,6 @@ describe("calculateFee", () => {
         expect(Number.isInteger(fee.feeVatCents)).toBe(true);
         expect(Number.isInteger(fee.feeTotalCents)).toBe(true);
       }
-    }
-  });
-});
-
-describe("feeAdjustmentCents", () => {
-  it("is zero when the shift ran exactly as scheduled", () => {
-    expect(feeAdjustmentCents(480, 480, 5000)).toBe(0);
-  });
-
-  it("refunds when the shift ran short", () => {
-    // Scheduled 8h, worked 6h, €50/h. Fee drops from €24.20 to €18.15.
-    expect(feeAdjustmentCents(480, 360, 5000)).toBe(-605);
-  });
-
-  it("charges more when the shift ran over", () => {
-    // Scheduled 8h, worked 9h, €50/h. Fee rises from €24.20 to €27.23.
-    expect(feeAdjustmentCents(480, 540, 5000)).toBe(303);
-  });
-
-  it("refunds the whole fee when the assignment produced no hours", () => {
-    const charged = calculateFee(480, 5000).feeTotalCents;
-    expect(feeAdjustmentCents(480, 0, 5000)).toBe(-charged);
-  });
-
-  /*
-   * The adjustment must land the customer at exactly the fee for the hours they
-   * actually worked — never a cent more, however the rounding fell on the way.
-   */
-  it("always reconciles to the fee for the actual hours", () => {
-    for (const [scheduled, actual, rate] of [
-      [480, 465, 4250],
-      [465, 480, 3333],
-      [240, 251, 1234],
-      [600, 137, 9999],
-    ]) {
-      const charged = calculateFee(scheduled, rate).feeTotalCents;
-      const adjustment = feeAdjustmentCents(scheduled, actual, rate);
-      expect(charged + adjustment).toBe(calculateFee(actual, rate).feeTotalCents);
     }
   });
 });

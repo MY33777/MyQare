@@ -518,9 +518,6 @@ create policy organisations_select on organisations for select
   );
 
 drop policy if exists organisations_update on organisations;
-create policy organisations_update on organisations for update
-  using (id = current_org_id() or is_staff())
-  with check (id = current_org_id() or is_staff());
 
 -- ---------- profiles ----------
 
@@ -566,23 +563,10 @@ create policy profile_contact_select on profile_contact for select
   );
 
 drop policy if exists profile_contact_write on profile_contact;
-create policy profile_contact_write on profile_contact for all
-  using (profile_id = auth.uid() or is_staff())
-  with check (profile_id = auth.uid() or is_staff());
 
 drop policy if exists profiles_insert on profiles;
-create policy profiles_insert on profiles for insert
-  with check (id = auth.uid());
 
 drop policy if exists profiles_update on profiles;
-create policy profiles_update on profiles for update
-  using (id = auth.uid() or is_staff())
-  -- Note: this does NOT stop a user rewriting their own `role` or `org_id`.
-  -- Postgres row policies cannot pin individual columns. Role changes are made
-  -- only through server actions using the service role key, and the client is
-  -- never given a form that posts those columns. If self-service org switching
-  -- is ever added, this needs a column-level grant or a trigger.
-  with check (id = auth.uid() or is_staff());
 
 -- ---------- freelancers ----------
 
@@ -609,9 +593,6 @@ create policy freelancers_select on freelancers for select
   );
 
 drop policy if exists freelancers_write on freelancers;
-create policy freelancers_write on freelancers for all
-  using (profile_id = auth.uid() or is_staff())
-  with check (profile_id = auth.uid() or is_staff());
 
 -- ---------- documents ----------
 
@@ -650,9 +631,6 @@ create policy documents_select on documents for select
   );
 
 drop policy if exists documents_write on documents;
-create policy documents_write on documents for all
-  using (freelancer_id = auth.uid() or is_staff())
-  with check (freelancer_id = auth.uid() or is_staff());
 
 -- ---------- pools ----------
 
@@ -669,9 +647,6 @@ create policy pools_select on pools for select
   );
 
 drop policy if exists pools_write on pools;
-create policy pools_write on pools for all
-  using (org_id = current_org_id() or is_staff())
-  with check (org_id = current_org_id() or is_staff());
 
 -- ---------- shifts ----------
 
@@ -687,23 +662,10 @@ create policy shifts_select on shifts for select
   );
 
 drop policy if exists shifts_insert on shifts;
-create policy shifts_insert on shifts for insert
-  with check (
-    org_id = current_org_id()
-    and current_role_name() = 'facility_admin'
-    -- Unverified facilities cannot post work. Checked here as well as in the
-    -- server action so a direct API call with a stolen anon token can't skip it.
-    and exists (select 1 from organisations o where o.id = org_id and o.verified_at is not null)
-  );
 
 drop policy if exists shifts_update on shifts;
-create policy shifts_update on shifts for update
-  using (org_id = current_org_id() or is_staff())
-  with check (org_id = current_org_id() or is_staff());
 
 drop policy if exists shifts_delete on shifts;
-create policy shifts_delete on shifts for delete
-  using (org_id = current_org_id() or is_staff());
 
 -- ---------- shift_offers ----------
 
@@ -722,16 +684,8 @@ create policy shift_offers_select on shift_offers for select
  * update policy exists for the decline path and for marking an offer viewed.
  */
 drop policy if exists shift_offers_update on shift_offers;
-create policy shift_offers_update on shift_offers for update
-  using (freelancer_id = auth.uid() or is_staff())
-  with check (freelancer_id = auth.uid() or is_staff());
 
 drop policy if exists shift_offers_insert on shift_offers;
-create policy shift_offers_insert on shift_offers for insert
-  with check (
-    exists (select 1 from shifts s where s.id = shift_id and s.org_id = current_org_id())
-    or is_staff()
-  );
 
 -- ---------- assignments ----------
 
@@ -769,23 +723,6 @@ create policy timesheets_select on timesheets for select
   );
 
 drop policy if exists timesheets_write on timesheets;
-create policy timesheets_write on timesheets for all
-  using (
-    is_staff()
-    or exists (
-      select 1 from assignments a
-      where a.id = timesheets.assignment_id
-        and (a.freelancer_id = auth.uid() or a.org_id = current_org_id())
-    )
-  )
-  with check (
-    is_staff()
-    or exists (
-      select 1 from assignments a
-      where a.id = timesheets.assignment_id
-        and (a.freelancer_id = auth.uid() or a.org_id = current_org_id())
-    )
-  );
 
 -- ---------- invoices ----------
 
@@ -832,18 +769,6 @@ create policy ratings_select on ratings for select
   );
 
 drop policy if exists ratings_insert on ratings;
-create policy ratings_insert on ratings for insert
-  with check (
-    author_id = auth.uid()
-    and exists (
-      select 1 from assignments a
-      where a.id = assignment_id
-        and (
-          (direction = 'facility_to_freelancer' and a.org_id = current_org_id())
-          or (direction = 'freelancer_to_facility' and a.freelancer_id = auth.uid())
-        )
-    )
-  );
 
 /*
  * No update or delete policy. A rating is a statement someone made about
@@ -919,9 +844,6 @@ create policy availability_select on availability_blocks for select
   using (freelancer_id = auth.uid() or is_staff());
 
 drop policy if exists availability_write on availability_blocks;
-create policy availability_write on availability_blocks for all
-  using (freelancer_id = auth.uid() or is_staff())
-  with check (freelancer_id = auth.uid() or is_staff());
 
 /*
  * Deliberately NOT readable by facilities. A facility does not need to know why
@@ -935,3 +857,61 @@ create policy availability_write on availability_blocks for all
 -- posting time, but editable, because a facility on a boundary recruits from both
 -- sides of it.
 alter table shifts add column if not exists region text;
+
+-- ============================================================================
+-- NO CLIENT WRITES AT ALL (migration 005)
+-- ============================================================================
+-- Every write policy that used to live in this file has been removed, and the
+-- write grants are revoked below.
+--
+-- The reason is that a Postgres ROW policy cannot restrict COLUMNS. "You may
+-- update your own row" therefore also means "you may rewrite any column in it",
+-- and that single fact produced five separate defects across two audits:
+--
+--   assignments.agreed_rate_cents  either party could change the billed rate
+--                                    after the work
+--   invoices.total_cents           the debtor could rewrite the creditor's bill
+--   profiles.phone                 handed to any facility with a pool entry
+--   timesheets.approved_at         blanking it re-armed double settlement AND
+--                                    re-opened a full fee refund on invoiced work
+--   profiles.role                  PATCH yourself to 'staff' and read every
+--                                    document, phone number, invoice and ledger
+--                                    row on the platform
+--
+-- In each case the written defence was a comment saying the UI never posts that
+-- column. The anon key ships to the browser and PostgREST accepts whatever it is
+-- sent, so that was never a control.
+--
+-- Removing them all costs nothing, because the application contains no
+-- client-side writes: all 21 files that write to Postgres use the service role,
+-- which these policies never governed.
+--
+-- WHAT THIS MEANS FOR THE SECURITY MODEL
+-- --------------------------------------
+-- RLS is a READ backstop here, not a write one. Write authorization lives
+-- entirely in lib/auth.ts and the server actions; if one of those forgets its
+-- ownership check, nothing else catches it. Comments in this codebase have
+-- described RLS as "the backstop that holds even when app code is wrong" — true
+-- for reads, false for writes, and overstating it is how several of the defects
+-- above survived review.
+--
+-- If a client-side write is ever genuinely needed: supabase-js reports SUCCESS
+-- with zero rows when RLS blocks an update, so it will fail silently. Add the
+-- policy AND a BEFORE UPDATE trigger pinning the immutable columns.
+
+revoke insert, update, delete on organisations from authenticated, anon;
+revoke insert, update, delete on profiles from authenticated, anon;
+revoke insert, update, delete on profile_contact from authenticated, anon;
+revoke insert, update, delete on freelancers from authenticated, anon;
+revoke insert, update, delete on documents from authenticated, anon;
+revoke insert, update, delete on pools from authenticated, anon;
+revoke insert, update, delete on shifts from authenticated, anon;
+revoke insert, update, delete on shift_offers from authenticated, anon;
+revoke insert, update, delete on assignments from authenticated, anon;
+revoke insert, update, delete on timesheets from authenticated, anon;
+revoke insert, update, delete on invoices from authenticated, anon;
+revoke insert, update, delete on credit_ledger from authenticated, anon;
+revoke insert, update, delete on ratings from authenticated, anon;
+revoke insert, update, delete on compliance_records from authenticated, anon;
+revoke insert, update, delete on availability_blocks from authenticated, anon;
+revoke insert, update, delete on rate_limit_hits from authenticated, anon;

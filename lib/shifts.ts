@@ -1,4 +1,8 @@
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { emailConfigured, sendShiftOfferEmail } from "@/lib/email";
+import { assignmentValueCents } from "@/lib/fees";
+import { billableMinutes } from "@/lib/hours";
+import { qualificationLabel } from "@/lib/qualifications";
 
 /*
  * Posting a shift, and deciding who hears about it.
@@ -79,9 +83,75 @@ export async function createShiftWithOffers(input: NewShift): Promise<FanOutResu
     // A failed fan-out leaves a shift with no offers rather than throwing away
     // the shift. The facility sees "0 aangeboden" and can re-offer.
     if (offerError) return { shiftId: shift.id, offeredTo: 0 };
+
+    await notifyRecipients(shift.id, recipients, input);
   }
 
   return { shiftId: shift.id, offeredTo: recipients.length };
+}
+
+/**
+ * Emails everyone the shift was offered to.
+ *
+ * Deliberately never throws. A shift that exists but whose notification bounced is
+ * recoverable — it still shows in the freelancer's Aanbod list. A shift that
+ * failed to post because a mail server was slow is not.
+ *
+ * Sent in parallel and awaited as a batch: a pool of twenty sequential sends would
+ * hold the coordinator's form submission open for several seconds.
+ */
+async function notifyRecipients(
+  shiftId: string,
+  recipients: string[],
+  input: NewShift,
+): Promise<void> {
+  if (!emailConfigured()) return;
+
+  const admin = getSupabaseAdmin();
+
+  try {
+    const minutes = billableMinutes(input.startsAt, input.endsAt, input.breakMinutes);
+    const earnings = assignmentValueCents(minutes, input.hourlyRateCents);
+
+    const { data: org } = await admin
+      .from("organisations")
+      .select("name")
+      .eq("id", input.orgId)
+      .maybeSingle<{ name: string }>();
+
+    const { data: profiles } = await admin
+      .from("profiles")
+      .select("id, full_name")
+      .in("id", recipients)
+      .returns<{ id: string; full_name: string }[]>();
+
+    const names = new Map((profiles ?? []).map((row) => [row.id, row.full_name]));
+
+    await Promise.all(
+      recipients.map(async (freelancerId) => {
+        // Email addresses live on the auth record, not on profiles, so there is
+        // exactly one place they can come from.
+        const { data: user } = await admin.auth.admin.getUserById(freelancerId);
+        const email = user?.user?.email;
+        if (!email) return;
+
+        await sendShiftOfferEmail({
+          to: email,
+          freelancerName: names.get(freelancerId) ?? "",
+          facilityName: org?.name ?? "Een zorginstelling",
+          qualification: qualificationLabel(input.qualification),
+          startsAt: input.startsAt,
+          endsAt: input.endsAt,
+          minutes,
+          rateCents: input.hourlyRateCents,
+          earningsCents: earnings,
+          shiftId,
+        });
+      }),
+    );
+  } catch {
+    // Notification is best-effort by design; see the note above.
+  }
 }
 
 /**

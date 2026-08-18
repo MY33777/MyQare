@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getFreelancer } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { sendTimesheetSubmittedEmail } from "@/lib/email";
 
 /**
  * The freelancer states the hours they actually worked.
@@ -68,7 +69,33 @@ export async function submitTimesheetAction(formData: FormData) {
     { onConflict: "assignment_id" },
   );
 
+  /*
+   * Nudge the facility. Without this the hours sit unapproved until someone
+   * happens to look, which delays the invoice and therefore the freelancer being
+   * paid. Best-effort: the timesheet is submitted either way.
+   */
+  try {
+    const { data: full } = await service
+      .from("assignments")
+      .select("org_id, profiles!assignments_freelancer_id_fkey(full_name), organisations(name, billing_email)")
+      .eq("id", assignmentId)
+      .maybeSingle();
+    const billingEmail = (full as { organisations?: { billing_email?: string | null } } | null)?.organisations?.billing_email;
+    if (billingEmail) {
+      await sendTimesheetSubmittedEmail({
+        to: billingEmail,
+        facilityName: (full as { organisations?: { name?: string } } | null)?.organisations?.name ?? "",
+        freelancerName: (full as { profiles?: { full_name?: string } } | null)?.profiles?.full_name ?? "Een zorgprofessional",
+        minutes: totalMinutes - Math.round(breakMinutes),
+        assignmentId,
+      });
+    }
+  } catch {
+    // Notification only.
+  }
+
   revalidatePath(path);
   revalidatePath("/professional/diensten");
+  revalidatePath("/zorginstelling/uren");
   redirect(`${path}?submitted=1`);
 }

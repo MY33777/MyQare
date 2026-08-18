@@ -4,6 +4,7 @@ import { dueDate, nextInvoiceNumber } from "@/lib/invoiceNumber";
 import { assignmentValueCents } from "@/lib/fees";
 import { renderInvoicePdf } from "@/lib/invoicePdf";
 import { qualificationLabel } from "@/lib/qualifications";
+import { sendInvoiceEmail } from "@/lib/email";
 
 export const INVOICE_BUCKET = "documents";
 
@@ -190,6 +191,25 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
     await admin.from("invoices").update({ pdf_path: path }).eq("id", invoice.id);
   } catch {
     // Left with pdf_path null; the invoice list offers a re-render.
+  }
+
+  /*
+   * Emailed to the facility's billing address, not to whoever approved the hours.
+   * Facilities route invoices to a shared accounts-payable mailbox, and a document
+   * that lands in a coordinator's personal inbox is a document that gets paid late.
+   *
+   * Best-effort: the invoice legally exists whether or not the mail went out, and
+   * both parties can see it in the app.
+   */
+  if (org.billing_email) {
+    await sendInvoiceEmail({
+      to: org.billing_email,
+      facilityName: org.name,
+      freelancerName: profile?.full_name ?? "Zorgprofessional",
+      invoiceNumber: invoice.number,
+      totalCents: amounts.totalCents,
+      dueOn: due.toISOString().slice(0, 10),
+    });
   }
 
   return { ok: true, invoiceId: invoice.id, number: invoice.number };

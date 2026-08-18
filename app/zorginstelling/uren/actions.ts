@@ -26,13 +26,24 @@ export async function approveTimesheetAction(formData: FormData) {
   const service = getSupabaseAdmin();
   const { data: assignment } = await service
     .from("assignments")
-    .select("id, org_id")
+    .select("id, org_id, status")
     .eq("id", assignmentId)
-    .maybeSingle<{ id: string; org_id: string }>();
+    .maybeSingle<{ id: string; org_id: string; status: string }>();
 
   // The admin client bypasses RLS, so ownership is checked here or nowhere.
   if (!assignment || assignment.org_id !== admin.org.id) {
     redirect(`${UREN_PATH}?error=unknown`);
+  }
+
+  /*
+   * A cancelled assignment must not be approved. settle_timesheet refuses it now
+   * too, but this select had no status at all — so a stale queue page, which was
+   * exactly what cancelling produced, offered a Goedkeuren button that charged
+   * the entire fee for work the platform had just refunded, resurrected the row
+   * as 'completed', and emailed a numbered invoice for it. See migration 008.
+   */
+  if (assignment.status === "cancelled") {
+    redirect(`${UREN_PATH}?error=assignment_cancelled`);
   }
 
   const result = await approveTimesheet(assignmentId, admin.userId);
@@ -84,12 +95,21 @@ export async function disputeTimesheetAction(formData: FormData) {
   const service = getSupabaseAdmin();
   const { data: assignment } = await service
     .from("assignments")
-    .select("id, org_id")
+    .select("id, org_id, status")
     .eq("id", assignmentId)
-    .maybeSingle<{ id: string; org_id: string }>();
+    .maybeSingle<{ id: string; org_id: string; status: string }>();
 
   if (!assignment || assignment.org_id !== admin.org.id) {
     redirect(`${UREN_PATH}?error=unknown`);
+  }
+
+  /*
+   * Same omission as approving had: no status in the select, and the write is
+   * unconditional. No money moves here, but it would flip a cancelled or already
+   * invoiced assignment to 'disputed' — a state its own history contradicts.
+   */
+  if (assignment.status === "cancelled") {
+    redirect(`${UREN_PATH}?error=assignment_cancelled`);
   }
 
   await service

@@ -189,6 +189,18 @@ begin
     raise exception 'Opdracht niet gevonden.' using errcode = 'P0002';
   end if;
 
+  /*
+   * A cancelled assignment must not settle. The delta below is derived from the
+   * ledger, and cancel_assignment's refund lands in the very bucket that sum
+   * nets over — so after a cancellation already_charged is exactly zero and the
+   * delta becomes the ENTIRE fee, charged a second time for work that was
+   * explicitly refunded. It also flipped the row back to 'completed', which then
+   * allocated a gapless invoice number and emailed a PDF. See migration 008.
+   */
+  if v_assignment.status = 'cancelled' then
+    raise exception 'Opdracht is geannuleerd.' using errcode = 'P0001';
+  end if;
+
   update timesheets
   set approved_at = now(), approved_by = p_approver_id, disputed_at = null, dispute_reason = null
   where assignment_id = p_assignment_id;
@@ -248,13 +260,42 @@ begin
     return; -- Idempotent: a double-tap must not refund twice.
   end if;
 
+  /*
+   * Hours submitted means the work happened, and cancelling it away left the
+   * freelancer unpaid with no route back: the row leaves the approval queue for
+   * good, and invoicing refuses without an approval that can no longer be given.
+   * After this line the question is not whether the assignment exists but whether
+   * the hours are right — which is what disputing is for. See migration 008.
+   */
+  if exists (select 1 from timesheets where assignment_id = p_assignment_id) then
+    raise exception 'Uren zijn al ingediend.' using errcode = 'P0001';
+  end if;
+
   update assignments
   set status = 'cancelled', cancelled_at = now(),
       cancelled_by = p_cancelled_by, cancel_reason = p_reason
   where id = p_assignment_id;
 
-  -- Reopen the shift so the facility does not have to retype it.
-  update shifts set status = 'open' where id = v_assignment.shift_id and status = 'filled';
+  /*
+   * Reopen the shift so the facility does not have to retype it — properly.
+   * Setting the status alone left it visible on the dashboard and unfillable by
+   * anyone: every offer still carried the responded_at that accept_shift stamped
+   * when it filled, so the shift had already vanished from every freelancer's
+   * list. respond_by is cleared rather than extended when it has lapsed, because
+   * any new deadline would be a guess and a re-offer after a drop-out is urgent
+   * by definition. accept_shift still refuses once the shift itself has started.
+   */
+  update shifts
+  set status = 'open',
+      respond_by = case when respond_by < now() then null else respond_by end
+  where id = v_assignment.shift_id and status = 'filled';
+
+  -- Only the offers closed BY the fill. A genuine decline stays declined —
+  -- somebody who said no is not asked again because the person who said yes
+  -- dropped out.
+  update shift_offers
+  set responded_at = null, response = null, decline_reason = null
+  where shift_id = v_assignment.shift_id and decline_reason = 'shift_filled';
 
   -- Refund exactly what was charged, read back from the ledger rather than
   -- recalculated. Recalculating would refund a different amount if the fee rate
@@ -291,3 +332,29 @@ $fn$;
 revoke all on function accept_shift(uuid, uuid, integer, text, jsonb) from public, anon, authenticated;
 revoke all on function settle_timesheet(uuid, uuid, integer) from public, anon, authenticated;
 revoke all on function cancel_assignment(uuid, text, text) from public, anon, authenticated;
+
+-- ============================================================================
+-- Resolving one email address to one account id
+-- ============================================================================
+-- Adding somebody to a pool is the one place a facility legitimately needs to
+-- know whether an address has an account, before any relationship exists that
+-- would let it read the profile.
+--
+-- This replaced a listUsers({ page: 1, perPage: 1000 }) scan, which could only
+-- ever find the first 1000 accounts — and since that endpoint orders created_at
+-- DESC, the ones it could not find were the longest-tenured, exactly the people a
+-- facility already works with. They were told the account did not exist.
+--
+-- Returns an id and nothing else: no email, no metadata, nothing that would let a
+-- caller enumerate the user table. Service role only, like the rest.
+create or replace function lookup_account_by_email(p_email text)
+returns uuid
+language sql
+security definer
+set search_path = public
+stable
+as $fn$
+  select id from auth.users where lower(email) = lower(trim(p_email)) limit 1;
+$fn$;
+
+revoke all on function lookup_account_by_email(text) from public, anon, authenticated;

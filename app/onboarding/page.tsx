@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { AuthShell, FormMessage } from "@/components/AuthShell";
 import { authErrorMessage } from "@/lib/authErrors";
 import { createClient } from "@/lib/supabase/server";
+import { QualificationSelect } from "@/components/QualificationSelect";
 import { completeOnboardingAction } from "./actions";
 
 export const metadata: Metadata = { title: "Gegevens aanvullen" };
@@ -105,15 +106,18 @@ export default async function OnboardingPage({
         ) : (
           <div>
             <label className="label" htmlFor="profession">
-              Beroep
+              Kwalificatie
             </label>
-            <input
-              className="input"
-              id="profession"
-              name="profession"
-              type="text"
-              placeholder="bijv. Verzorgende IG, Verpleegkundige niveau 4"
-            />
+            {/*
+              The same control the shift form uses, and for the same reason.
+              This was a free-text input, so it stored "Verzorgende IG" while
+              shifts store "verzorgende-ig-niveau-3" — and region matching
+              compares the two for equality. Every freelancer who signed up
+              through this screen was therefore invisible to every region-wide
+              shift, silently, on both sides. Two write paths for one column need
+              one control.
+            */}
+            <QualificationSelect name="profession" id="profession" />
             <p className="hint">Je kunt later specialisaties en documenten toevoegen.</p>
           </div>
         )}

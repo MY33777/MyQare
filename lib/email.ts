@@ -92,9 +92,32 @@ async function send(input: SendInput): Promise<boolean> {
     .join("\n");
 
   try {
-    await resend.emails.send({ from: FROM, to: input.to, subject: input.subject, html, text });
+    /*
+     * The SDK does not throw on a rejected send — a bad API key, an unverified
+     * domain, a suppressed address, a rate limit all come back as `{ error }`
+     * with the promise resolved. So this used to return true for every failure
+     * the try/catch was written to catch, and callers believed it.
+     *
+     * That belief has consequences downstream: the invoice-reminder cron marks a
+     * reminder as consumed on the strength of this boolean, so a whole run of
+     * failed sends permanently retires the reminders that were never delivered
+     * and reports success. The catch stays for transport-level failures.
+     */
+    const { error } = await resend.emails.send({
+      from: FROM,
+      to: input.to,
+      subject: input.subject,
+      html,
+      text,
+    });
+
+    if (error) {
+      console.error(`[email] send failed to ${input.to}: ${error.message ?? "unknown"}`);
+      return false;
+    }
     return true;
-  } catch {
+  } catch (cause) {
+    console.error(`[email] send threw for ${input.to}: ${String(cause)}`);
     return false;
   }
 }

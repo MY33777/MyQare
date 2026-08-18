@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/AppHeader";
@@ -38,6 +39,9 @@ type ShiftDetail = {
     id: string;
     status: string;
     accepted_at: string;
+    // Present once the freelancer submitted hours, which is the point after which
+    // cancelling would strand their pay. See lib/cancelActions.ts.
+    timesheets: { claimed_at: string | null } | null;
     /*
      * Phone comes from profile_contact, whose policy requires an actual assignment
      * with this facility (migration 004). The old rule lived only in JSX, so the
@@ -62,7 +66,7 @@ export default async function FacilityShiftDetailPage({
   const { data: shift } = await supabase
     .from("shifts")
     .select(
-      "id, profession, department, location, region, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, visibility, respond_by, shift_offers(id, response, responded_at, viewed_at, profiles(full_name)), assignments(id, status, accepted_at, profiles!assignments_freelancer_id_fkey(full_name, profile_contact(phone)))",
+      "id, profession, department, location, region, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, visibility, respond_by, shift_offers(id, response, responded_at, viewed_at, profiles(full_name)), assignments(id, status, accepted_at, timesheets(claimed_at), profiles!assignments_freelancer_id_fkey(full_name, profile_contact(phone)))",
     )
     .eq("id", id)
     .eq("org_id", org.id)
@@ -175,6 +179,19 @@ export default async function FacilityShiftDetailPage({
             Aangenomen op {formatDateTime(assignment.accepted_at)}
           </p>
 
+          {/*
+            Gone once hours are in. Cancelling then took the shift out of the
+            approval queue for good and left the freelancer unable to be paid for
+            work they had already done — see lib/cancelActions.ts. What is wanted
+            at that point is disputing the hours, not erasing the assignment.
+          */}
+          {assignment.timesheets ? (
+            <p className="text-sm mt-4" style={{ color: "var(--text-muted)" }}>
+              De uren zijn ingediend, dus deze dienst is gewerkt en kan niet meer worden
+              geannuleerd. Kloppen de uren niet? Stuur ze terug met een reden vanuit{" "}
+              <Link href="/zorginstelling/uren">Uren</Link>.
+            </p>
+          ) : (
           <details className="mt-4">
             <summary className="cursor-pointer text-sm font-semibold">Opdracht annuleren</summary>
             <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>
@@ -201,6 +218,7 @@ export default async function FacilityShiftDetailPage({
               </button>
             </form>
           </details>
+          )}
         </div>
       ) : null}
 

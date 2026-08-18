@@ -38,6 +38,19 @@ export async function updateProfileAction(formData: FormData) {
 
   const admin = getSupabaseAdmin();
 
+  /*
+   * What is stored now, so the update can tell a change from a no-op.
+   *
+   * Needed because "the BIG number changed" and "the BIG number was cleared" are
+   * different events with the same fix, and the code below could only see the
+   * second one.
+   */
+  const { data: current } = await admin
+    .from("freelancers")
+    .select("big_number")
+    .eq("profile_id", freelancer.userId)
+    .maybeSingle<{ big_number: string | null }>();
+
   await admin.from("profiles").update({ full_name: fullName }).eq("id", freelancer.userId);
 
   // Separate table, stricter policy — see migration 004.
@@ -50,14 +63,33 @@ export async function updateProfileAction(formData: FormData) {
     .update({
       kvk,
       big_number: bigNumber,
-      profession,
       region,
       bio,
       hourly_rate_min_cents: rateCents,
       vat_exempt: vatExempt,
-      // Cleared whenever the BIG number changes, since a verification refers to a
-      // specific number. Left to a human to re-confirm against bigregister.nl.
-      ...(bigNumber ? {} : { big_verified_at: null }),
+      /*
+       * A blank submission must not wipe a stored qualification.
+       *
+       * The select renders nothing selected when the stored value is not one of
+       * its slugs — which every freelancer onboarded before this had, because
+       * onboarding used to save free text — so the form posted "" and this wrote
+       * it. Someone editing their bio lost the credential shown to facilities.
+       */
+      ...(profession ? { profession } : {}),
+      /*
+       * Cleared whenever the BIG number CHANGES, since a verification refers to
+       * one specific number.
+       *
+       * That is what the comment here always said; what the code did was clear it
+       * only when the field was emptied. Editing 19012345678 into 19087654321
+       * therefore kept the old green "Geverifieerd" badge, and /beheer's queue —
+       * which lists numbers with no stamp — never showed it to anyone, because it
+       * had one. Facilities leaned on that badge for their own Wkkgz duty.
+       *
+       * A trigger enforces this in the database as well (migration 008); this
+       * stays so the intent is visible where the write happens.
+       */
+      ...(bigNumber && bigNumber === current?.big_number ? {} : { big_verified_at: null }),
     })
     .eq("profile_id", freelancer.userId);
 

@@ -7,6 +7,7 @@ import {
   qualificationsByCategory,
   searchQualifications,
 } from "@/lib/qualifications";
+import { qualificationMatches } from "@/lib/availability";
 
 /*
  * Integrity checks on generated data.
@@ -174,5 +175,43 @@ describe("findQualification", () => {
 
   it("returns undefined for an unknown slug", () => {
     expect(findQualification("bestaat-niet")).toBeUndefined();
+  });
+});
+
+describe("no two qualifications look the same", () => {
+  /*
+   * Every screen renders shortNl, so two entries sharing one means the dropdown
+   * offers two rows a human cannot tell apart — and the matching pool splits
+   * between them, invisibly, because the strings that differ are never shown.
+   * That is what RETIRED_SLUGS exists to have fixed; this is what keeps it fixed.
+   */
+  it("has a unique label for every entry", () => {
+    const labels = QUALIFICATIONS.map((q) => q.shortNl);
+    const duplicates = labels.filter((label, index) => labels.indexOf(label) !== index);
+    expect(duplicates).toEqual([]);
+  });
+
+  it("has a unique slug for every entry", () => {
+    const slugs = QUALIFICATIONS.map((q) => q.slug);
+    expect(new Set(slugs).size).toBe(slugs.length);
+  });
+
+  it("resolves a retired slug to the entry that replaced it", () => {
+    expect(qualificationLabel("hbo-fysiotherapie-bachelor")).toBe("Fysiotherapeut");
+    expect(isKnownQualification("hbo-verloskunde-bachelor")).toBe(true);
+    expect(findQualification("wo-tandheelkunde-tandarts")?.slug).toBe("tandarts");
+  });
+
+  it("keeps the CREBO the retired education entry carried", () => {
+    // The profession row had no code of its own; losing it would throw away the
+    // only part of the pair a facility could actually verify.
+    expect(findQualification("fysiotherapeut")?.crebo).toBe("34570");
+    expect(findQualification("verloskundige")?.crebo).toBe("34134");
+  });
+
+  it("matches a shift against either slug of a merged pair", () => {
+    expect(qualificationMatches("fysiotherapeut", "hbo-fysiotherapie-bachelor", [])).toBe(true);
+    expect(qualificationMatches("hbo-fysiotherapie-bachelor", "fysiotherapeut", [])).toBe(true);
+    expect(qualificationMatches("fysiotherapeut", "logopedist", [])).toBe(false);
   });
 });

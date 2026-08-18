@@ -42,6 +42,9 @@ const MESSAGES: Record<string, string> = {
   bad_type: "Alleen PDF of een foto (JPG, PNG, HEIC, WebP).",
   cannot_delete: "Dit document kan niet worden verwijderd. Goedgekeurde documenten blijven staan.",
   already_approved: "De uren zijn al goedgekeurd. Annuleren kan niet meer.",
+  hours_submitted:
+    "De uren voor deze opdracht zijn al ingediend, dus de dienst is gewerkt. Annuleren kan niet meer — keur de uren goed of stuur ze terug met een reden.",
+  assignment_cancelled: "Deze opdracht is geannuleerd. Er valt niets meer goed te keuren.",
   link_expired: "Deze link is verlopen of al gebruikt. Vraag een nieuwe aan.",
   hours_locked: "Deze uren zijn al goedgekeurd en kunnen niet meer worden aangepast. Neem contact op met de instelling.",
   unknown: "Er ging iets mis. Probeer het opnieuw.",
@@ -49,7 +52,14 @@ const MESSAGES: Record<string, string> = {
 
 export function authErrorMessage(code: string | undefined | null): string | null {
   if (!code) return null;
-  return MESSAGES[code] ?? MESSAGES.unknown;
+  /*
+   * Own-property lookup. A plain `MESSAGES[code]` resolves through the prototype
+   * chain, so `?error=constructor` returned a function and `?error=__proto__`
+   * returned an object — both truthy, so neither fell through to the fallback,
+   * and React then threw rendering a non-string where a message belonged. A
+   * blank 500 on a URL anyone can construct.
+   */
+  return Object.hasOwn(MESSAGES, code) ? MESSAGES[code] : MESSAGES.unknown;
 }
 
 /**

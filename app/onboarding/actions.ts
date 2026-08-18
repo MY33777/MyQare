@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { isKnownQualification } from "@/lib/qualifications";
 
 /**
  * Creates the application-level rows for a freshly confirmed account.
@@ -50,6 +51,21 @@ export async function completeOnboardingAction(formData: FormData) {
     redirect("/onboarding?error=invalid_role");
   }
   if (!fullName) redirect("/onboarding?error=missing_fields");
+
+  /*
+   * The column stores a slug, so only a slug may be written to it.
+   *
+   * The form used to take free text here, which meant this action wrote
+   * "Verzorgende IG" into the same column shifts fill with
+   * "verzorgende-ig-niveau-3". Region matching compares the two for equality, so
+   * everyone who onboarded through this screen was unreachable by every
+   * region-wide shift — the platform's only route beyond a facility's own pool —
+   * with no signal on either side. Validating here as well as swapping the input
+   * because the input is one refactor away from being a text field again.
+   */
+  if (role === "freelancer" && !isKnownQualification(profession)) {
+    redirect("/onboarding?error=missing_qualification");
+  }
   if (role === "facility_admin" && !orgName) redirect("/onboarding?error=org_name_required");
 
   let orgId: string | null = null;

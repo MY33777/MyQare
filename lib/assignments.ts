@@ -274,6 +274,14 @@ export async function approveTimesheet(
     p_fee_total_owed_cents: owedTotalCents,
   });
 
-  if (error) return { ok: false, reason: "unknown" };
+  if (error) {
+    // Named so the coordinator is told what happened rather than "Er ging iets
+    // mis". settle_timesheet raises this when the assignment was cancelled; see
+    // migration 008.
+    if ((error.message ?? "").toLowerCase().includes("geannuleerd")) {
+      return { ok: false, reason: "assignment_cancelled" };
+    }
+    return { ok: false, reason: "unknown" };
+  }
   return { ok: true };
 }

@@ -174,6 +174,39 @@ create table if not exists freelancers (
   created_at timestamptz not null default now()
 );
 
+/*
+ * A verification refers to one specific BIG number, so changing the number must
+ * withdraw the verification.
+ *
+ * This was documented in a comment above the profile write and not implemented:
+ * the stamp was cleared only when the field was EMPTIED, so editing it to a
+ * different number kept the old timestamp. /beheer's queue lists freelancers with
+ * a number and no stamp, so the altered number was filtered out of the only
+ * screen that would have caught it, while every facility in that person's pool
+ * kept showing a green "Geverifieerd" badge beside it.
+ *
+ * Enforced here as well as in the server action, because an invariant that
+ * depends on every future writer remembering it is how the original defect
+ * happened. See migration 008.
+ */
+create or replace function clear_big_verification_on_change()
+returns trigger
+language plpgsql
+as $fn$
+begin
+  if new.big_number is distinct from old.big_number then
+    new.big_verified_at := null;
+  end if;
+  return new;
+end;
+$fn$;
+
+drop trigger if exists freelancers_clear_big_verification on freelancers;
+create trigger freelancers_clear_big_verification
+  before update on freelancers
+  for each row
+  execute function clear_big_verification_on_change();
+
 create table if not exists documents (
   id uuid primary key default gen_random_uuid(),
   freelancer_id uuid not null references freelancers(profile_id) on delete cascade,
@@ -281,7 +314,12 @@ create table if not exists assignments (
   id uuid primary key default gen_random_uuid(),
   -- restrict, not cascade: deleting a shift must not erase an assignment, and
   -- through it an issued invoice and the compliance record. See migration 006.
-  shift_id uuid not null unique references shifts(id) on delete restrict,
+  --
+  -- Uniqueness is enforced by assignments_shift_id_active_idx below, not here.
+  -- A plain UNIQUE meant a cancelled assignment kept reserving its shift forever,
+  -- so the replacement freelancer's accept raised 23505 — which the UI could only
+  -- report as "Er ging iets mis". See migration 008.
+  shift_id uuid not null references shifts(id) on delete restrict,
   freelancer_id uuid not null references freelancers(profile_id) on delete cascade,
   org_id uuid not null references organisations(id) on delete cascade,
   -- Snapshotted from the shift at acceptance. If the facility later edits the
@@ -296,6 +334,12 @@ create table if not exists assignments (
     check (status in ('confirmed', 'completed', 'cancelled', 'disputed')),
   created_at timestamptz not null default now()
 );
+
+-- Exactly one LIVE assignment per shift. Cancelled rows drop out so the shift can
+-- be filled again; see migration 008 and cancel_assignment in functions.sql.
+create unique index if not exists assignments_shift_id_active_idx
+  on assignments (shift_id)
+  where status <> 'cancelled';
 
 create index if not exists assignments_freelancer_idx on assignments(freelancer_id, accepted_at desc);
 create index if not exists assignments_org_idx on assignments(org_id, accepted_at desc);

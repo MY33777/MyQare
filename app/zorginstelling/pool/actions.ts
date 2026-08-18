@@ -27,18 +27,35 @@ export async function addToPoolAction(formData: FormData) {
   /*
    * Looked up with the service role because a facility cannot read the profile of
    * someone not yet in its pool — which is the whole point of that policy. This
-   * is the one legitimate crossing, and it returns nothing except whether the
-   * account exists.
+   * is the one legitimate crossing, and it returns nothing except the id.
+   *
+   * A targeted lookup, not a listing. This used to pull one page of accounts and
+   * scan it in memory:
+   *
+   *     listUsers({ page: 1, perPage: 1000 })
+   *
+   * so only the first 1000 could ever be found — and GoTrue orders that endpoint
+   * created_at DESC, meaning the accounts that fell off the end were the
+   * LONGEST-TENURED. Exactly the people a facility already works with, which is
+   * who this form exists to add. They were told "Geen MyQare-account gevonden met
+   * dit e-mailadres", which the code had not established and which was false, and
+   * adding by email is the only door into a pool.
    */
-  const { data: users } = await service.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  const match = users?.users.find((user) => user.email?.toLowerCase() === email);
+  const { data: matchId, error: lookupError } = await service.rpc("lookup_account_by_email", {
+    p_email: email,
+  });
 
-  if (!match) redirect(`${POOL_PATH}?error=freelancer_not_found`);
+  /*
+   * A failed lookup is not a missing account. Saying "this account does not
+   * exist" is a claim, and it may only be made when it was actually established.
+   */
+  if (lookupError) redirect(`${POOL_PATH}?error=unknown`);
+  if (!matchId) redirect(`${POOL_PATH}?error=freelancer_not_found`);
 
   const { data: freelancer } = await service
     .from("freelancers")
     .select("profile_id")
-    .eq("profile_id", match.id)
+    .eq("profile_id", matchId as string)
     .maybeSingle<{ profile_id: string }>();
 
   if (!freelancer) redirect(`${POOL_PATH}?error=not_a_freelancer`);

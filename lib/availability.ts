@@ -9,6 +9,8 @@
  * makes it the worse error.
  */
 
+import { canonicalQualificationSlug } from "@/lib/qualifications";
+
 export type AvailabilityBlock = {
   id: string;
   starts_on: string;
@@ -87,6 +89,14 @@ export function qualificationMatches(
   specialisations: string[] | null | undefined,
 ): boolean {
   if (!required) return true;
-  if ((profession ?? "").trim() === required) return true;
-  return (specialisations ?? []).includes(required);
+
+  /*
+   * Both sides are canonicalised before comparing. Fourteen professions had two
+   * slugs for one thing — the education and the profession — so a shift posted as
+   * "fysiotherapeut" silently failed to reach everyone who had picked
+   * "hbo-fysiotherapie-bachelor", and vice versa. See RETIRED_SLUGS.
+   */
+  const want = canonicalQualificationSlug(required);
+  if (canonicalQualificationSlug((profession ?? "").trim()) === want) return true;
+  return (specialisations ?? []).some((slug) => canonicalQualificationSlug(slug) === want);
 }

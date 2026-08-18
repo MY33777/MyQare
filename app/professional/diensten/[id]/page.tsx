@@ -266,7 +266,13 @@ export default async function AssignmentDetailPage({
         Once hours are approved there is nothing to cancel; undoing that is a credit
         note, not a cancellation.
       */}
-      {assignment.status === "confirmed" && !sheet?.approved_at ? (
+      {/*
+        `!sheet`, not `!sheet?.approved_at`. Submitting hours is the record that
+        the shift was worked, and cancelling after that used to strand your own
+        pay — the assignment left the facility's approval queue permanently and
+        could never be invoiced. See lib/cancelActions.ts.
+      */}
+      {assignment.status === "confirmed" && !sheet ? (
         <details className="card p-5 mt-6">
           <summary className="cursor-pointer font-semibold">Dienst annuleren</summary>
           <p className="text-sm mt-3" style={{ color: "var(--text-muted)" }}>

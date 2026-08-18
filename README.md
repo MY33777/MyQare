@@ -34,12 +34,15 @@ is set there too.
 
 ## Status
 
-**Working:** project scaffold, full database schema with RLS on all 14 tables, the domain logic
-(fees, VAT, hours, ratings, invoice numbering) with 88 passing tests, authentication with roles,
-onboarding, and both dashboard shells.
+**Working:** the whole loop — posting shifts (single and recurring), fan-out to matching
+freelancers, accepting, timesheets, approval and fee settlement, invoice PDFs with the Dutch
+medical VAT exemption, Stripe top-ups, document upload and review, the compliance dossier export,
+and a public site. 16 tables with RLS, 165 Dutch healthcare qualifications, 239 passing tests.
 
-**Next:** posting a shift, the accept flow, timesheets, invoice PDF generation, Stripe top-ups,
-and the compliance dossier export. See [BUILD-SPEC.md](BUILD-SPEC.md) §4.
+**Not yet:** no Supabase project is provisioned, so nothing has run against a live database. The
+legal documents (privacy statement, terms, model agreement) are drafts and say so on the page.
+There is no account-deletion process, which migration 006 made a prerequisite. See
+[BUILD-SPEC.md](BUILD-SPEC.md) §9.
 
 ## Architecture notes worth knowing before you change anything
 
@@ -55,8 +58,17 @@ not invisible as one wrong number.
 **Authorization is not in the proxy.** `proxy.ts` does optimistic redirects and session refresh,
 nothing more. Next.js has a published proxy-bypass advisory covering every stable release
 including 16.2.12 (GHSA-6gpp-xcg3-4w24), with a fix only in preview builds. So the real gate is
-`lib/auth.ts`, called by every protected page and server action, with Postgres RLS as the
-backstop that holds even when app code is wrong.
+`lib/auth.ts`, called by every protected page and server action.
+
+**RLS is a read backstop, not a write one.** This used to say RLS held "even when app code is
+wrong", and believing it is what produced five separate defects: a row policy cannot pin which
+*columns* an update may touch, so `profiles_update` let anyone `PATCH {"role":"staff"}`,
+`timesheets_write` let a freelancer blank `approved_at` and re-arm a settled fee, and
+`assignments_update` let either party rewrite a billed amount. Migration 005 removed every write
+policy and revoked insert/update/delete from `authenticated` and `anon` on all sixteen tables.
+Every write now goes through the service role in a server action, which means write authorization
+lives entirely in `lib/auth.ts` and those actions — if one of them forgets its ownership check,
+nothing else catches it. Read policies still apply and are still the backstop for reads.
 
 **An undetermined VAT status blocks invoicing.** `lib/vat.ts` refuses rather than guessing.
 Defaulting an unknown to exempt would under-charge VAT on real invoices and surface in an audit —

@@ -54,6 +54,35 @@ export default async function DossierPage() {
         description="Per opdracht vastgelegd wie wat aanbood, wie accepteerde, en dat weigeren mogelijk was."
       />
 
+      {/*
+        A plain GET form, so the browser handles the download itself. A Server
+        Action cannot return a file — it returns data and would need a second
+        round trip to fetch the bytes.
+      */}
+      <form action="/zorginstelling/dossier/export" method="get" className="card p-4 mb-6">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="label" htmlFor="from">
+              Vanaf
+            </label>
+            <input className="input" id="from" name="from" type="date" />
+          </div>
+          <div>
+            <label className="label" htmlFor="to">
+              Tot en met
+            </label>
+            <input className="input" id="to" name="to" type="date" />
+          </div>
+          <button className="btn btn-primary" type="submit">
+            Exporteer als pdf
+          </button>
+        </div>
+        <p className="hint">
+          Laat de datums leeg voor het volledige dossier. Dit is het document dat je meestuurt als
+          er vragen komen over de inzet van zzp&apos;ers.
+        </p>
+      </form>
+
       <div className="card p-5 mb-6">
         <h2 className="font-bold mb-2">Waarom dit bestaat</h2>
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>

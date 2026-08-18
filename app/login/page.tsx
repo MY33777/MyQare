@@ -11,7 +11,7 @@ export default async function LoginPage({
   searchParams,
 }: {
   // Async in Next 16 — searchParams is a Promise and synchronous access was removed.
-  searchParams: Promise<{ next?: string; error?: string }>;
+  searchParams: Promise<{ next?: string; error?: string; reset?: string }>;
 }) {
   const params = await searchParams;
   const error = authErrorMessage(params.error);
@@ -27,6 +27,9 @@ export default async function LoginPage({
         </>
       }
     >
+      {params.reset ? (
+        <FormMessage kind="ok">Je wachtwoord is aangepast. Log in met je nieuwe wachtwoord.</FormMessage>
+      ) : null}
       {error ? <FormMessage kind="error">{error}</FormMessage> : null}
 
       <form action={signInAction} className="space-y-4">
@@ -59,6 +62,9 @@ export default async function LoginPage({
             autoComplete="current-password"
             required
           />
+          <p className="hint">
+            <Link href="/wachtwoord-vergeten">Wachtwoord vergeten?</Link>
+          </p>
         </div>
 
         <button className="btn btn-primary w-full" type="submit">

@@ -1,3 +1,5 @@
+import { QUALIFICATION_DATA } from "@/lib/qualifications.data";
+
 /*
  * The controlled vocabulary of Dutch healthcare qualifications.
  *
@@ -8,14 +10,18 @@
  * Gezondheidszorg" are one qualification and four strings.
  *
  * A missing entry means a real professional cannot describe themselves, so the
- * list errs toward completeness.
+ * list errs toward completeness: 170 entries covering MBO niveau 1 through WO
+ * specialisms and post-initial nursing specialisations.
  *
- * NOTE ON big_status: whether a qualification leads to a Wet BIG registration
- * decides both what a facility must verify and, indirectly, how lib/vat.ts treats
- * the invoice. It is recorded per qualification but never used to *decide* VAT
- * automatically — that stays an explicit per-freelancer determination, because
- * the exemption depends on what the person actually did on the shift, not only on
- * their diploma.
+ * The data lives in the generated lib/qualifications.data.ts. That file imports
+ * only the TYPE from here, which is erased at compile time, so there is no runtime
+ * cycle — and no registration side effect to get the ordering of wrong.
+ *
+ * NOTE ON bigStatus: whether a qualification leads to a Wet BIG registration
+ * decides what a facility must verify. It is recorded per qualification but never
+ * used to *decide* VAT automatically — that stays an explicit per-freelancer
+ * determination in lib/vat.ts, because the exemption depends on what the person
+ * actually did on the shift, not only on their diploma.
  */
 
 export type QualificationCategory =
@@ -40,7 +46,13 @@ export type Qualification = {
   category: QualificationCategory;
   /** Human label: "MBO niveau 3", "HBO bachelor", "Specialisatie". */
   levelLabel: string;
-  mboLevel?: 1 | 2 | 3 | 4;
+  mboLevel?: number;
+  /**
+   * CREBO (MBO) or CROHO (HBO) code, present ONLY where a verifier could confirm
+   * it against S-BB or DUO. A missing code is deliberate — a facility may look it
+   * up, and a wrong code is worse than none.
+   */
+  crebo?: string;
   bigStatus: BigStatus;
   /** Where this qualification typically works — used to suggest, never to restrict. */
   settings: string[];
@@ -55,24 +67,21 @@ export const CATEGORY_LABELS: Record<QualificationCategory, string> = {
   specialisatie: "Specialisatie",
 };
 
+export const BIG_STATUS_LABELS: Record<BigStatus, string> = {
+  big_artikel_3: "BIG-geregistreerd (artikel 3)",
+  big_artikel_34: "Beschermde opleidingstitel (artikel 34)",
+  geen_big: "Geen BIG-registratie",
+  onbekend: "Onbekend",
+};
+
 /**
- * Ordered so the most commonly hired roles come first within each category. A
- * coordinator filling tomorrow's night shift should reach Verzorgende IG and
- * Verpleegkundige without scrolling.
+ * Ordered so the most commonly hired roles come first within each category — a
+ * coordinator filling tomorrow's night shift reaches Verzorgende IG and
+ * Verpleegkundige without scrolling. The ordering is applied by the generator.
  */
-export const QUALIFICATIONS: Qualification[] = [
-  // Populated by lib/qualifications.data.ts — see the generated file.
-];
+export const QUALIFICATIONS: Qualification[] = QUALIFICATION_DATA;
 
-const BY_SLUG = new Map<string, Qualification>();
-
-/** Registers the taxonomy. Called once at module load by the data file. */
-export function registerQualifications(list: Qualification[]): void {
-  QUALIFICATIONS.length = 0;
-  QUALIFICATIONS.push(...list);
-  BY_SLUG.clear();
-  for (const q of list) BY_SLUG.set(q.slug, q);
-}
+const BY_SLUG = new Map(QUALIFICATIONS.map((q) => [q.slug, q]));
 
 export function findQualification(slug: string): Qualification | undefined {
   return BY_SLUG.get(slug);
@@ -89,7 +98,11 @@ export function isKnownQualification(slug: string): boolean {
 }
 
 /** Grouped for an <optgroup> dropdown, in category order. */
-export function qualificationsByCategory(): { category: QualificationCategory; label: string; items: Qualification[] }[] {
+export function qualificationsByCategory(): {
+  category: QualificationCategory;
+  label: string;
+  items: Qualification[];
+}[] {
   const order: QualificationCategory[] = [
     "mbo_verpleging_verzorging",
     "mbo_welzijn_begeleiding",
@@ -110,8 +123,8 @@ export function qualificationsByCategory(): { category: QualificationCategory; l
 /**
  * Substring search across name, short name and aliases.
  *
- * Aliases carry the weight here: someone typing "VIG" or "HBO-V" or "MBO-V" is
- * using an abbreviation that appears in no official name.
+ * Aliases carry the weight here: someone typing "VIG", "HBO-V" or "MBO-V" is using
+ * an abbreviation that appears in no official name.
  */
 export function searchQualifications(query: string, limit = 20): Qualification[] {
   const needle = query.trim().toLowerCase();
@@ -122,11 +135,9 @@ export function searchQualifications(query: string, limit = 20): Qualification[]
     return haystack.includes(needle);
   });
 
-  // Exact short-name matches first, then prefix matches, then the rest — so
-  // typing "verpleegkundige" does not bury the plain one under every specialism.
-  return matches
-    .sort((a, b) => rankMatch(a, needle) - rankMatch(b, needle))
-    .slice(0, limit);
+  // Exact short-name matches first, then prefix matches, then the rest — so typing
+  // "verpleegkundige" does not bury the plain one under every specialism.
+  return matches.sort((a, b) => rankMatch(a, needle) - rankMatch(b, needle)).slice(0, limit);
 }
 
 function rankMatch(q: Qualification, needle: string): number {

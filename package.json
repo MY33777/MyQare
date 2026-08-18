@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "seed": "tsx scripts/seed.mts",
+    "seed:reset": "tsx scripts/seed.mts --reset",
+    "preview:invoice": "tsx scripts/preview-invoice.mts"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^6.8.0",

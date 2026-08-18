@@ -1,0 +1,263 @@
+/*
+ * Seeds a Supabase project with a working demo of the whole loop.
+ *
+ * Exists because every page in this app renders an empty state until real rows
+ * exist, and hand-creating a verified facility, a pool, a shift and an accepted
+ * assignment through the UI takes twenty minutes of clicking before you can look
+ * at anything.
+ *
+ * Usage:
+ *   npx tsx scripts/seed.mts            # create demo data
+ *   npx tsx scripts/seed.mts --reset    # delete the demo accounts first
+ *
+ * Needs NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local.
+ *
+ * SAFETY: only ever touches accounts under @myqare-demo.local. It will not delete
+ * a real user, and --reset is scoped to that domain.
+ */
+
+import { readFileSync } from "node:fs";
+import { createClient } from "@supabase/supabase-js";
+
+// Minimal .env.local reader — tsx does not load it, and pulling in dotenv for one
+// script is not worth the dependency.
+function loadEnv() {
+  try {
+    for (const line of readFileSync(".env.local", "utf8").split("\n")) {
+      const match = /^([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line.trim());
+      if (!match) continue;
+      const value = match[2].replace(/^["']|["']$/g, "");
+      if (!process.env[match[1]]) process.env[match[1]] = value;
+    }
+  } catch {
+    // No .env.local; rely on the ambient environment.
+  }
+}
+
+loadEnv();
+
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!url || !key || url.includes("placeholder") || url.includes("ph.supabase")) {
+  console.error(
+    "Need a real NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local.\n" +
+      "Create the Supabase project, run supabase/schema.sql then supabase/functions.sql, and fill these in.",
+  );
+  process.exit(1);
+}
+
+const db = createClient(url, key, { auth: { persistSession: false } });
+
+const DOMAIN = "myqare-demo.local";
+const PASSWORD = "demo-Wachtwoord-123";
+
+const PEOPLE = {
+  facility: { email: `coordinator@${DOMAIN}`, name: "Sanne Bakker" },
+  staff: { email: `beheer@${DOMAIN}`, name: "MyQare Beheer" },
+  freelancers: [
+    { email: `vig1@${DOMAIN}`, name: "Jamal el Amrani", qualification: "verzorgende-ig-niveau-3", vatExempt: true },
+    { email: `vig2@${DOMAIN}`, name: "Femke de Groot", qualification: "verzorgende-ig-niveau-3", vatExempt: true },
+    { email: `vpk@${DOMAIN}`, name: "Peter Janssen", qualification: "mbo-verpleegkundige-niveau-4", vatExempt: true },
+    { email: `helpende@${DOMAIN}`, name: "Aylin Yıldız", qualification: "helpende-zorg-en-welzijn-niveau-2", vatExempt: false },
+  ],
+};
+
+async function findUserByEmail(email: string): Promise<string | null> {
+  const { data } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  return data?.users.find((user) => user.email === email)?.id ?? null;
+}
+
+async function ensureUser(email: string): Promise<string> {
+  const existing = await findUserByEmail(email);
+  if (existing) return existing;
+
+  const { data, error } = await db.auth.admin.createUser({
+    email,
+    password: PASSWORD,
+    // Confirmed outright: there is no inbox behind @myqare-demo.local, and the
+    // point is to be able to sign in immediately.
+    email_confirm: true,
+  });
+  if (error || !data.user) throw new Error(`createUser ${email}: ${error?.message}`);
+  return data.user.id;
+}
+
+async function reset() {
+  const { data } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const demo = (data?.users ?? []).filter((user) => user.email?.endsWith(`@${DOMAIN}`));
+
+  for (const user of demo) {
+    // Everything else cascades from profiles -> auth.users.
+    await db.auth.admin.deleteUser(user.id);
+    console.log(`  deleted ${user.email}`);
+  }
+
+  // Organisations have no owning user to cascade from.
+  await db.from("organisations").delete().eq("name", "Zorggroep De Maasoever (demo)");
+  console.log(`Reset complete: ${demo.length} demo accounts removed.`);
+}
+
+async function seed() {
+  console.log("Seeding…");
+
+  // ---- organisation, already verified so it can post immediately ----
+  const { data: org, error: orgError } = await db
+    .from("organisations")
+    .insert({
+      name: "Zorggroep De Maasoever (demo)",
+      kvk: "12345678",
+      billing_email: `crediteuren@${DOMAIN}`,
+      address_line: "Zorglaan 8",
+      postcode: "3021 BB",
+      city: "Rotterdam",
+      verified_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (orgError || !org) throw new Error(`organisation: ${orgError?.message}`);
+  console.log(`  organisation ${org.id}`);
+
+  // ---- facility admin ----
+  const facilityId = await ensureUser(PEOPLE.facility.email);
+  await db.from("profiles").upsert({
+    id: facilityId,
+    role: "facility_admin",
+    org_id: org.id,
+    full_name: PEOPLE.facility.name,
+    phone: "010-1234567",
+  });
+  console.log(`  facility admin ${PEOPLE.facility.email}`);
+
+  // ---- staff ----
+  const staffId = await ensureUser(PEOPLE.staff.email);
+  await db.from("profiles").upsert({
+    id: staffId,
+    role: "staff",
+    org_id: null,
+    full_name: PEOPLE.staff.name,
+  });
+  console.log(`  staff ${PEOPLE.staff.email}`);
+
+  // ---- freelancers, in the pool, with balance ----
+  const freelancerIds: string[] = [];
+
+  for (const person of PEOPLE.freelancers) {
+    const id = await ensureUser(person.email);
+    freelancerIds.push(id);
+
+    await db.from("profiles").upsert({
+      id,
+      role: "freelancer",
+      org_id: null,
+      full_name: person.name,
+      phone: "06-12345678",
+    });
+
+    await db.from("freelancers").upsert({
+      profile_id: id,
+      kvk: "87654321",
+      big_number: person.qualification.includes("verpleegkundige") ? "19012345678" : null,
+      profession: person.qualification,
+      region: "Rotterdam-Rijnmond",
+      hourly_rate_min_cents: 4000,
+      vat_exempt: person.vatExempt,
+      bio: "Demo-account.",
+    });
+
+    await db.from("pools").upsert(
+      { org_id: org.id, freelancer_id: id, status: "member" },
+      { onConflict: "org_id,freelancer_id" },
+    );
+
+    // €200 of balance, enough to accept several shifts before topping up.
+    await db.from("credit_ledger").insert({
+      profile_id: id,
+      delta_cents: 20_000,
+      reason: "manual",
+      note: "Demo-saldo",
+    });
+
+    console.log(`  freelancer ${person.email} (${person.qualification})`);
+  }
+
+  // First freelancer is a favourite, so the 'stars' visibility has something to hit.
+  await db
+    .from("pools")
+    .update({ status: "star" })
+    .eq("org_id", org.id)
+    .eq("freelancer_id", freelancerIds[0]);
+
+  // ---- shifts across the next fortnight ----
+  const now = Date.now();
+  const day = 86_400_000;
+
+  const shifts = [
+    { inDays: 2, hour: 7, hours: 8, qualification: "verzorgende-ig-niveau-3", dept: "Somatiek", rate: 4250 },
+    { inDays: 3, hour: 15, hours: 8, qualification: "verzorgende-ig-niveau-3", dept: "PG afdeling", rate: 4500 },
+    { inDays: 4, hour: 23, hours: 8, qualification: "mbo-verpleegkundige-niveau-4", dept: "Nachtdienst", rate: 5200 },
+    { inDays: 7, hour: 8, hours: 6, qualification: "helpende-zorg-en-welzijn-niveau-2", dept: "Huiskamer", rate: 3200 },
+  ];
+
+  for (const spec of shifts) {
+    const startsAt = new Date(now + spec.inDays * day);
+    startsAt.setUTCHours(spec.hour - 2, 0, 0, 0); // rough CEST offset; demo data only
+    const endsAt = new Date(startsAt.getTime() + spec.hours * 3_600_000);
+
+    const { data: shift } = await db
+      .from("shifts")
+      .insert({
+        org_id: org.id,
+        created_by: facilityId,
+        profession: spec.qualification,
+        department: spec.dept,
+        location: "Zorggroep De Maasoever",
+        region: "Rotterdam",
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        hourly_rate_cents: spec.rate,
+        break_minutes: 30,
+        visibility: "pool",
+        status: "open",
+        respond_by: new Date(startsAt.getTime() - day).toISOString(),
+      })
+      .select("id")
+      .single<{ id: string }>();
+
+    if (!shift) continue;
+
+    // Offer to everyone holding the qualification, mirroring the real fan-out.
+    const matching = PEOPLE.freelancers
+      .map((person, index) => ({ person, id: freelancerIds[index] }))
+      .filter(({ person }) => person.qualification === spec.qualification);
+
+    if (matching.length > 0) {
+      await db.from("shift_offers").insert(
+        matching.map(({ id }) => ({
+          shift_id: shift.id,
+          freelancer_id: id,
+          notified_at: new Date().toISOString(),
+        })),
+      );
+    }
+
+    console.log(`  shift ${spec.dept} in ${spec.inDays}d → ${matching.length} offered`);
+  }
+
+  console.log(`
+Done.
+
+  Facility   ${PEOPLE.facility.email}
+  Staff      ${PEOPLE.staff.email}
+  Freelancer ${PEOPLE.freelancers[0].email}
+  Password   ${PASSWORD}
+
+Sign in and accept a shift as the freelancer to exercise the full loop.`);
+}
+
+if (process.argv.includes("--reset")) {
+  await reset();
+} else {
+  await seed();
+}

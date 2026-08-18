@@ -6,6 +6,7 @@ import { QualificationSelect } from "@/components/QualificationSelect";
 import { authErrorMessage } from "@/lib/authErrors";
 import { requireFacilityAdmin } from "@/lib/auth";
 import { VISIBILITY_LABELS } from "@/lib/shifts";
+import { MAX_OCCURRENCES, RECURRENCE_LABELS } from "@/lib/recurrence";
 import { createShiftAction } from "./actions";
 
 export const metadata: Metadata = { title: "Dienst plaatsen" };
@@ -124,6 +125,49 @@ export default async function NewShiftPage({
             Zorgprofessionals die je hebt verborgen krijgen deze dienst nooit te zien, ook niet bij
             een regio-aanbod.
           </p>
+        </div>
+
+        {/*
+          Both fields always visible rather than revealed by the pattern. It keeps
+          this a server component, and "hoe vaak" next to "herhalen" reads as one
+          question — which is how a coordinator thinks about a week of nights.
+        */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="label" htmlFor="repeat_pattern">
+              Herhalen
+            </label>
+            <select
+              className="select"
+              id="repeat_pattern"
+              name="repeat_pattern"
+              defaultValue="none"
+            >
+              {Object.entries(RECURRENCE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label" htmlFor="repeat_count">
+              Aantal diensten
+            </label>
+            <input
+              className="input"
+              id="repeat_count"
+              name="repeat_count"
+              type="number"
+              min={1}
+              max={MAX_OCCURRENCES}
+              defaultValue={1}
+            />
+            <p className="hint">
+              Inclusief deze eerste dienst, maximaal {MAX_OCCURRENCES}. Elke dienst krijgt zijn
+              eigen reactietermijn.
+            </p>
+          </div>
         </div>
 
         <div>

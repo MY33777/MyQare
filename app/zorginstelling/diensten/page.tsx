@@ -33,7 +33,7 @@ function statusBadgeClass(status: string): string {
 export default async function ShiftsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ created?: string; offered?: string }>;
+  searchParams: Promise<{ created?: string; offered?: string; shifts?: string; failed?: string }>;
 }) {
   const { org } = await requireFacilityAdmin("/zorginstelling/diensten");
   const params = await searchParams;
@@ -49,7 +49,9 @@ export default async function ShiftsPage({
     .limit(60)
     .returns<ShiftRow[]>();
 
-  const offered = params.created ? Number(params.offered ?? 0) : null;
+  const posted = params.created !== undefined ? Number(params.shifts ?? 0) : null;
+  const offered = Number(params.offered ?? 0);
+  const failed = Number(params.failed ?? 0);
 
   return (
     <>
@@ -65,11 +67,12 @@ export default async function ShiftsPage({
         }
       />
 
-      {offered !== null ? (
+      {posted !== null ? (
         offered > 0 ? (
           <FormMessage kind="ok">
-            Dienst geplaatst en aangeboden aan {offered}{" "}
-            {offered === 1 ? "zorgprofessional" : "zorgprofessionals"}.
+            {posted === 1 ? "Dienst" : `${posted} diensten`} geplaatst, samen {offered} keer
+            aangeboden.
+            {failed > 0 ? ` ${failed} dienst(en) konden niet worden geplaatst.` : ""}
           </FormMessage>
         ) : (
           /*

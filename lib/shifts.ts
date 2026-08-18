@@ -94,6 +94,63 @@ export async function createShiftWithOffers(input: NewShift): Promise<FanOutResu
   return { shiftId: shift.id, offeredTo: recipients.length };
 }
 
+export type SeriesResult = {
+  created: number;
+  failed: number;
+  offeredTotal: number;
+  firstShiftId: string | null;
+};
+
+/**
+ * Creates a run of shifts from one form submission.
+ *
+ * Sequential rather than parallel. Posting a week of nights fans out an email per
+ * shift per pool member, and firing all of that at once is the fastest way to get
+ * a sending domain rate-limited — which would drop notifications silently, the one
+ * failure mode this product cannot tolerate.
+ *
+ * Partial success is reported rather than rolled back. Six shifts posted out of
+ * seven is a useful outcome the coordinator can finish by hand; throwing all six
+ * away because the seventh clashed is not.
+ */
+export async function createShiftSeries(
+  base: Omit<NewShift, "startsAt" | "endsAt" | "respondBy">,
+  occurrences: { startsAt: string; endsAt: string }[],
+  /**
+   * An explicit deadline chosen by the coordinator, applied to every occurrence.
+   * Null means derive one per shift.
+   *
+   * Deriving per shift matters: a single respond-by taken from the first
+   * occurrence would already be in the past for every later one, so a week of
+   * nights would post with six shifts nobody could accept.
+   */
+  explicitRespondBy: string | null,
+): Promise<SeriesResult> {
+  let created = 0;
+  let failed = 0;
+  let offeredTotal = 0;
+  let firstShiftId: string | null = null;
+
+  for (const occurrence of occurrences) {
+    try {
+      const result = await createShiftWithOffers({
+        ...base,
+        startsAt: occurrence.startsAt,
+        endsAt: occurrence.endsAt,
+        respondBy:
+          explicitRespondBy ?? defaultRespondBy(new Date(occurrence.startsAt)).toISOString(),
+      });
+      created++;
+      offeredTotal += result.offeredTo;
+      if (!firstShiftId) firstShiftId = result.shiftId;
+    } catch {
+      failed++;
+    }
+  }
+
+  return { created, failed, offeredTotal, firstShiftId };
+}
+
 /**
  * Emails everyone the shift was offered to.
  *

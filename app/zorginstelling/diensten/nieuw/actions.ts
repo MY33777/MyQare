@@ -6,7 +6,8 @@ import { getFacilityAdmin } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { parseEurosToCents } from "@/lib/money";
 import { localInputToIso } from "@/lib/timezone";
-import { createShiftWithOffers, defaultRespondBy, type ShiftVisibility } from "@/lib/shifts";
+import { createShiftSeries, type ShiftVisibility } from "@/lib/shifts";
+import { expandRecurrence, type RecurrencePattern } from "@/lib/recurrence";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 const NEW_SHIFT_PATH = "/zorginstelling/diensten/nieuw";
@@ -53,10 +54,11 @@ export async function createShiftAction(formData: FormData) {
     redirect(`${NEW_SHIFT_PATH}?error=invalid_visibility`);
   }
 
+  // Null means "derive one per occurrence" — see createShiftSeries. A single
+  // deadline across a repeating series would already have passed for every shift
+  // after the first.
   const respondByInput = String(formData.get("respond_by") ?? "").trim();
-  const respondBy = respondByInput
-    ? localInputToIso(respondByInput)
-    : defaultRespondBy(new Date(startsAt)).toISOString();
+  const explicitRespondBy = respondByInput ? localInputToIso(respondByInput) : null;
 
   /*
    * Region defaults to the organisation's city. Editable, because a facility near
@@ -72,27 +74,57 @@ export async function createShiftAction(formData: FormData) {
 
   const region = String(formData.get("region") ?? "").trim() || org?.city || null;
 
-  const result = await createShiftWithOffers({
-    orgId: admin.org.id,
-    createdBy: admin.userId,
-    qualification,
-    department: String(formData.get("department") ?? "").trim() || null,
-    location: String(formData.get("location") ?? "").trim() || null,
-    startsAt,
-    endsAt,
-    hourlyRateCents: rateCents,
-    breakMinutes: Math.round(breakMinutes),
-    description: String(formData.get("description") ?? "").trim() || null,
-    visibility,
-    respondBy,
-    region,
-  });
+  /*
+   * One submission can produce a run of shifts — a ward covering a week of nights
+   * would otherwise fill this form seven times. Expanded here rather than in the
+   * database because each occurrence re-resolves its wall clock through the
+   * timezone conversion, which is what keeps a 23:00 shift at 23:00 across the
+   * clock change (see lib/recurrence.ts).
+   */
+  const pattern = String(formData.get("repeat_pattern") ?? "none") as RecurrencePattern;
+  const count = Number(formData.get("repeat_count") ?? 1);
+
+  const validPattern = ["none", "daily", "weekdays", "weekly"].includes(pattern)
+    ? pattern
+    : "none";
+
+  const occurrences = expandRecurrence(
+    String(formData.get("starts_at") ?? ""),
+    String(formData.get("ends_at") ?? ""),
+    validPattern,
+    Number.isFinite(count) ? count : 1,
+  );
+
+  if (occurrences.length === 0) redirect(`${NEW_SHIFT_PATH}?error=invalid_times`);
+
+  const result = await createShiftSeries(
+    {
+      orgId: admin.org.id,
+      createdBy: admin.userId,
+      qualification,
+      department: String(formData.get("department") ?? "").trim() || null,
+      location: String(formData.get("location") ?? "").trim() || null,
+      hourlyRateCents: rateCents,
+      breakMinutes: Math.round(breakMinutes),
+      description: String(formData.get("description") ?? "").trim() || null,
+      visibility,
+      region,
+    },
+    occurrences,
+    explicitRespondBy,
+  );
 
   revalidatePath("/zorginstelling");
   revalidatePath("/zorginstelling/diensten");
 
-  // The offered count rides along in the query string so the list page can say
-  // "aangeboden aan 7 zorgprofessionals" — posting into an empty pool is the most
-  // common early mistake and it should be visible immediately, not silent.
-  redirect(`/zorginstelling/diensten?created=${result.shiftId}&offered=${result.offeredTo}`);
+  // The counts ride along in the query string so the list page can say "aangeboden
+  // aan 7 zorgprofessionals" — posting into an empty pool is the most common early
+  // mistake and it should be visible immediately, not silent.
+  const params = new URLSearchParams({
+    created: result.firstShiftId ?? "",
+    offered: String(result.offeredTotal),
+    shifts: String(result.created),
+    failed: String(result.failed),
+  });
+  redirect(`/zorginstelling/diensten?${params.toString()}`);
 }

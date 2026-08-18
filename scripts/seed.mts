@@ -87,15 +87,46 @@ async function reset() {
   const { data } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
   const demo = (data?.users ?? []).filter((user) => user.email?.endsWith(`@${DOMAIN}`));
 
+  let removed = 0;
+  let kept = 0;
+
   for (const user of demo) {
-    // Everything else cascades from profiles -> auth.users.
-    await db.auth.admin.deleteUser(user.id);
-    console.log(`  deleted ${user.email}`);
+    /*
+     * Most things cascade from auth.users, but invoices and compliance_records now
+     * hold assignments with 'on delete restrict' (migration 006) — a record of
+     * money or evidence should not vanish because the person was tidied up. So a
+     * demo account that has been invoiced cannot be deleted, and that is reported
+     * rather than swallowed.
+     */
+    const { error } = await db.auth.admin.deleteUser(user.id);
+    if (error) {
+      kept++;
+      console.log(`  KEPT    ${user.email} — ${error.message}`);
+      console.log("          (most likely has an invoice; those are retained by design)");
+    } else {
+      removed++;
+      console.log(`  deleted ${user.email}`);
+    }
   }
 
-  // Organisations have no owning user to cascade from.
-  await db.from("organisations").delete().eq("name", "Zorggroep De Maasoever (demo)");
-  console.log(`Reset complete: ${demo.length} demo accounts removed.`);
+  // Organisations have no owning user to cascade from. This can also refuse now,
+  // if a shift under it still carries an assignment.
+  const { error: orgError } = await db
+    .from("organisations")
+    .delete()
+    .eq("name", "Zorggroep De Maasoever (demo)");
+
+  if (orgError) {
+    console.log(`  KEPT    the demo organisation — ${orgError.message}`);
+  }
+
+  console.log(`\nReset: ${removed} removed, ${kept} kept.`);
+  if (kept > 0) {
+    console.log(
+      "Accounts with invoices cannot be deleted. That is deliberate — see migration 006.\n" +
+        "To start completely clean, drop and recreate the Supabase project.",
+    );
+  }
 }
 
 async function seed() {
@@ -126,8 +157,12 @@ async function seed() {
     role: "facility_admin",
     org_id: org.id,
     full_name: PEOPLE.facility.name,
-    phone: "010-1234567",
   });
+
+  // Phone lives in its own table with a stricter policy (migrations 004 and 006).
+  await db
+    .from("profile_contact")
+    .upsert({ profile_id: facilityId, phone: "010-1234567" }, { onConflict: "profile_id" });
   console.log(`  facility admin ${PEOPLE.facility.email}`);
 
   // ---- staff ----
@@ -152,8 +187,11 @@ async function seed() {
       role: "freelancer",
       org_id: null,
       full_name: person.name,
-      phone: "06-12345678",
     });
+
+    await db
+      .from("profile_contact")
+      .upsert({ profile_id: id, phone: "06-12345678" }, { onConflict: "profile_id" });
 
     await db.from("freelancers").upsert({
       profile_id: id,

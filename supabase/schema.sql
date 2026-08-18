@@ -77,7 +77,9 @@ create table if not exists profiles (
   -- admin's profile and one of the two has to be written first.
   org_id uuid references organisations(id) on delete set null,
   full_name text not null default '',
-  phone text,
+  -- No phone column, deliberately. It lives in profile_contact below, because
+  -- profiles_select returns the WHOLE ROW to any facility with this person in its
+  -- pool and a row policy cannot pin columns. See migrations 004 and 006.
   created_at timestamptz not null default now()
 );
 
@@ -274,7 +276,9 @@ create index if not exists shift_offers_freelancer_idx on shift_offers(freelance
 
 create table if not exists assignments (
   id uuid primary key default gen_random_uuid(),
-  shift_id uuid not null unique references shifts(id) on delete cascade,
+  -- restrict, not cascade: deleting a shift must not erase an assignment, and
+  -- through it an issued invoice and the compliance record. See migration 006.
+  shift_id uuid not null unique references shifts(id) on delete restrict,
   freelancer_id uuid not null references freelancers(profile_id) on delete cascade,
   org_id uuid not null references organisations(id) on delete cascade,
   -- Snapshotted from the shift at acceptance. If the facility later edits the
@@ -313,7 +317,8 @@ create table if not exists timesheets (
 
 create table if not exists invoices (
   id uuid primary key default gen_random_uuid(),
-  assignment_id uuid not null unique references assignments(id) on delete cascade,
+  -- restrict: an issued invoice is a financial record and outlives its assignment.
+  assignment_id uuid not null unique references assignments(id) on delete restrict,
   -- Human-facing sequential number, unique per freelancer per year. The Dutch
   -- tax authority expects an unbroken series per invoicing party, and the
   -- invoicing party here is the freelancer, not MyQare — we generate the
@@ -449,7 +454,9 @@ create index if not exists ratings_assignment_idx on ratings(assignment_id);
  * freelancer edits their profile two years later.
  */
 create table if not exists compliance_records (
-  assignment_id uuid primary key references assignments(id) on delete cascade,
+  -- restrict: this is the evidence the product exists to produce, and it must
+  -- survive precisely when somebody would rather it did not.
+  assignment_id uuid primary key references assignments(id) on delete restrict,
   model_agreement_version text not null,
   offered_at timestamptz not null,
   accepted_at timestamptz not null,

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import { EmptyState, PageHeader } from "@/components/AppHeader";
 import { FormMessage } from "@/components/AuthShell";
@@ -96,7 +97,11 @@ export default async function PoolPage({
             <tbody>
               {active.map((row) => (
                 <tr key={row.freelancer_id}>
-                  <td className="font-medium">{row.profiles?.full_name ?? "—"}</td>
+                  <td className="font-medium">
+                    <Link href={`/zorginstelling/pool/${row.freelancer_id}`}>
+                      {row.profiles?.full_name ?? "—"}
+                    </Link>
+                  </td>
                   <td>{qualificationLabel(row.freelancers?.profession)}</td>
                   <td>
                     {row.freelancers?.big_verified_at ? (

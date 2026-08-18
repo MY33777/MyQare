@@ -586,9 +586,23 @@ create policy documents_select on documents for select
     or is_staff()
     or (
       status = 'approved'
-      and exists (
-        select 1 from assignments a
-        where a.freelancer_id = documents.freelancer_id and a.org_id = current_org_id()
+      and (
+        exists (
+          select 1 from assignments a
+          where a.freelancer_id = documents.freelancer_id and a.org_id = current_org_id()
+        )
+        -- Pool membership counts too. Wkkgz obliges a facility to check
+        -- qualifications BEFORE engaging someone, and requiring an assignment
+        -- first made that check possible only once it was already too late.
+        -- Reading the row is not reading the file: the bucket is private, so
+        -- file_path is inert without a signed URL, and server code only mints
+        -- those where a real working relationship exists.
+        or exists (
+          select 1 from pools p
+          where p.freelancer_id = documents.freelancer_id
+            and p.org_id = current_org_id()
+            and p.status <> 'hidden'
+        )
       )
     )
   );

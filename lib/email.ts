@@ -175,6 +175,54 @@ export async function sendTimesheetSubmittedEmail(input: {
   });
 }
 
+export async function sendInvoiceReminderEmail(input: {
+  to: string;
+  facilityName: string;
+  freelancerName: string;
+  invoiceNumber: string;
+  totalCents: number;
+  daysOverdue: number;
+}): Promise<boolean> {
+  const dayWord = input.daysOverdue === 1 ? "dag" : "dagen";
+  return send({
+    to: input.to,
+    subject: `Herinnering: factuur ${input.invoiceNumber} is vervallen`,
+    heading: `Factuur ${input.invoiceNumber} staat nog open`,
+    body: [
+      `De factuur van ${input.freelancerName} van ${formatEuros(input.totalCents)} is ${input.daysOverdue} ${dayWord} over de vervaldatum.`,
+      // Said plainly, because the money is theirs and not ours — a facility that
+      // thinks it owes a platform treats the bill differently from one it owes a
+      // person who worked a night shift.
+      "MyQare int deze factuur niet: je betaalt rechtstreeks aan de zorgprofessional. Is er al betaald? Markeer de factuur dan als betaald.",
+    ],
+    cta: { label: "Facturen bekijken", href: absoluteUrl("/zorginstelling/facturen") },
+  });
+}
+
+export async function sendDocumentExpiryEmail(input: {
+  to: string;
+  freelancerName: string;
+  documentLabel: string;
+  expiresOn: string;
+  daysRemaining: number;
+}): Promise<boolean> {
+  const soon = input.daysRemaining > 0;
+  return send({
+    to: input.to,
+    subject: soon
+      ? `Je ${input.documentLabel} verloopt over ${input.daysRemaining} dagen`
+      : `Je ${input.documentLabel} is vandaag verlopen`,
+    heading: soon ? "Tijd om dit te vernieuwen" : "Dit document is verlopen",
+    body: [
+      soon
+        ? `Je ${input.documentLabel} verloopt op ${input.expiresOn}. Een nieuwe aanvragen duurt vaak weken, dus begin er op tijd aan.`
+        : `Je ${input.documentLabel} is verlopen op ${input.expiresOn}.`,
+      "Zorginstellingen controleren dit voor hun eigen kwaliteitsverplichting. Een verlopen document betekent meestal dat je geen diensten meer aangeboden krijgt.",
+    ],
+    cta: { label: "Document vervangen", href: absoluteUrl("/professional/documenten") },
+  });
+}
+
 export function emailConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY);
 }

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getFacilityAdmin } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { approveTimesheet } from "@/lib/assignments";
+import { createInvoiceForAssignment } from "@/lib/invoices";
 
 const UREN_PATH = "/zorginstelling/uren";
 
@@ -37,7 +38,20 @@ export async function approveTimesheetAction(formData: FormData) {
   const result = await approveTimesheet(assignmentId, admin.userId);
   if (!result.ok) redirect(`${UREN_PATH}?error=${result.reason}`);
 
+  /*
+   * Invoicing is attempted after the fee has settled, and is allowed to fail
+   * without undoing the approval. An undetermined VAT status legitimately blocks
+   * an invoice (lib/vat.ts) but must not block the approval itself — otherwise a
+   * question nobody has answered yet also freezes the hours and the fee.
+   */
+  const invoice = await createInvoiceForAssignment(assignmentId);
+
   revalidatePath(UREN_PATH);
+  revalidatePath("/zorginstelling/facturen");
+
+  if (!invoice.ok && invoice.reason === "vat_undetermined") {
+    redirect(`${UREN_PATH}?approved=1&invoice=vat_undetermined`);
+  }
   redirect(`${UREN_PATH}?approved=1`);
 }
 

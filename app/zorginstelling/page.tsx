@@ -5,6 +5,9 @@ import { requireFacilityAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatEuros } from "@/lib/money";
 import { formatShiftWindow } from "@/lib/hours";
+import { qualificationLabel } from "@/lib/qualifications";
+import { Checklist } from "@/components/Checklist";
+import { facilityChecklist, nextStep } from "@/lib/onboarding";
 
 export const metadata: Metadata = { title: "Overzicht" };
 
@@ -24,7 +27,8 @@ export default async function FacilityDashboard() {
 
   const now = new Date().toISOString();
 
-  const [{ data: upcoming }, { count: poolCount }, { count: openCount }] = await Promise.all([
+  const [{ data: upcoming }, { count: poolCount }, { count: openCount }, { count: shiftTotal }] =
+    await Promise.all([
     supabase
       .from("shifts")
       .select("id, profession, department, starts_at, ends_at, hourly_rate_cents, status")
@@ -44,7 +48,21 @@ export default async function FacilityDashboard() {
       .eq("org_id", org.id)
       .eq("status", "open")
       .gte("starts_at", now),
+    // Every shift ever posted, not just open ones — the checklist asks whether
+    // they have posted at all, and a filled shift still counts as having started.
+    supabase
+      .from("shifts")
+      .select("id", { count: "exact", head: true })
+      .eq("org_id", org.id),
   ]);
+
+  const checklist = facilityChecklist({
+    verified: Boolean(org.verified_at),
+    hasBillingEmail: Boolean(org.billing_email),
+    poolCount: poolCount ?? 0,
+    shiftCount: shiftTotal ?? 0,
+    assignmentCount: 0,
+  });
 
   return (
     <>
@@ -60,20 +78,12 @@ export default async function FacilityDashboard() {
         }
       />
 
-      {!org.verified_at ? (
-        <div
-          className="card p-4 mb-6"
-          style={{ borderColor: "var(--warn)", background: "var(--warn-subtle)" }}
-        >
-          <p className="font-semibold" style={{ color: "var(--warn)" }}>
-            We controleren je inschrijving nog
-          </p>
-          <p className="text-sm mt-1" style={{ color: "var(--warn)" }}>
-            Zodra je KvK-gegevens zijn gecontroleerd kun je diensten plaatsen. Dat duurt meestal één
-            werkdag. Je kunt in de tussentijd al je pool opbouwen.
-          </p>
-        </div>
-      ) : null}
+      {/*
+        Replaces the old standalone "not verified" banner. Verification is one step
+        among four, and showing it alone hid the step that actually fails silently:
+        an empty pool means a posted shift reaches nobody while reporting success.
+      */}
+      <Checklist steps={checklist} next={nextStep(checklist)} />
 
       <div className="grid gap-4 sm:grid-cols-3 mb-8">
         <div className="card p-4">
@@ -126,7 +136,7 @@ export default async function FacilityDashboard() {
               {upcoming.map((shift) => (
                 <tr key={shift.id}>
                   <td className="tnum">{formatShiftWindow(shift.starts_at, shift.ends_at)}</td>
-                  <td>{shift.profession}</td>
+                  <td>{qualificationLabel(shift.profession)}</td>
                   <td style={{ color: "var(--text-muted)" }}>{shift.department ?? "—"}</td>
                   <td className="tnum">{formatEuros(shift.hourly_rate_cents)} / uur</td>
                   <td>

@@ -817,3 +817,54 @@ create policy compliance_records_select on compliance_records for select
 --
 -- Do not make this bucket public. It holds VOGs, diplomas and identity
 -- documents; a public bucket means a guessable path is a full disclosure.
+
+-- ============================================================================
+-- AVAILABILITY (added after the first cut)
+-- ============================================================================
+--
+-- Opt-OUT, not opt-in. A freelancer blocks the days they cannot work; everything
+-- else is treated as "might be available".
+--
+-- The reverse — requiring people to mark themselves available — looks tidier and
+-- fails badly: anyone who forgets to maintain a calendar silently vanishes from
+-- every offer, and the first they know about it is that work stopped arriving.
+-- Under-offering is invisible to both sides, which makes it the worse error.
+
+create table if not exists availability_blocks (
+  id uuid primary key default gen_random_uuid(),
+  freelancer_id uuid not null references freelancers(profile_id) on delete cascade,
+  -- Inclusive on both ends: a single blocked day has starts_on = ends_on, which
+  -- is what someone entering "24 December" means.
+  starts_on date not null,
+  ends_on date not null,
+  reason text,
+  created_at timestamptz not null default now(),
+  constraint availability_ends_after_start check (ends_on >= starts_on)
+);
+
+create index if not exists availability_freelancer_idx
+  on availability_blocks(freelancer_id, starts_on);
+
+alter table availability_blocks enable row level security;
+
+drop policy if exists availability_select on availability_blocks;
+create policy availability_select on availability_blocks for select
+  using (freelancer_id = auth.uid() or is_staff());
+
+drop policy if exists availability_write on availability_blocks;
+create policy availability_write on availability_blocks for all
+  using (freelancer_id = auth.uid() or is_staff())
+  with check (freelancer_id = auth.uid() or is_staff());
+
+/*
+ * Deliberately NOT readable by facilities. A facility does not need to know why
+ * someone is unavailable, or that they are unavailable at all — it only needs the
+ * shift to reach people who can take it, which the fan-out handles server-side.
+ * Exposing the calendar would turn "I am away that week" into something an
+ * employer can see and draw conclusions from.
+ */
+
+-- Region a shift is being offered into. Defaults from the organisation's city at
+-- posting time, but editable, because a facility on a boundary recruits from both
+-- sides of it.
+alter table shifts add column if not exists region text;

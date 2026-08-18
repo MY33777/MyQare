@@ -39,6 +39,7 @@ export type Organisation = {
   name: string;
   kvk: string | null;
   billing_email: string | null;
+  city: string | null;
   verified_at: string | null;
 };
 
@@ -102,7 +103,7 @@ export async function requireFacilityAdmin(
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organisations")
-    .select("id, name, kvk, billing_email, verified_at")
+    .select("id, name, kvk, billing_email, city, verified_at")
     .eq("id", profile.org_id)
     .maybeSingle<Organisation>();
 
@@ -151,7 +152,7 @@ export async function getFacilityAdmin(): Promise<{
 
   const { data: org } = await supabase
     .from("organisations")
-    .select("id, name, kvk, billing_email, verified_at")
+    .select("id, name, kvk, billing_email, city, verified_at")
     .eq("id", profile.org_id)
     .maybeSingle<Organisation>();
   if (!org) return null;

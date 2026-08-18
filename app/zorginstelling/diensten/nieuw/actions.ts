@@ -7,6 +7,7 @@ import { checkRateLimit } from "@/lib/rateLimit";
 import { parseEurosToCents } from "@/lib/money";
 import { localInputToIso } from "@/lib/timezone";
 import { createShiftWithOffers, defaultRespondBy, type ShiftVisibility } from "@/lib/shifts";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 const NEW_SHIFT_PATH = "/zorginstelling/diensten/nieuw";
 
@@ -57,6 +58,20 @@ export async function createShiftAction(formData: FormData) {
     ? localInputToIso(respondByInput)
     : defaultRespondBy(new Date(startsAt)).toISOString();
 
+  /*
+   * Region defaults to the organisation's city. Editable, because a facility near
+   * a boundary recruits from both sides of it — and because the field is only
+   * consulted for region-wide offers, where reaching nobody is the failure mode.
+   */
+  const service = getSupabaseAdmin();
+  const { data: org } = await service
+    .from("organisations")
+    .select("city")
+    .eq("id", admin.org.id)
+    .maybeSingle<{ city: string | null }>();
+
+  const region = String(formData.get("region") ?? "").trim() || org?.city || null;
+
   const result = await createShiftWithOffers({
     orgId: admin.org.id,
     createdBy: admin.userId,
@@ -70,6 +85,7 @@ export async function createShiftAction(formData: FormData) {
     description: String(formData.get("description") ?? "").trim() || null,
     visibility,
     respondBy,
+    region,
   });
 
   revalidatePath("/zorginstelling");

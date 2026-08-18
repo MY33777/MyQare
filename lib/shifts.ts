@@ -3,6 +3,7 @@ import { emailConfigured, sendShiftOfferEmail } from "@/lib/email";
 import { assignmentValueCents } from "@/lib/fees";
 import { billableMinutes } from "@/lib/hours";
 import { qualificationLabel } from "@/lib/qualifications";
+import { qualificationMatches, regionMatches, shiftDateKey } from "@/lib/availability";
 
 /*
  * Posting a shift, and deciding who hears about it.
@@ -27,6 +28,8 @@ export type NewShift = {
   description: string | null;
   visibility: ShiftVisibility;
   respondBy: string | null;
+  /** Where the shift is being offered. Defaults from the org city at posting time. */
+  region: string | null;
 };
 
 export type FanOutResult = {
@@ -61,6 +64,7 @@ export async function createShiftWithOffers(input: NewShift): Promise<FanOutResu
       description: input.description,
       visibility: input.visibility,
       respond_by: input.respondBy,
+      region: input.region,
       status: "open",
     })
     .select("id")
@@ -181,15 +185,34 @@ async function findRecipients(input: NewShift): Promise<string[]> {
   if (input.visibility === "region") {
     /*
      * Region-wide offers reach people the facility has never worked with, so this
-     * is the one path that must filter on qualification — a pool member was
-     * already vetted by the facility, but a stranger has not been.
+     * is the one path that must filter on qualification AND region — a pool member
+     * was already vetted by the facility, but a stranger has not been.
+     *
+     * Filtered in application code rather than in the query, because both region
+     * fields are free text ("Rotterdam" vs "Rotterdam-Rijnmond") and the
+     * qualification can sit in either `profession` or `specialisations`. Expressing
+     * that as SQL would be an unreadable OR-chain over an ilike and an array
+     * containment; expressing it as two tested pure functions is not.
      */
-    const { data: regional } = await admin
+    const { data: candidates } = await admin
       .from("freelancers")
-      .select("profile_id")
-      .contains("specialisations", [input.qualification]);
+      .select("profile_id, profession, specialisations, region")
+      .returns<
+        {
+          profile_id: string;
+          profession: string | null;
+          specialisations: string[] | null;
+          region: string | null;
+        }[]
+      >();
 
-    for (const row of regional ?? []) ids.add(row.profile_id as string);
+    for (const candidate of candidates ?? []) {
+      if (!qualificationMatches(input.qualification, candidate.profession, candidate.specialisations)) {
+        continue;
+      }
+      if (!regionMatches(input.region, candidate.region)) continue;
+      ids.add(candidate.profile_id);
+    }
 
     // Re-exclude anyone this facility has hidden: a region-wide broadcast must
     // not be a backdoor around that.
@@ -202,7 +225,43 @@ async function findRecipients(input: NewShift): Promise<string[]> {
     for (const row of hidden ?? []) ids.delete(row.freelancer_id as string);
   }
 
-  return [...ids];
+  /*
+   * Finally drop anyone who blocked this date. Applied to EVERY visibility, pool
+   * included: emailing someone a shift they already said they cannot work is how a
+   * notification list gets muted, and a muted list is how the marketplace dies.
+   */
+  return await withoutBlocked([...ids], input.startsAt);
+}
+
+/**
+ * Removes freelancers who blocked the shift's start date.
+ *
+ * Fails open. If the availability lookup errors, everyone stays on the list —
+ * over-offering is visible and declinable, while silently under-offering means a
+ * facility's shift quietly reaches nobody and neither side can tell why.
+ */
+async function withoutBlocked(ids: string[], startsAt: string): Promise<string[]> {
+  if (ids.length === 0) return ids;
+
+  try {
+    const admin = getSupabaseAdmin();
+    const dateKey = shiftDateKey(startsAt);
+
+    const { data: blocks, error } = await admin
+      .from("availability_blocks")
+      .select("freelancer_id")
+      .in("freelancer_id", ids)
+      .lte("starts_on", dateKey)
+      .gte("ends_on", dateKey)
+      .returns<{ freelancer_id: string }[]>();
+
+    if (error) return ids;
+
+    const blocked = new Set((blocks ?? []).map((row) => row.freelancer_id));
+    return ids.filter((id) => !blocked.has(id));
+  } catch {
+    return ids;
+  }
 }
 
 /**

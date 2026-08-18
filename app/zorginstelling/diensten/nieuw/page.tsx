@@ -127,6 +127,16 @@ export default async function NewShiftPage({
         </div>
 
         <div>
+          <label className="label" htmlFor="region">
+            Regio
+          </label>
+          <input className="input" id="region" name="region" type="text" placeholder={org.city ?? "bijv. Rotterdam"} />
+          <p className="hint">
+            Alleen gebruikt bij een regio-aanbod. Leeg laten neemt de plaats van je instelling.
+          </p>
+        </div>
+
+        <div>
           <label className="label" htmlFor="respond_by">
             Reageren voor
           </label>

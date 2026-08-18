@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabase/server";
 import { billableMinutes, formatMinutes, formatShiftWindow } from "@/lib/hours";
 import { formatEuros } from "@/lib/money";
 import { qualificationLabel } from "@/lib/qualifications";
+import { RatingForm } from "@/components/RatingForm";
+import { submitRatingAction } from "@/lib/ratingActions";
 import { approveTimesheetAction, disputeTimesheetAction } from "./actions";
 
 export const metadata: Metadata = { title: "Uren goedkeuren" };
@@ -35,7 +37,7 @@ type PendingRow = {
 export default async function TimesheetsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; approved?: string; disputed?: string }>;
+  searchParams: Promise<{ error?: string; approved?: string; disputed?: string; rated?: string }>;
 }) {
   const { org } = await requireFacilityAdmin("/zorginstelling/uren");
   const params = await searchParams;
@@ -56,6 +58,23 @@ export default async function TimesheetsPage({
   // not yet approved need a decision. Everything else is noise on this page.
   const pending = (rows ?? []).filter((row) => row.timesheets && !row.timesheets.approved_at);
 
+  /*
+   * Completed work still awaiting this facility's rating. Kept on the same page as
+   * approvals rather than given its own tab: rating is a thirty-second job that
+   * only ever happens if it is in front of the person who just approved the hours.
+   */
+  const completed = (rows ?? []).filter((row) => row.status === "completed");
+
+  const { data: existingRatings } = await supabase
+    .from("ratings")
+    .select("assignment_id")
+    .eq("direction", "facility_to_freelancer")
+    .in("assignment_id", completed.length > 0 ? completed.map((row) => row.id) : ["none"])
+    .returns<{ assignment_id: string }[]>();
+
+  const rated = new Set((existingRatings ?? []).map((row) => row.assignment_id));
+  const toRate = completed.filter((row) => !rated.has(row.id));
+
   return (
     <>
       <PageHeader
@@ -65,18 +84,19 @@ export default async function TimesheetsPage({
 
       {params.error ? <FormMessage kind="error">{authErrorMessage(params.error)}</FormMessage> : null}
       {params.approved ? <FormMessage kind="ok">Uren goedgekeurd.</FormMessage> : null}
+      {params.rated ? <FormMessage kind="ok">Beoordeling opgeslagen.</FormMessage> : null}
       {params.disputed ? (
         <FormMessage kind="ok">
           Je vraag is doorgegeven. De zorgprofessional kan de uren aanpassen en opnieuw indienen.
         </FormMessage>
       ) : null}
 
-      {pending.length === 0 ? (
+      {pending.length === 0 && toRate.length === 0 ? (
         <EmptyState
           title="Niets te beoordelen"
           body="Zodra een zorgprofessional gewerkte uren indient, verschijnen ze hier."
         />
-      ) : (
+      ) : pending.length === 0 ? null : (
         <div className="grid gap-4">
           {pending.map((row) => {
             const sheet = row.timesheets!;
@@ -162,6 +182,38 @@ export default async function TimesheetsPage({
           })}
         </div>
       )}
+
+      {toRate.length > 0 ? (
+        <section className="mt-10">
+          <h2 className="text-lg font-bold mb-1">Beoordelen</h2>
+          <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
+            Afgeronde diensten die je nog niet hebt beoordeeld. Je oordeel telt mee in een
+            gemiddelde en is nooit als losse beoordeling met jouw naam zichtbaar.
+          </p>
+
+          <div className="grid gap-4">
+            {toRate.map((row) => (
+              <div key={row.id}>
+                <p className="font-semibold mb-2">
+                  {row.profiles?.full_name ?? "—"}
+                  <span className="font-normal text-sm ml-2" style={{ color: "var(--text-muted)" }}>
+                    {qualificationLabel(row.shifts?.profession)}
+                    {row.shifts
+                      ? ` · ${formatShiftWindow(row.shifts.starts_at, row.shifts.ends_at)}`
+                      : ""}
+                  </span>
+                </p>
+                <RatingForm
+                  action={submitRatingAction}
+                  assignmentId={row.id}
+                  direction="facility_to_freelancer"
+                  heading={`Hoe ging het met ${row.profiles?.full_name ?? "deze zorgprofessional"}?`}
+                />
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </>
   );
 }

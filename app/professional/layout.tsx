@@ -30,7 +30,7 @@ export default async function FreelancerLayout({ children }: { children: React.R
         right={
           <span
             className={balance <= 0 ? "badge badge-warn tnum" : "badge badge-brand tnum"}
-            title="Saldo voor de bemiddelingsvergoeding van 5%"
+            title="Saldo voor de bemiddelingsvergoeding van 5% plus btw"
           >
             {formatEuros(balance)}
           </span>

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatEuros } from "@/lib/money";
 import { formatDate } from "@/lib/hours";
 import { byQuarter, summariseEarnings, summariseReceivables } from "@/lib/earnings";
+import { amsterdamDateKey } from "@/lib/timezone";
 
 export const metadata: Metadata = { title: "Facturen" };
 
@@ -219,7 +220,7 @@ export default async function FreelancerInvoicesPage() {
             <tbody>
               {invoices.map((invoice) => {
                 const overdue =
-                  !invoice.paid_at && invoice.due_on < now.toISOString().slice(0, 10);
+                  !invoice.paid_at && invoice.due_on < amsterdamDateKey(now);
                 return (
                   <tr key={invoice.id}>
                     <td className="tnum font-medium">{invoice.number}</td>

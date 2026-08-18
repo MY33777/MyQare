@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { assertInvoiceable, invoiceAmounts } from "@/lib/vat";
-import { dueDate, nextInvoiceNumber } from "@/lib/invoiceNumber";
+import { nextInvoiceNumber, PAYMENT_TERM_DAYS } from "@/lib/invoiceNumber";
+import { addDaysToDateKey, amsterdamDateKey, amsterdamYear } from "@/lib/timezone";
 import { assignmentValueCents } from "@/lib/fees";
 import { renderInvoicePdf } from "@/lib/invoicePdf";
 import { qualificationLabel } from "@/lib/qualifications";
@@ -102,8 +103,15 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
   const netCents = assignmentValueCents(minutes, assignment.agreed_rate_cents);
   const amounts = invoiceAmounts(netCents, freelancer.vat_exempt, freelancer.vat_exempt_reason);
 
+  /*
+   * Calendar dates in Amsterdam, not UTC. An invoice approved at 00:30 local was
+   * previously dated the day before, while the PDF beside it printed the Amsterdam
+   * date — the document contradicted its own record. On New Year's Eve the number
+   * also took the wrong year and broke the per-year sequence.
+   */
   const issuedOn = new Date();
-  const due = dueDate(issuedOn);
+  const issuedOnKey = amsterdamDateKey(issuedOn);
+  const dueOnKey = addDaysToDateKey(issuedOnKey, PAYMENT_TERM_DAYS);
 
   const { data: previous } = await admin
     .from("invoices")
@@ -113,7 +121,7 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
 
   const number = nextInvoiceNumber(
     (previous ?? []).map((row) => row.number),
-    issuedOn.getUTCFullYear(),
+    amsterdamYear(issuedOn),
   );
 
   const { data: invoice, error } = await admin
@@ -123,8 +131,8 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
       number,
       freelancer_id: assignment.freelancer_id,
       org_id: assignment.org_id,
-      issued_on: issuedOn.toISOString().slice(0, 10),
-      due_on: due.toISOString().slice(0, 10),
+      issued_on: issuedOnKey,
+      due_on: dueOnKey,
       minutes_billed: minutes,
       rate_cents: assignment.agreed_rate_cents,
       amount_ex_vat_cents: amounts.amountExVatCents,
@@ -154,8 +162,8 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
   try {
     const pdf = await renderInvoicePdf({
       number: invoice.number,
-      issuedOn,
-      dueOn: due,
+      issuedOn: new Date(`${issuedOnKey}T12:00:00Z`),
+      dueOn: new Date(`${dueOnKey}T12:00:00Z`),
       freelancer: {
         name: profile?.full_name ?? "Zorgprofessional",
         kvk: freelancer.kvk,
@@ -208,7 +216,7 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
       freelancerName: profile?.full_name ?? "Zorgprofessional",
       invoiceNumber: invoice.number,
       totalCents: amounts.totalCents,
-      dueOn: due.toISOString().slice(0, 10),
+      dueOn: dueOnKey,
     });
   }
 

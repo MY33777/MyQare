@@ -55,7 +55,7 @@ export default async function HomePage() {
             </Link>
           </div>
           <p className="mt-4 text-sm" style={{ color: "var(--text-muted)" }}>
-            Gratis voor zorginstellingen. Zorgprofessionals betalen 5% per aangenomen dienst.
+            Gratis voor zorginstellingen. Zorgprofessionals betalen 5% van de opdrachtwaarde, plus btw, per aangenomen dienst.
           </p>
         </section>
 

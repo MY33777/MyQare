@@ -103,6 +103,47 @@ export function localInputToIso(value: string, timeZone = NL_TIMEZONE): string |
 }
 
 /**
+ * The calendar date in Amsterdam, as YYYY-MM-DD.
+ *
+ * Use this anywhere a DATE is derived from "now" — an invoice date, a due date, an
+ * overdue comparison, the year in an invoice number.
+ *
+ * `new Date().toISOString().slice(0, 10)` is the UTC date, and Amsterdam runs one
+ * or two hours AHEAD, so between midnight and 01:00 or 02:00 local the two
+ * disagree. An invoice approved at 00:30 was dated the previous day, while the PDF
+ * beside it printed the Amsterdam date — the document contradicted its own record.
+ * On New Year's Eve it also picked the wrong year for the invoice number, which
+ * breaks the per-year sequence the Belastingdienst expects.
+ */
+export function amsterdamDateKey(instant: Date = new Date(), timeZone = NL_TIMEZONE): string {
+  // en-CA is the one locale that formats as YYYY-MM-DD without reassembling parts.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
+}
+
+/** The calendar year in Amsterdam. Invoice numbering restarts on it. */
+export function amsterdamYear(instant: Date = new Date(), timeZone = NL_TIMEZONE): number {
+  return Number(amsterdamDateKey(instant, timeZone).slice(0, 4));
+}
+
+/**
+ * Adds whole calendar days to a YYYY-MM-DD key, staying a calendar date.
+ *
+ * Used for payment terms: "30 days after the invoice date" is 30 calendar days,
+ * not 30 × 86,400,000 milliseconds, and the two differ across a clock change.
+ */
+export function addDaysToDateKey(dateKey: string, days: number): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const rolled = new Date(Date.UTC(year, month - 1, day));
+  rolled.setUTCDate(rolled.getUTCDate() + days);
+  return rolled.toISOString().slice(0, 10);
+}
+
+/**
  * The reverse: an instant rendered as the wall-clock string a datetime-local
  * input expects, so an edit form shows what the coordinator originally typed.
  */

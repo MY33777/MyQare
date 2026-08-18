@@ -1,3 +1,4 @@
+import { amsterdamDateKey } from '@/lib/timezone';
 /*
  * What a freelancer has earned, and what is still coming.
  *
@@ -84,7 +85,9 @@ export function summariseReceivables(
   invoices: (InvoiceLike & { due_on: string })[],
   now = new Date(),
 ): { outstandingCents: number; overdueCents: number; overdueCount: number } {
-  const todayKey = now.toISOString().slice(0, 10);
+  // Amsterdam calendar day: the UTC day is still yesterday just after local
+  // midnight, which flags an invoice overdue a day early.
+  const todayKey = amsterdamDateKey(now);
 
   let outstanding = 0;
   let overdue = 0;

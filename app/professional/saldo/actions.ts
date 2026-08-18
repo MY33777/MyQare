@@ -32,7 +32,7 @@ export async function startTopupAction(formData: FormData) {
           unit_amount: amountCents,
           product_data: {
             name: "MyQare saldo",
-            description: "Saldo voor de bemiddelingsvergoeding van 5% per aangenomen dienst.",
+            description: "Saldo voor de bemiddelingsvergoeding van 5% plus btw per aangenomen dienst.",
           },
         },
       },

@@ -15,6 +15,17 @@ import { DOCUMENT_KIND_LABELS, daysUntilExpiry, type DocumentKind } from "@/lib/
  * mid-assignment is exactly what a Wkkgz audit asks about.
  */
 
+/*
+ * Exact day counts, which only works because this cron runs DAILY (vercel.json).
+ *
+ * It previously ran weekly, and the two together meant six days in seven were
+ * skipped: a document whose 60-day mark fell on a Tuesday was simply never warned
+ * about. The failure was invisible — the job reported success every week having
+ * sent nothing.
+ *
+ * If the schedule is ever loosened again, this has to become a range check with a
+ * "last warned" column, not a wider list of exact days.
+ */
 const WARN_AT_DAYS = [60, 30, 0];
 
 export async function GET(request: NextRequest) {

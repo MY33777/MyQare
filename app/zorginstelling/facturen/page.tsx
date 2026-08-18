@@ -4,6 +4,7 @@ import { requireFacilityAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatEuros } from "@/lib/money";
 import { formatDate } from "@/lib/hours";
+import { amsterdamDateKey } from "@/lib/timezone";
 import { markInvoicePaidAction } from "./actions";
 
 export const metadata: Metadata = { title: "Facturen" };
@@ -34,6 +35,11 @@ export default async function FacilityInvoicesPage() {
     .order("issued_on", { ascending: false })
     .limit(100)
     .returns<InvoiceRow[]>();
+
+  // Compared as calendar dates in Amsterdam. new Date(due_on) parses the date as
+  // UTC midnight, which is still "yesterday" locally and flagged invoices a day
+  // early — and disagreed with the freelancer own page and the reminder cron.
+  const todayKey = amsterdamDateKey();
 
   const outstanding = (invoices ?? [])
     .filter((invoice) => !invoice.paid_at)
@@ -92,7 +98,7 @@ export default async function FacilityInvoicesPage() {
             </thead>
             <tbody>
               {invoices.map((invoice) => {
-                const overdue = !invoice.paid_at && new Date(invoice.due_on) < new Date();
+                const overdue = !invoice.paid_at && invoice.due_on < todayKey;
                 return (
                   <tr key={invoice.id}>
                     <td className="tnum font-medium">{invoice.number}</td>

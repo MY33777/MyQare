@@ -141,7 +141,14 @@ export default async function OfferDetailPage({
             className="flex justify-between text-sm mt-1 pt-2"
             style={{ borderTop: "1px solid var(--border)", color: "var(--text-muted)" }}
           >
-            <span>Bemiddelingsvergoeding 5% (incl. btw)</span>
+            {/*
+              "5% (incl. btw)" was wrong and in the customer's disfavour: the 5% is
+              the fee EX btw, and 21% is added on top, so 6,05% of the assignment
+              value leaves the balance. Stating the amount alongside the rate means
+              nobody has to work that out — and the number shown is the one actually
+              deducted.
+            */}
+            <span>Bemiddelingsvergoeding 5% + 21% btw</span>
             <span className="tnum">− {formatEuros(fee.feeTotalCents)}</span>
           </div>
           <div className="flex justify-between text-sm mt-1" style={{ color: "var(--text-muted)" }}>

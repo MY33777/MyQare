@@ -96,7 +96,7 @@ begin
   -- Negative: a fee is money leaving the balance.
   insert into credit_ledger (profile_id, delta_cents, reason, assignment_id, note)
   values (p_freelancer_id, -p_fee_total_cents, 'fee', v_assignment_id,
-          'Bemiddelingsvergoeding 5% incl. btw');
+          'Bemiddelingsvergoeding 5% plus btw');
 
   update shift_offers
   set responded_at = now(), response = 'accept'
@@ -104,19 +104,25 @@ begin
 
   update shifts set status = 'filled' where id = p_shift_id;
 
-  -- Everyone else's offer for this shift is now moot. Counted, because the
-  -- compliance record showing how many people the shift was genuinely open to is
-  -- evidence that this was an offer to a market rather than an instruction to an
-  -- employee.
-  with retired as (
-    update shift_offers
-    set responded_at = now(), response = 'decline', decline_reason = 'shift_filled'
-    where shift_id = p_shift_id
-      and freelancer_id <> p_freelancer_id
-      and responded_at is null
-    returning 1
-  )
-  select count(*)::integer into v_declined from retired;
+  /*
+   * Counted BEFORE retiring anything, and WITHOUT a responded_at filter.
+   *
+   * The previous version counted only offers still unanswered at this moment, so
+   * anyone who had already actively declined was excluded. That inverts the
+   * dossier's strongest fact: the more people exercised their right to refuse, the
+   * smaller "aangeboden aan N anderen" became, and an audit would have seen the
+   * weakest possible version of something in the facility's favour.
+   */
+  select count(*)::integer into v_declined
+  from shift_offers
+  where shift_id = p_shift_id and freelancer_id <> p_freelancer_id;
+
+  -- Everyone else's outstanding offer is now moot.
+  update shift_offers
+  set responded_at = now(), response = 'decline', decline_reason = 'shift_filled'
+  where shift_id = p_shift_id
+    and freelancer_id <> p_freelancer_id
+    and responded_at is null;
 
   insert into compliance_records (
     assignment_id, model_agreement_version, offered_at, accepted_at,
@@ -156,11 +162,26 @@ set search_path = public
 as $fn$
 declare
   v_assignment assignments%rowtype;
+  v_already_approved timestamptz;
 begin
   select * into v_assignment from assignments where id = p_assignment_id for update;
 
   if not found then
     raise exception 'Opdracht niet gevonden.' using errcode = 'P0002';
+  end if;
+
+  /*
+   * Idempotent. A double-click, a retry or a stale tab previously wrote a SECOND
+   * fee adjustment for a timesheet that had already settled — the invoice side was
+   * idempotent but the ledger side was not, so the freelancer paid the difference
+   * twice. Checked inside the transaction holding the row lock, so two concurrent
+   * approvals cannot both get past it.
+   */
+  select approved_at into v_already_approved
+  from timesheets where assignment_id = p_assignment_id;
+
+  if v_already_approved is not null then
+    return;
   end if;
 
   update timesheets
@@ -236,12 +257,23 @@ begin
 end;
 $fn$;
 
--- These are security definer, so the grant is the entire access-control surface.
--- Each function re-checks that the caller is entitled to what it is doing; the
--- grant only decides who may ask.
-revoke all on function accept_shift(uuid, uuid, integer, text, jsonb) from public;
-revoke all on function settle_timesheet(uuid, uuid, integer) from public;
-revoke all on function cancel_assignment(uuid, text, text) from public;
-grant execute on function accept_shift(uuid, uuid, integer, text, jsonb) to authenticated;
-grant execute on function settle_timesheet(uuid, uuid, integer) to authenticated;
-grant execute on function cancel_assignment(uuid, text, text) to authenticated;
+-- ============================================================================
+-- NOBODY BUT THE SERVICE ROLE MAY CALL THESE
+-- ============================================================================
+-- These are security definer: they run with the owner's rights and bypass RLS.
+-- Their signatures also let the caller supply what should have been derived —
+-- settle_timesheet takes the fee adjustment as a parameter, so a negative value
+-- inserts a positive ledger row, and accept_shift takes both the freelancer id and
+-- the fee. Granting execute to  therefore let any signed-in user
+-- mint credit or accept work as someone else, straight through PostgREST.
+--
+-- They are only ever invoked from server code holding the SERVICE ROLE key
+-- (lib/assignments.ts), which these grants do not constrain. Authorization lives
+-- in lib/auth.ts and the server actions; the bug was leaving a second, unguarded
+-- door open beside that.
+--
+-- An auth.uid() check inside the functions is NOT an alternative: under the service
+-- role there is no JWT, so auth.uid() is null and every legitimate call would fail.
+revoke all on function accept_shift(uuid, uuid, integer, text, jsonb) from public, anon, authenticated;
+revoke all on function settle_timesheet(uuid, uuid, integer) from public, anon, authenticated;
+revoke all on function cancel_assignment(uuid, text, text) from public, anon, authenticated;

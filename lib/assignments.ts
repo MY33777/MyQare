@@ -1,0 +1,230 @@
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { calculateFee, feeAdjustmentCents } from "@/lib/fees";
+import { billableMinutes } from "@/lib/hours";
+
+/**
+ * Version stamped onto every compliance record.
+ *
+ * Bump this whenever the model agreement text changes, and never reuse a version
+ * for different wording. A dossier's whole value is being able to say which terms
+ * applied on a given date — if two different agreements ever shared a version
+ * string, every record carrying it becomes unprovable.
+ */
+export const MODEL_AGREEMENT_VERSION = "2026-08-v1";
+
+export type AcceptFailure =
+  | "shift_unavailable"
+  | "already_responded"
+  | "not_offered"
+  | "insufficient_credits"
+  | "respond_window_closed"
+  | "unknown";
+
+export type AcceptResult =
+  | { ok: true; assignmentId: string; feeTotalCents: number }
+  | { ok: false; reason: AcceptFailure };
+
+type ShiftForAccept = {
+  id: string;
+  org_id: string;
+  profession: string;
+  department: string | null;
+  location: string | null;
+  starts_at: string;
+  ends_at: string;
+  hourly_rate_cents: number;
+  break_minutes: number;
+  status: string;
+  visibility: string;
+  respond_by: string | null;
+  organisations: { name: string; kvk: string | null } | null;
+};
+
+/**
+ * Accepts a shift on behalf of a freelancer.
+ *
+ * The fee is computed here, in application code, and passed into the database
+ * function — rather than recomputed in SQL. One rounding rule, in lib/fees.ts,
+ * tested against the worked example from the business plan. Duplicating that
+ * arithmetic in plpgsql would mean two implementations that must agree forever,
+ * and the day they diverge is the day a customer is charged something the UI
+ * never showed them.
+ *
+ * Everything that must happen atomically — claiming the shift, the assignment,
+ * the ledger entry, the compliance record, retiring other offers — happens inside
+ * accept_shift(). See supabase/functions.sql.
+ */
+export async function acceptShift(shiftId: string, freelancerId: string): Promise<AcceptResult> {
+  const admin = getSupabaseAdmin();
+
+  const { data: shift } = await admin
+    .from("shifts")
+    .select(
+      "id, org_id, profession, department, location, starts_at, ends_at, hourly_rate_cents, break_minutes, status, visibility, respond_by, organisations(name, kvk)",
+    )
+    .eq("id", shiftId)
+    .maybeSingle<ShiftForAccept>();
+
+  if (!shift) return { ok: false, reason: "shift_unavailable" };
+
+  const minutes = billableMinutes(shift.starts_at, shift.ends_at, shift.break_minutes);
+  const fee = calculateFee(minutes, shift.hourly_rate_cents);
+
+  const { data: freelancer } = await admin
+    .from("freelancers")
+    .select("profession, kvk, big_number, hourly_rate_min_cents, vat_exempt")
+    .eq("profile_id", freelancerId)
+    .maybeSingle();
+
+  /*
+   * The snapshot is denormalised on purpose. A dossier that reassembled itself
+   * from live tables would silently rewrite its own history when a freelancer
+   * edits their profile two years later — which is exactly when someone is
+   * likely to be looking at it.
+   */
+  const snapshot = {
+    shift: {
+      id: shift.id,
+      qualification: shift.profession,
+      department: shift.department,
+      location: shift.location,
+      starts_at: shift.starts_at,
+      ends_at: shift.ends_at,
+      break_minutes: shift.break_minutes,
+      billable_minutes: minutes,
+      hourly_rate_cents: shift.hourly_rate_cents,
+      visibility: shift.visibility,
+      respond_by: shift.respond_by,
+    },
+    organisation: {
+      id: shift.org_id,
+      name: shift.organisations?.name ?? null,
+      kvk: shift.organisations?.kvk ?? null,
+    },
+    freelancer: {
+      id: freelancerId,
+      profession: freelancer?.profession ?? null,
+      kvk: freelancer?.kvk ?? null,
+      big_number: freelancer?.big_number ?? null,
+      advertised_rate_cents: freelancer?.hourly_rate_min_cents ?? null,
+      vat_exempt: freelancer?.vat_exempt ?? null,
+    },
+    fee: {
+      assignment_value_cents: fee.assignmentValueCents,
+      fee_ex_vat_cents: fee.feeExVatCents,
+      fee_vat_cents: fee.feeVatCents,
+      fee_total_cents: fee.feeTotalCents,
+    },
+    // Stated explicitly so the record answers the question an inspector actually
+    // asks, rather than leaving it to be inferred from an absence.
+    engagement: {
+      accepted_voluntarily: true,
+      auto_accept_used: false,
+      rate_set_by: "facility_offer_accepted",
+      exclusive: false,
+    },
+  };
+
+  const { data, error } = await admin.rpc("accept_shift", {
+    p_shift_id: shiftId,
+    p_freelancer_id: freelancerId,
+    p_fee_total_cents: fee.feeTotalCents,
+    p_model_agreement_version: MODEL_AGREEMENT_VERSION,
+    p_snapshot: snapshot,
+  });
+
+  if (error) return { ok: false, reason: mapAcceptError(error.message, error.code) };
+
+  return { ok: true, assignmentId: data as string, feeTotalCents: fee.feeTotalCents };
+}
+
+/**
+ * Turns the database function's raised exceptions into codes the UI can explain.
+ *
+ * Matched on the message rather than only the SQLSTATE because accept_shift
+ * raises several distinct conditions under P0001; the code narrows it, the text
+ * identifies which.
+ */
+function mapAcceptError(message: string, code?: string): AcceptFailure {
+  const text = (message ?? "").toLowerCase();
+  if (code === "P0003" || text.includes("onvoldoende saldo")) return "insufficient_credits";
+  if (text.includes("niet aan jou aangeboden")) return "not_offered";
+  if (text.includes("al op deze dienst gereageerd")) return "already_responded";
+  if (text.includes("reactietermijn")) return "respond_window_closed";
+  if (text.includes("niet meer beschikbaar") || text.includes("bestaat niet meer")) {
+    return "shift_unavailable";
+  }
+  return "unknown";
+}
+
+/** Declines an offer. No money moves, so this needs no transaction. */
+export async function declineOffer(
+  shiftId: string,
+  freelancerId: string,
+  reason: string | null,
+): Promise<void> {
+  const admin = getSupabaseAdmin();
+  await admin
+    .from("shift_offers")
+    .update({
+      responded_at: new Date().toISOString(),
+      response: "decline",
+      decline_reason: reason,
+    })
+    .eq("shift_id", shiftId)
+    .eq("freelancer_id", freelancerId)
+    .is("responded_at", null);
+}
+
+/**
+ * Approves a timesheet and settles the fee difference.
+ *
+ * Scheduled minutes come from the assignment's own snapshot of the shift, not
+ * from the shift row, so a facility editing the shift afterwards cannot change
+ * what was charged.
+ */
+export async function approveTimesheet(
+  assignmentId: string,
+  approverId: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const admin = getSupabaseAdmin();
+
+  const { data: assignment } = await admin
+    .from("assignments")
+    .select(
+      "id, agreed_rate_cents, agreed_break_minutes, shifts(starts_at, ends_at), timesheets(minutes_claimed, break_minutes)",
+    )
+    .eq("id", assignmentId)
+    .maybeSingle<{
+      id: string;
+      agreed_rate_cents: number;
+      agreed_break_minutes: number;
+      shifts: { starts_at: string; ends_at: string } | null;
+      timesheets: { minutes_claimed: number; break_minutes: number } | null;
+    }>();
+
+  if (!assignment) return { ok: false, reason: "unknown" };
+  if (!assignment.timesheets) return { ok: false, reason: "timesheet_missing" };
+  if (!assignment.shifts) return { ok: false, reason: "unknown" };
+
+  const scheduled = billableMinutes(
+    assignment.shifts.starts_at,
+    assignment.shifts.ends_at,
+    assignment.agreed_break_minutes,
+  );
+  const actual = Math.max(
+    0,
+    assignment.timesheets.minutes_claimed - assignment.timesheets.break_minutes,
+  );
+
+  const adjustment = feeAdjustmentCents(scheduled, actual, assignment.agreed_rate_cents);
+
+  const { error } = await admin.rpc("settle_timesheet", {
+    p_assignment_id: assignmentId,
+    p_approver_id: approverId,
+    p_fee_adjustment_cents: adjustment,
+  });
+
+  if (error) return { ok: false, reason: "unknown" };
+  return { ok: true };
+}

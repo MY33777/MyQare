@@ -4,6 +4,7 @@ import { requireFacilityAdmin } from "@/lib/auth";
 const NAV = [
   { href: "/zorginstelling", label: "Overzicht" },
   { href: "/zorginstelling/diensten", label: "Diensten" },
+  { href: "/zorginstelling/uren", label: "Uren" },
   { href: "/zorginstelling/pool", label: "Mijn pool" },
   { href: "/zorginstelling/facturen", label: "Facturen" },
   { href: "/zorginstelling/dossier", label: "Dossier" },

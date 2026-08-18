@@ -36,6 +36,11 @@ const MESSAGES: Record<string, string> = {
   freelancer_not_found: "Geen MyQare-account gevonden met dit e-mailadres.",
   not_a_freelancer: "Dit account is geen zelfstandig zorgprofessional.",
   invalid_amount: "Vul een geldig bedrag in, bijvoorbeeld 50,00.",
+  bad_kind: "Kies een geldig soort document.",
+  no_file: "Kies een bestand om te uploaden.",
+  too_large: "Het bestand is te groot. Maximaal 5 MB.",
+  bad_type: "Alleen PDF of een foto (JPG, PNG, HEIC, WebP).",
+  cannot_delete: "Dit document kan niet worden verwijderd. Goedgekeurde documenten blijven staan.",
   unknown: "Er ging iets mis. Probeer het opnieuw.",
 };
 

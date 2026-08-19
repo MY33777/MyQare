@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { PAYMENT_TERM_DAYS } from "@/lib/invoiceNumber";
 
 /*
  * The freelancer's own invoicing setup.
@@ -35,7 +36,16 @@ export const DEFAULT_SETTINGS: Omit<InvoiceSettings, "profileId"> = {
   autoSend: true,
   numberPrefix: null,
   numberStart: 1,
-  paymentTermDays: 14,
+  /*
+   * 30, from lib/invoiceNumber.ts, not a second number written here.
+   *
+   * This said 14. Nobody decided that: the old path used PAYMENT_TERM_DAYS = 30,
+   * the settings default was invented alongside the table, and moving invoicing
+   * onto settings silently halved the term on every invoice — while the test
+   * pinning 30 stayed green, because it exercises dueDate() and the invoice path
+   * no longer calls it. Two constants for one rule is how that happens.
+   */
+  paymentTermDays: PAYMENT_TERM_DAYS,
   iban: null,
   accountHolder: null,
   businessName: null,

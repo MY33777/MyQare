@@ -280,7 +280,10 @@ export default async function FacturatiePage({
                   max={120}
                   defaultValue={settings.paymentTermDays}
                 />
-                <p className="hint">14 dagen is gebruikelijk; grotere instellingen vragen vaak 30.</p>
+                <p className="hint">
+                  30 dagen is in Nederland gebruikelijk tussen bedrijven. Korter mag, als je het met
+                  de instelling afspreekt.
+                </p>
               </div>
               <div>
                 <label className="label" htmlFor="account_holder">

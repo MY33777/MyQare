@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireFreelancer } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { DEFAULT_SETTINGS } from "@/lib/invoiceSettings";
 
 const PATH = "/professional/facturatie";
 
@@ -35,7 +36,7 @@ export async function saveInvoiceSettingsAction(formData: FormData) {
   }
 
   const termInput = String(formData.get("payment_term_days") ?? "").trim();
-  const paymentTerm = termInput ? Number(termInput) : 14;
+  const paymentTerm = termInput ? Number(termInput) : DEFAULT_SETTINGS.paymentTermDays;
   if (!Number.isInteger(paymentTerm) || paymentTerm < 0 || paymentTerm > 120) {
     redirect(`${PATH}?error=bad_term`);
   }

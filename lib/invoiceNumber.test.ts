@@ -4,7 +4,9 @@ import {
   formatInvoiceNumber,
   nextInvoiceNumber,
   parseInvoiceNumber,
+  PAYMENT_TERM_DAYS,
 } from "@/lib/invoiceNumber";
+import { DEFAULT_SETTINGS } from "@/lib/invoiceSettings";
 
 describe("formatInvoiceNumber", () => {
   it("pads the sequence to four digits", () => {
@@ -75,7 +77,12 @@ describe("nextInvoiceNumber", () => {
 });
 
 describe("dueDate", () => {
-  it("defaults to 30 days, the Dutch commercial norm", () => {
+  it("defaults to 30 days, the Dutch commercial norm — and invoicing uses the same constant", () => {
+    // This assertion stayed green while every real invoice went out at 14 days,
+    // because the invoice path had moved to invoice_settings and stopped calling
+    // dueDate(). DEFAULT_SETTINGS now imports PAYMENT_TERM_DAYS, so the two
+    // cannot drift apart again.
+    expect(DEFAULT_SETTINGS.paymentTermDays).toBe(PAYMENT_TERM_DAYS);
     expect(dueDate(new Date("2026-08-14T00:00:00Z")).toISOString().slice(0, 10)).toBe("2026-09-13");
   });
 

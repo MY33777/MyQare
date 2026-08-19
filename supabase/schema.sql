@@ -443,7 +443,10 @@ create table if not exists invoice_settings (
   -- existing sequence; see lib/invoiceNumber.ts.
   number_start integer not null default 1 check (number_start >= 1),
 
-  payment_term_days integer not null default 14
+  -- 30, matching lib/invoiceNumber.ts. A column default of 14 here was a second
+  -- number for one rule, and it silently halved every invoice's term. See
+  -- migration 013.
+  payment_term_days integer not null default 30
     check (payment_term_days between 0 and 120),
 
   iban text,

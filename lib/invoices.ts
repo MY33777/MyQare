@@ -282,10 +282,25 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
     });
 
     const path = `invoices/${assignment.freelancer_id}/${invoice.number}.pdf`;
-    await admin.storage.from(INVOICE_BUCKET).upload(path, pdf, {
-      contentType: "application/pdf",
-      upsert: true,
-    });
+
+    /*
+     * Checked. Storage resolves with { error } exactly like PostgREST, and this
+     * discarded it while the very next statement checked the error on writing
+     * pdf_path — so a failed upload produced an invoice row asserting a PDF that
+     * does not exist. Both download routes then mint a signed URL for a missing
+     * object and hand the user a broken link for their own invoice.
+     */
+    const { error: uploadError } = await admin.storage
+      .from(INVOICE_BUCKET)
+      .upload(path, pdf, { contentType: "application/pdf", upsert: true });
+
+    if (uploadError) {
+      // Deliberately not fatal: the invoice legally exists, is numbered and can
+      // still be emailed. Only the stored copy is missing, and pdf_path stays
+      // null so nothing offers a link to it.
+      console.error(`[invoice] pdf upload failed for ${invoice.number}: ${uploadError.message}`);
+      throw uploadError;
+    }
 
     const { error: pathError } = await admin
       .from("invoices")

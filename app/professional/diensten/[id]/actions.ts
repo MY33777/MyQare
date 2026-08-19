@@ -42,12 +42,13 @@ export async function submitTimesheetAction(formData: FormData) {
   // catch this, but the admin client bypasses RLS, so the check has to be here.
   const { data: assignment } = await service
     .from("assignments")
-    .select("id, freelancer_id, status, timesheets(approved_at)")
+    .select("id, freelancer_id, status, shifts(ends_at), timesheets(approved_at)")
     .eq("id", assignmentId)
     .maybeSingle<{
       id: string;
       freelancer_id: string;
       status: string;
+      shifts: { ends_at: string } | null;
       timesheets: { approved_at: string | null } | null;
     }>();
 
@@ -55,6 +56,23 @@ export async function submitTimesheetAction(formData: FormData) {
     redirect("/professional/diensten?error=unknown");
   }
   if (assignment.status === "cancelled") redirect(`${path}?error=unknown`);
+
+  /*
+   * Hours cannot be submitted before the shift has ended.
+   *
+   * Obvious on its own — you cannot report time you have not worked — and it
+   * became load-bearing with migration 008, which made the existence of a
+   * timesheet row the thing that blocks cancellation. Without this check a
+   * freelancer could accept a shift three weeks out, immediately submit hours,
+   * and neither side could ever cancel it again: the facility is locked into a
+   * booking it cannot release, and the freelancer's own fee is locked in with it.
+   *
+   * Not merely a UI omission — the form was rendered for any confirmed
+   * assignment regardless of date.
+   */
+  if (assignment.shifts && new Date(assignment.shifts.ends_at).getTime() > Date.now()) {
+    redirect(`${path}?error=shift_not_finished`);
+  }
 
   /*
    * Refuse once the hours are approved.

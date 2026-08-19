@@ -1,3 +1,4 @@
+import { requireStaff } from "@/lib/auth";
 import type { Metadata } from "next";
 import { EmptyState, PageHeader } from "@/components/AppHeader";
 import { FormMessage } from "@/components/AuthShell";
@@ -32,9 +33,15 @@ export default async function StaffDashboard({
 }) {
   const params = await searchParams;
 
+  /*
+   * Checked HERE, not only in the layout. See app/beheer/documenten/page.tsx —
+   * same omission, same reason. This page returns every organisation's KvK number
+   * and billing address and every unverified BIG number, with RLS bypassed.
+   */
+  await requireStaff("/beheer");
+
   // Service role: this page's entire purpose is to see across every tenant, which
-  // is exactly what RLS is built to prevent. The staff check happens in the layout
-  // and again in every action.
+  // is exactly what RLS is built to prevent.
   const admin = getSupabaseAdmin();
 
   const [{ data: orgs }, { data: freelancers }] = await Promise.all([

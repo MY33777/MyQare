@@ -116,6 +116,32 @@ export async function requireFacilityAdmin(
   return { userId, profile, org };
 }
 
+/**
+ * Requires a MyQare staff member.
+ *
+ * Lives here rather than privately inside app/beheer/actions.ts so the PAGES can
+ * call it too. They did not, and the comment at the top of each said "the staff
+ * check runs in the layout and again in the action" — which covers writes and
+ * not reads.
+ *
+ * A layout is not a boundary. It does not re-run when Next renders a page segment
+ * on its own, and the router state that decides which segments render comes from
+ * a request header. Both /beheer pages then query with the service role, so the
+ * layout was the only thing between any signed-in account and every
+ * organisation's billing details, every unverified BIG number, and a freshly
+ * minted signed URL for every VOG and diploma on the platform.
+ *
+ * Every page under /zorginstelling and /professional already re-checks in the page
+ * body; these two were the exception.
+ */
+export async function requireStaff(
+  next?: string,
+): Promise<{ userId: string; profile: Profile }> {
+  const { userId, profile } = await requireProfile(next ?? "/beheer");
+  if (profile.role !== "staff") redirect("/geen-toegang");
+  return { userId, profile };
+}
+
 /** Requires a freelancer with a freelancer row. */
 export async function requireFreelancer(
   next?: string,

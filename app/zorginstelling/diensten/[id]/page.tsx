@@ -35,6 +35,20 @@ type ShiftDetail = {
     viewed_at: string | null;
     profiles: { full_name: string } | null;
   }[];
+  /*
+   * An ARRAY, not an object.
+   *
+   * PostgREST decides one-to-one versus one-to-many from the presence of a UNIQUE
+   * CONSTRAINT, and does not consider partial indexes. Migration 008 replaced
+   * `assignments.shift_id ... unique` with a partial unique index so a cancelled
+   * assignment would stop reserving its shift — correct, and it silently changed
+   * the shape of this embed.
+   *
+   * Typed as an object before, so an empty array (no assignment at all) was
+   * truthy and its .status undefined: every shift rendered a "Wie komt er" card
+   * naming nobody. Now there can also genuinely be more than one row per shift —
+   * a cancelled one plus its replacement.
+   */
   assignments: {
     id: string;
     status: string;
@@ -48,7 +62,7 @@ type ShiftDetail = {
      * number was one PostgREST call away for any pool facility.
      */
     profiles: { full_name: string; profile_contact: { phone: string | null } | null } | null;
-  } | null;
+  }[];
 };
 
 export default async function FacilityShiftDetailPage({
@@ -75,7 +89,12 @@ export default async function FacilityShiftDetailPage({
   if (!shift) notFound();
 
   const minutes = billableMinutes(shift.starts_at, shift.ends_at, shift.break_minutes);
-  const assignment = shift.assignments;
+  /*
+   * The live one, if any. A shift can now carry a cancelled assignment plus its
+   * replacement, so "the assignment" is whichever is not cancelled — picking
+   * [0] would show last week's no-show as the person turning up tomorrow.
+   */
+  const assignment = (shift.assignments ?? []).find((row) => row.status !== "cancelled") ?? null;
   const offers = shift.shift_offers ?? [];
 
   const accepted = offers.filter((offer) => offer.response === "accept");
@@ -166,7 +185,7 @@ export default async function FacilityShiftDetailPage({
         accepted, which is useless to the coordinator on the day — they need a name
         and a number.
       */}
-      {assignment && assignment.status !== "cancelled" ? (
+      {assignment ? (
         <div className="card p-6 mb-6" style={{ borderColor: "var(--ok)" }}>
           <h2 className="font-bold mb-2">Wie komt er</h2>
           <p className="text-lg font-semibold">{assignment.profiles?.full_name ?? "—"}</p>

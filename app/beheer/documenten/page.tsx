@@ -1,3 +1,4 @@
+import { requireStaff } from "@/lib/auth";
 import type { Metadata } from "next";
 import { EmptyState, PageHeader } from "@/components/AppHeader";
 import { FormMessage } from "@/components/AuthShell";
@@ -31,8 +32,19 @@ export default async function ReviewDocumentsPage({
 }) {
   const params = await searchParams;
 
+  /*
+   * Checked HERE, not only in the layout.
+   *
+   * This used to say "the staff check runs in the layout and again in the action",
+   * which was true and did not help: the action check covers writes, and a layout
+   * does not re-run when Next renders this page segment on its own. Everything
+   * below runs with the service role and mints signed URLs for other people's
+   * VOGs and diplomas, so the read path needed its own gate.
+   */
+  await requireStaff("/beheer/documenten");
+
   // Service role: reviewing means seeing across every freelancer, which is exactly
-  // what RLS prevents. The staff check runs in the layout and again in the action.
+  // what RLS prevents.
   const admin = getSupabaseAdmin();
 
   const { data: documents } = await admin

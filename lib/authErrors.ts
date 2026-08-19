@@ -42,6 +42,10 @@ const MESSAGES: Record<string, string> = {
   bad_type: "Alleen PDF of een foto (JPG, PNG, HEIC, WebP).",
   cannot_delete: "Dit document kan niet worden verwijderd. Goedgekeurde documenten blijven staan.",
   already_approved: "De uren zijn al goedgekeurd. Annuleren kan niet meer.",
+  shift_not_finished:
+    "Deze dienst is nog niet afgelopen. Je kunt je uren indienen zodra de dienst voorbij is.",
+  already_settled:
+    "Deze uren zijn al goedgekeurd en gefactureerd. Terugsturen kan niet meer — neem contact op met de zorgprofessional.",
   hours_submitted:
     "De uren voor deze opdracht zijn al ingediend, dus de dienst is gewerkt. Annuleren kan niet meer — keur de uren goed of stuur ze terug met een reden.",
   assignment_cancelled: "Deze opdracht is geannuleerd. Er valt niets meer goed te keuren.",

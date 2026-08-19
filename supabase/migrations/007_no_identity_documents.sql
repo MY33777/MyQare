@@ -31,7 +31,7 @@
 -- the files, leaving them in the bucket with nothing referencing them.
 delete from storage.objects
 where bucket_id = 'documents'
-  and name in (select storage_path from documents where kind = 'id');
+  and name in (select file_path from documents where kind = 'id');
 
 delete from documents where kind = 'id';
 
@@ -44,3 +44,23 @@ comment on column documents.kind is
   'Identity documents are deliberately absent. An opdrachtgever has no basis to '
   'retain a copy of a zelfstandige''s passport, and the BSN on it may only be '
   'processed where a law prescribes it (art. 46 UAVG). See migration 007.';
+
+-- ----------------------------------------------------------------------------
+-- Correction, 19 August 2026
+-- ----------------------------------------------------------------------------
+-- The storage delete above originally read `select storage_path from documents`.
+-- There is no such column — it is `file_path` (schema.sql), and every reader in
+-- the app uses that name. Postgres raises 42703, and because the SQL editor runs
+-- a pasted script as one transaction, the ENTIRE migration rolled back: no ID
+-- document was deleted, no storage object was removed, and the kind constraint
+-- was never narrowed.
+--
+-- So the remediation this file announces did not happen, while three public pages
+-- began stating as fact that MyQare cannot store copies of identity documents.
+-- Worse than the original defect, because it was now also a false claim in a
+-- privacy statement.
+--
+-- Written and committed without ever being executed, which is the whole lesson: a
+-- migration nobody has run is a plan, not a fix. There is still no Supabase
+-- project, so every migration in this directory is in that state. They must all
+-- be run against a real database before any of them is trusted.

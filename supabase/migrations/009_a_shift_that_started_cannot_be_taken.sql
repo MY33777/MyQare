@@ -1,32 +1,44 @@
--- MyQare — stored procedures
+-- 009 — a shift that has already started cannot be accepted, and reopening one is not a reopen
 --
--- Run AFTER schema.sql, in the same SQL editor. Safe to re-run.
+-- Run in the Supabase SQL editor. Safe to re-run. Folded into functions.sql too.
 --
--- ============================================================================
--- WHY THESE EXIST AT ALL
--- ============================================================================
--- The Supabase JS client sends one statement per call and has no client-side
--- transaction. Accepting a shift has to do five things that must all happen or
--- none of them:
---
---   1. claim the shift, exactly once, even if two freelancers tap at the same moment
---   2. create the assignment
---   3. charge the 5% fee against the credit ledger
---   4. write the compliance record
---   5. retire the other outstanding offers
---
--- Doing that from application code means a crash between steps 3 and 4 leaves a
--- freelancer charged for an assignment with no dossier — the one artefact this
--- product exists to produce. So the whole sequence lives in one plpgsql function
--- and runs inside a single transaction.
---
--- The race is real, not theoretical: an urgent shift is broadcast to a whole
--- region and the rule has always been "first to claim it gets it". The
--- `for update` lock on the shift row serialises those taps.
+-- Both of these are consequences of migration 008, found by the fourth audit.
 
 -- ============================================================================
--- accept_shift
+-- HIGH: accept_shift never checked that the shift was still in the future
 -- ============================================================================
+-- The comment in cancel_assignment claimed "accept_shift still refuses once the
+-- shift itself has started". It does not. accept_shift checks status = 'open',
+-- the offer, respond_by and the balance — and never once looks at starts_at.
+--
+-- respond_by carried that duty implicitly, since a facility normally sets one.
+-- It is nullable, so the protection was never real; and migration 008 then made
+-- it worse by CLEARING respond_by whenever it had lapsed, which is exactly the
+-- case where the shift is about to start or already has.
+--
+-- The concrete failure: a freelancer no-shows a night shift. The next morning the
+-- coordinator cancels the assignment. 008 sets the shift back to 'open', nulls the
+-- lapsed respond_by, and un-declines everyone. The shift ended eight hours ago.
+-- Another freelancer sees it in their offers, accepts, and is charged the platform
+-- fee for work that cannot be performed. Their money, our bug.
+--
+-- Guarding on starts_at rather than ends_at: turning up halfway through a shift is
+-- not a thing anyone wants to sell, and a facility that genuinely wants late cover
+-- can post a new shift for the remaining hours at the rate it is willing to pay.
+
+-- ============================================================================
+-- HIGH: the balance check was not serialised per freelancer
+-- ============================================================================
+-- The `for update` on the shift row makes two people racing for ONE shift into a
+-- queue. It does nothing about one person accepting two DIFFERENT shifts at the
+-- same moment — different shift rows, so both transactions proceed, both read the
+-- same balance, both pass, and both insert a fee. €25 of credit buys two €20
+-- shifts and ends at −€15.
+--
+-- The ledger is append-only with no balance column, so no check constraint could
+-- catch it. Locking the freelancer row is what makes "read the balance, then
+-- spend it" a single decision.
+
 create or replace function accept_shift(
   p_shift_id uuid,
   p_freelancer_id uuid,
@@ -175,99 +187,21 @@ begin
 end;
 $fn$;
 
--- ============================================================================
--- settle_timesheet
--- ============================================================================
--- The fee was charged at acceptance on the SCHEDULED duration, because that is
--- the only moment we can refuse for insufficient balance. Shifts then routinely
--- run short or long, so the difference is settled here as a second ledger entry
--- rather than by rewriting the first — see the append-only note in schema.sql.
--- Takes the TOTAL fee owed for the hours actually worked, not a delta.
---
--- The earlier version took the adjustment, computed in TypeScript as
--- (owed for actual - owed for scheduled). That measures against the schedule and
--- carries no memory of what has already been charged, so replaying an approval
--- charged the same amount a second time. A guard on approved_at was added to stop
--- the replay — and clearing that column turned out to be exactly what an attacker
--- could do (see migration 005).
---
--- Deriving the movement from the ledger removes the need for the guard to hold:
---
---     delta = owed_total - already_charged
---
--- A replay computes already_charged == owed_total, so nothing is written. The fee
--- arithmetic still lives in lib/fees.ts; only the reconciliation moved to where
--- the ledger is.
-drop function if exists settle_timesheet(uuid, uuid, integer);
-
-create or replace function settle_timesheet(
-  p_assignment_id uuid,
-  p_approver_id uuid,
-  p_fee_total_owed_cents integer
-)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $fn$
-declare
-  v_assignment assignments%rowtype;
-  v_already_charged integer;
-  v_delta integer;
-begin
-  select * into v_assignment from assignments where id = p_assignment_id for update;
-
-  if not found then
-    raise exception 'Opdracht niet gevonden.' using errcode = 'P0002';
-  end if;
-
-  /*
-   * A cancelled assignment must not settle. The delta below is derived from the
-   * ledger, and cancel_assignment's refund lands in the very bucket that sum
-   * nets over — so after a cancellation already_charged is exactly zero and the
-   * delta becomes the ENTIRE fee, charged a second time for work that was
-   * explicitly refunded. It also flipped the row back to 'completed', which then
-   * allocated a gapless invoice number and emailed a PDF. See migration 008.
-   */
-  if v_assignment.status = 'cancelled' then
-    raise exception 'Opdracht is geannuleerd.' using errcode = 'P0001';
-  end if;
-
-  update timesheets
-  set approved_at = now(), approved_by = p_approver_id, disputed_at = null, dispute_reason = null
-  where assignment_id = p_assignment_id;
-
-  update assignments set status = 'completed' where id = p_assignment_id;
-
-  -- Fee rows are negative (money leaving the balance), so negating the sum gives
-  -- the positive total charged so far across the original fee and any corrections.
-  select coalesce(-sum(delta_cents), 0)::integer into v_already_charged
-  from credit_ledger
-  where assignment_id = p_assignment_id
-    and reason in ('fee', 'fee_adjustment', 'fee_refund');
-
-  v_delta := p_fee_total_owed_cents - v_already_charged;
-
-  -- Zero on a replay: no row, no double charge, nothing to reconcile afterwards.
-  if v_delta <> 0 then
-    insert into credit_ledger (profile_id, delta_cents, reason, assignment_id, note)
-    values (
-      v_assignment.freelancer_id,
-      -- A positive delta means more fee is owed, so it leaves the balance.
-      -v_delta,
-      case when v_delta > 0 then 'fee_adjustment' else 'fee_refund' end,
-      p_assignment_id,
-      'Correctie na goedkeuring van de gewerkte uren'
-    );
-  end if;
-end;
-$fn$;
+revoke all on function accept_shift(uuid, uuid, integer, text, jsonb) from public, anon, authenticated;
 
 -- ============================================================================
--- cancel_assignment
+-- HIGH: reopening a shift that has already started is not reopening it
 -- ============================================================================
--- Cancelling refunds the whole fee. The freelancer paid for work they will not
--- do, and keeping that would be indefensible whichever side cancelled.
+-- Migration 008 made cancel_assignment reopen the shift properly so a drop-out
+-- could be replaced. That is right for a shift next Tuesday and wrong for one that
+-- ended last night — which is the more common case, because most cancellations
+-- after the fact are no-shows recorded once somebody notices.
+--
+-- accept_shift now refuses a started shift outright, so no money can move. But
+-- leaving it 'open' still showed the facility a live shift and put a dead offer in
+-- every freelancer's list, so the reopen now happens only while there is still
+-- time to fill it.
+
 create or replace function cancel_assignment(
   p_assignment_id uuid,
   p_cancelled_by text,
@@ -358,49 +292,26 @@ begin
 end;
 $fn$;
 
--- ============================================================================
--- NOBODY BUT THE SERVICE ROLE MAY CALL THESE
--- ============================================================================
--- These are security definer: they run with the owner's rights and bypass RLS.
--- Their signatures also let the caller supply what should have been derived —
--- accept_shift takes both the freelancer id and the fee as parameters, and
--- settle_timesheet takes an amount. Granting execute to `authenticated` therefore
--- let any signed-in user accept work as someone else, or move credit, straight
--- through PostgREST with the public anon key.
---
--- They are only ever invoked from server code holding the SERVICE ROLE key
--- (lib/assignments.ts), which these grants do not constrain. Authorization lives
--- in lib/auth.ts and the server actions; the bug was leaving a second, unguarded
--- door open beside that.
---
--- An auth.uid() check inside the functions is NOT an alternative: under the service
--- role there is no JWT, so auth.uid() is null and every legitimate call would fail.
-revoke all on function accept_shift(uuid, uuid, integer, text, jsonb) from public, anon, authenticated;
-revoke all on function settle_timesheet(uuid, uuid, integer) from public, anon, authenticated;
 revoke all on function cancel_assignment(uuid, text, text) from public, anon, authenticated;
 
 -- ============================================================================
--- Resolving one email address to one account id
+-- HIGH: dropping the UNIQUE constraint changed the shape of a PostgREST embed
 -- ============================================================================
--- Adding somebody to a pool is the one place a facility legitimately needs to
--- know whether an address has an account, before any relationship exists that
--- would let it read the profile.
+-- 008 replaced `assignments.shift_id uuid not null unique` with a partial unique
+-- index, so a cancelled assignment would stop reserving its shift. Correct, and it
+-- had a consequence nobody looked for: PostgREST decides one-to-one versus
+-- one-to-many from the presence of a UNIQUE CONSTRAINT, and does not consider
+-- partial indexes. So `shifts?select=...,assignments(...)` began returning an
+-- ARRAY where the app expects an object.
 --
--- This replaced a listUsers({ page: 1, perPage: 1000 }) scan, which could only
--- ever find the first 1000 accounts — and since that endpoint orders created_at
--- DESC, the ones it could not find were the longest-tenured, exactly the people a
--- facility already works with. They were told the account did not exist.
+-- app/zorginstelling/diensten/[id] types it as a nullable object and renders
+-- `{assignment && assignment.status !== "cancelled" ? ...}`. An empty array is
+-- truthy and its .status is undefined, so every shift — including one nobody has
+-- accepted — started rendering a "Wie komt er" card reading "—".
 --
--- Returns an id and nothing else: no email, no metadata, nothing that would let a
--- caller enumerate the user table. Service role only, like the rest.
-create or replace function lookup_account_by_email(p_email text)
-returns uuid
-language sql
-security definer
-set search_path = public
-stable
-as $fn$
-  select id from auth.users where lower(email) = lower(trim(p_email)) limit 1;
-$fn$;
-
-revoke all on function lookup_account_by_email(text) from public, anon, authenticated;
+-- Fixed in the page rather than by restoring the constraint: the constraint had to
+-- go, and a caller that assumes a cardinality PostgREST infers from schema shape is
+-- the thing that should be robust. Noted here because the next person to add an
+-- embed of assignments will hit the same shape.
+--
+-- No DDL in this section. See app/zorginstelling/diensten/[id]/page.tsx.

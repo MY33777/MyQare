@@ -246,6 +246,43 @@ export async function sendDocumentExpiryEmail(input: {
   });
 }
 
+/**
+ * Warns a facility that a document of somebody in its pool is about to lapse.
+ *
+ * Separate from the freelancer's copy because the ask is different: the freelancer
+ * has to renew it, the facility has to decide whether to keep rostering them. It
+ * deliberately does not say which is expiring in the subject line — a document
+ * name in a subject that lands in a shared accounts mailbox is more disclosure
+ * than the warning needs.
+ */
+export async function sendFacilityDocumentExpiryEmail(input: {
+  to: string;
+  facilityName: string;
+  freelancerName: string;
+  documentLabel: string;
+  expiresOn: string;
+  daysRemaining: number;
+}): Promise<boolean> {
+  const when =
+    input.daysRemaining === 0
+      ? "verloopt vandaag"
+      : `verloopt over ${input.daysRemaining} dagen`;
+
+  return send({
+    to: input.to,
+    subject: `Document van ${input.freelancerName} ${when}`,
+    heading: `Een document ${when}`,
+    body: [
+      `${input.freelancerName} staat in de pool van ${input.facilityName}.`,
+      `${input.documentLabel} ${when} (${input.expiresOn}).`,
+      "Je krijgt dit bericht omdat je onder de Wkkgz zelf moet kunnen aantonen dat je dit " +
+        "hebt gecontroleerd voordat iemand wordt ingezet. De zorgprofessional heeft dezelfde " +
+        "melding gekregen.",
+    ],
+    cta: { label: "Bekijk de pool", href: absoluteUrl("/zorginstelling/pool") },
+  });
+}
+
 export function emailConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY);
 }

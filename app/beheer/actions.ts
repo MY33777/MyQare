@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireProfile } from "@/lib/auth";
+import { requireStaff } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 /**
@@ -11,10 +11,14 @@ import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
  * Every action here uses the service role, which bypasses RLS entirely, so this
  * check is the only thing standing between a signed-in freelancer and the ability
  * to verify their own employer.
+ *
+ * requireStaff now lives in lib/auth.ts. It was private to this file, which is
+ * part of why the two /beheer PAGES never called it — they had nothing to call,
+ * and leaned on the layout instead. A layout does not re-run for a page-segment
+ * render, so the read path was unguarded while the write path here was fine.
  */
-async function requireStaff() {
-  const { userId, profile } = await requireProfile("/beheer");
-  if (profile.role !== "staff") redirect("/geen-toegang");
+async function requireStaffUserId(): Promise<string> {
+  const { userId } = await requireStaff();
   return userId;
 }
 
@@ -28,7 +32,7 @@ async function requireStaff() {
  * freelancer.
  */
 export async function verifyOrganisationAction(formData: FormData) {
-  await requireStaff();
+  await requireStaffUserId();
 
   const orgId = String(formData.get("org_id") ?? "");
   const approve = String(formData.get("approve") ?? "") === "true";
@@ -51,7 +55,7 @@ export async function verifyOrganisationAction(formData: FormData) {
  * than having none — a facility relies on this to satisfy its own Wkkgz duty.
  */
 export async function verifyBigAction(formData: FormData) {
-  await requireStaff();
+  await requireStaffUserId();
 
   const freelancerId = String(formData.get("freelancer_id") ?? "");
   const approve = String(formData.get("approve") ?? "") === "true";
@@ -68,7 +72,7 @@ export async function verifyBigAction(formData: FormData) {
 
 /** Approves or rejects an uploaded document, recording who decided and why. */
 export async function reviewDocumentAction(formData: FormData) {
-  const staffId = await requireStaff();
+  const staffId = await requireStaffUserId();
 
   const documentId = String(formData.get("document_id") ?? "");
   const status = String(formData.get("status") ?? "");

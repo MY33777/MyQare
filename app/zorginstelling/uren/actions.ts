@@ -95,9 +95,14 @@ export async function disputeTimesheetAction(formData: FormData) {
   const service = getSupabaseAdmin();
   const { data: assignment } = await service
     .from("assignments")
-    .select("id, org_id, status")
+    .select("id, org_id, status, timesheets(approved_at)")
     .eq("id", assignmentId)
-    .maybeSingle<{ id: string; org_id: string; status: string }>();
+    .maybeSingle<{
+      id: string;
+      org_id: string;
+      status: string;
+      timesheets: { approved_at: string | null } | null;
+    }>();
 
   if (!assignment || assignment.org_id !== admin.org.id) {
     redirect(`${UREN_PATH}?error=unknown`);
@@ -110,6 +115,24 @@ export async function disputeTimesheetAction(formData: FormData) {
    */
   if (assignment.status === "cancelled") {
     redirect(`${UREN_PATH}?error=assignment_cancelled`);
+  }
+
+  /*
+   * And refuse once the hours are approved, which guarding on 'cancelled' alone
+   * did not cover: after approval the status is 'completed'.
+   *
+   * Disputing then left the assignment stranded with no exit for either party.
+   * The freelancer's resubmit path refuses on approved_at (hours_locked), and
+   * approving again settles to a zero delta but the invoice was already issued,
+   * numbered and emailed — so the row sits in 'disputed' forever, out of the
+   * queue's normal flow, contradicting a document already in the facility's
+   * bookkeeping.
+   *
+   * Correcting an approved timesheet is a credit note, not a state flip. That
+   * process does not exist yet, so the honest answer is to refuse and say why.
+   */
+  if (assignment.timesheets?.approved_at) {
+    redirect(`${UREN_PATH}?error=already_settled`);
   }
 
   await service

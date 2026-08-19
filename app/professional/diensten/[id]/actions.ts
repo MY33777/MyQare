@@ -102,7 +102,7 @@ export async function submitTimesheetAction(formData: FormData) {
   // upsert: resubmitting before approval replaces the claim rather than failing
   // on the primary key. A disputed timesheet is exactly the case where someone
   // needs to correct and resend.
-  await service.from("timesheets").upsert(
+  const { error: timesheetError } = await service.from("timesheets").upsert(
     {
       assignment_id: assignmentId,
       minutes_claimed: totalMinutes,
@@ -116,6 +116,17 @@ export async function submitTimesheetAction(formData: FormData) {
     },
     { onConflict: "assignment_id" },
   );
+
+  /*
+   * Checked before anything is reported or emailed.
+   *
+   * The result was discarded, and the code below then redirected with ?submitted=1
+   * AND mailed the facility "de uren zijn ingediend". So a failed write told both
+   * parties the opposite of what happened: the freelancer believes they are done,
+   * the coordinator goes looking for hours that are not there, and the assignment
+   * sits unbilled with nobody expecting to act.
+   */
+  if (timesheetError) redirect(`${path}?error=unknown`);
 
   /*
    * Nudge the facility. Without this the hours sit unapproved until someone

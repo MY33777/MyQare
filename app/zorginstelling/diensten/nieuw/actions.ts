@@ -75,6 +75,21 @@ export async function createShiftAction(formData: FormData) {
   const region = String(formData.get("region") ?? "").trim() || org?.city || null;
 
   /*
+   * A region-wide shift without a region reached everyone.
+   *
+   * city is optional at onboarding, so this fell back to null, and regionMatches
+   * treated a blank as "matches anything" — one submission fanned out to every
+   * freelancer on the platform and handed this facility a standing offer row, and
+   * with it read access to each of their BIG numbers and rates.
+   *
+   * Refusing rather than defaulting: guessing a region from an address we do not
+   * have is how the blank got here in the first place.
+   */
+  if (visibility === "region" && !region) {
+    redirect("/zorginstelling/diensten/nieuw?error=region_required");
+  }
+
+  /*
    * One submission can produce a run of shifts — a ward covering a week of nights
    * would otherwise fill this form seven times. Expanded here rather than in the
    * database because each occurrence re-resolves its wall clock through the

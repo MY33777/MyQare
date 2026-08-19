@@ -173,9 +173,9 @@ export async function declineOffer(
   shiftId: string,
   freelancerId: string,
   reason: string | null,
-): Promise<void> {
+): Promise<boolean> {
   const admin = getSupabaseAdmin();
-  await admin
+  const { error } = await admin
     .from("shift_offers")
     .update({
       responded_at: new Date().toISOString(),
@@ -185,6 +185,14 @@ export async function declineOffer(
     .eq("shift_id", shiftId)
     .eq("freelancer_id", freelancerId)
     .is("responded_at", null);
+
+  /*
+   * Returns whether it landed. This used to be Promise<void>, so a failed decline
+   * looked identical to a successful one: the offer stayed open, the shift kept
+   * appearing in the freelancer's list, and they were told it had been declined.
+   * The next round of offers then counted them as still deciding.
+   */
+  return !error;
 }
 
 /**

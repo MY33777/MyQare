@@ -6,6 +6,7 @@ import { formatEuros } from "@/lib/money";
 import { formatDate } from "@/lib/hours";
 import { byQuarter, summariseEarnings, summariseReceivables } from "@/lib/earnings";
 import { amsterdamDateKey } from "@/lib/timezone";
+import { sendInvoiceAction } from "@/app/professional/facturatie/actions";
 
 export const metadata: Metadata = { title: "Facturen" };
 
@@ -15,6 +16,8 @@ type InvoiceRow = {
   issued_on: string;
   due_on: string;
   paid_at: string | null;
+  sent_at: string | null;
+  pdf_path: string | null;
   amount_ex_vat_cents: number;
   vat_amount_cents: number;
   total_cents: number;
@@ -69,7 +72,7 @@ export default async function FreelancerInvoicesPage() {
     supabase
       .from("invoices")
       .select(
-        "id, number, issued_on, due_on, paid_at, amount_ex_vat_cents, vat_amount_cents, total_cents, vat_treatment, organisations(name)",
+        "id, number, issued_on, due_on, paid_at, sent_at, pdf_path, amount_ex_vat_cents, vat_amount_cents, total_cents, vat_treatment, organisations(name)",
       )
       .eq("freelancer_id", userId)
       .order("issued_on", { ascending: false })
@@ -215,6 +218,7 @@ export default async function FreelancerInvoicesPage() {
                 <th>Btw</th>
                 <th>Bedrag</th>
                 <th>Status</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -234,11 +238,45 @@ export default async function FreelancerInvoicesPage() {
                     <td>
                       {invoice.paid_at ? (
                         <span className="badge badge-ok">Betaald</span>
+                      ) : !invoice.sent_at ? (
+                        /*
+                         * Created and numbered but not yet delivered, because this
+                         * freelancer reviews her invoices before they go out
+                         * (invoice_settings.auto_send). Distinct from "Open",
+                         * which means the facility has it and has not paid.
+                         */
+                        <span className="badge badge-brand">Klaar om te versturen</span>
                       ) : overdue ? (
                         <span className="badge badge-danger">Te laat</span>
                       ) : (
                         <span className="badge badge-neutral">Open</span>
                       )}
+                    </td>
+                    <td>
+                      <div className="flex gap-2 justify-end">
+                        {/*
+                          The PDF, at last reachable. It was rendered, uploaded and
+                          its path stored on every invoice since the beginning, and
+                          nothing in the product ever read pdf_path — so neither
+                          party could obtain the document itself.
+                        */}
+                        {invoice.pdf_path ? (
+                          <a
+                            className="btn btn-secondary"
+                            href={`/professional/facturen/${invoice.id}/pdf`}
+                          >
+                            Pdf
+                          </a>
+                        ) : null}
+                        {!invoice.sent_at ? (
+                          <form action={sendInvoiceAction}>
+                            <input type="hidden" name="invoice_id" value={invoice.id} />
+                            <button className="btn btn-primary" type="submit">
+                              Versturen
+                            </button>
+                          </form>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 );

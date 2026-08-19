@@ -1,6 +1,12 @@
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { assertInvoiceable, invoiceAmounts } from "@/lib/vat";
-import { nextInvoiceNumber, PAYMENT_TERM_DAYS } from "@/lib/invoiceNumber";
+import { nextInvoiceNumber } from "@/lib/invoiceNumber";
+import {
+  getInvoiceSettings,
+  missingInvoiceFields,
+  formatIban,
+  type MissingField,
+} from "@/lib/invoiceSettings";
 import { addDaysToDateKey, amsterdamDateKey, amsterdamYear } from "@/lib/timezone";
 import { assignmentValueCents } from "@/lib/fees";
 import { renderInvoicePdf } from "@/lib/invoicePdf";
@@ -10,11 +16,20 @@ import { sendInvoiceEmail } from "@/lib/email";
 export const INVOICE_BUCKET = "documents";
 
 export type InvoiceOutcome =
-  | { ok: true; invoiceId: string; number: string }
+  /** `held` means created and numbered but deliberately not sent — see auto_send. */
+  | { ok: true; invoiceId: string; number: string; held?: boolean }
   | {
       ok: false;
-      reason: "vat_undetermined" | "already_invoiced" | "not_approved" | "number_race" | "unknown";
+      reason:
+        | "vat_undetermined"
+        | "already_invoiced"
+        | "not_approved"
+        | "number_race"
+        | "invoice_details_missing"
+        | "unknown";
       detail?: string;
+      /** Which legally required fields are blank, for a message that names them. */
+      missing?: MissingField[];
     };
 
 /**
@@ -108,6 +123,30 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
   const amounts = invoiceAmounts(netCents, freelancer.vat_exempt, freelancer.vat_exempt_reason);
 
   /*
+   * The freelancer's own invoicing setup: numbering series, payment term, their
+   * business identity and whether this goes out automatically.
+   *
+   * Loaded before anything is written, because a missing legal field has to stop
+   * the invoice rather than produce an incomplete one. Article 35a Wet OB requires
+   * the supplier's name and address on the document, and the supplier is the
+   * freelancer — we only hold the pen.
+   */
+  const settings = await getInvoiceSettings(assignment.freelancer_id);
+  const missing = missingInvoiceFields(settings, freelancer.vat_exempt);
+
+  if (missing.length > 0) {
+    /*
+     * Refusing is the whole point. Issuing a document that is missing an address
+     * or a btw-id creates a real problem for both parties — the facility cannot
+     * deduct it, the freelancer has issued an invalid invoice under their own
+     * name — and unlike an unsent invoice, that cannot be undone by filling in a
+     * form later. The approval and the fee settlement already stand; only the
+     * document waits.
+     */
+    return { ok: false, reason: "invoice_details_missing", missing };
+  }
+
+  /*
    * Calendar dates in Amsterdam, not UTC. An invoice approved at 00:30 local was
    * previously dated the day before, while the PDF beside it printed the Amsterdam
    * date — the document contradicted its own record. On New Year's Eve the number
@@ -115,7 +154,7 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
    */
   const issuedOn = new Date();
   const issuedOnKey = amsterdamDateKey(issuedOn);
-  const dueOnKey = addDaysToDateKey(issuedOnKey, PAYMENT_TERM_DAYS);
+  const dueOnKey = addDaysToDateKey(issuedOnKey, settings.paymentTermDays);
 
   /*
    * Allocate a number and insert, retrying on a collision.
@@ -147,6 +186,7 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
     const number = nextInvoiceNumber(
       (previous ?? []).map((row) => row.number),
       amsterdamYear(issuedOn),
+      { prefix: settings.numberPrefix, start: settings.numberStart },
     );
 
     const { data, error } = await admin
@@ -207,11 +247,20 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
       issuedOn: new Date(`${issuedOnKey}T12:00:00Z`),
       dueOn: new Date(`${dueOnKey}T12:00:00Z`),
       freelancer: {
-        name: profile?.full_name ?? "Zorgprofessional",
+        // The trading name if they gave one — a zzp'er often invoices under a
+        // business name that is not their own — otherwise the person's name.
+        name: settings.businessName?.trim() || profile?.full_name || "Zorgprofessional",
         kvk: freelancer.kvk,
         bigNumber: freelancer.big_number,
         email: null,
+        address: settings.addressLine,
+        postcode: settings.postcode,
+        city: settings.city,
+        vatNumber: settings.vatNumber,
+        iban: formatIban(settings.iban),
+        accountHolder: settings.accountHolder,
       },
+      paymentNote: settings.paymentNote,
       facility: {
         name: org.name,
         kvk: org.kvk,
@@ -238,7 +287,14 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
       upsert: true,
     });
 
-    await admin.from("invoices").update({ pdf_path: path }).eq("id", invoice.id);
+    const { error: pathError } = await admin
+      .from("invoices")
+      .update({ pdf_path: path })
+      .eq("id", invoice.id);
+
+    // The PDF is in the bucket but nothing points at it — which is exactly the
+    // state that made pdf_path unreadable for months without anyone noticing.
+    if (pathError) console.error(`[invoice] pdf uploaded but path not stored: ${invoice.number}`);
   } catch {
     // Left with pdf_path null; the invoice list offers a re-render.
   }
@@ -251,18 +307,115 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
    * Best-effort: the invoice legally exists whether or not the mail went out, and
    * both parties can see it in the app.
    */
-  if (org.billing_email) {
-    await sendInvoiceEmail({
-      to: org.billing_email,
-      facilityName: org.name,
-      freelancerName: profile?.full_name ?? "Zorgprofessional",
-      invoiceNumber: invoice.number,
-      totalCents: amounts.totalCents,
-      dueOn: dueOnKey,
-    });
+  if (!settings.autoSend) {
+    /*
+     * Held for review. The invoice exists and holds its number — allocation
+     * happens in approval order whatever this setting says, because a series with
+     * gaps in it is a worse problem than one that goes out a day late.
+     *
+     * The freelancer releases it from /professional/facturen.
+     */
+    return { ok: true, invoiceId: invoice.id, number: invoice.number, held: true };
   }
 
+  await deliverInvoice(invoice.id);
+
   return { ok: true, invoiceId: invoice.id, number: invoice.number };
+}
+
+/**
+ * Emails an invoice and records that it went out.
+ *
+ * Split from creation so the "hold for review" path and the send button share one
+ * implementation. sent_at is written here and nowhere else — it used to be written
+ * nowhere at all, so every invoice read as never sent and the reminder cron had no
+ * way to tell a held invoice from a delivered one.
+ */
+async function deliverInvoice(
+  invoiceId: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const admin = getSupabaseAdmin();
+
+  const { data: invoice } = await admin
+    .from("invoices")
+    .select(
+      "id, number, total_cents, due_on, sent_at, freelancer_id, organisations(name, billing_email), profiles:freelancer_id(full_name)",
+    )
+    .eq("id", invoiceId)
+    .maybeSingle<{
+      id: string;
+      number: string;
+      total_cents: number;
+      due_on: string;
+      sent_at: string | null;
+      freelancer_id: string;
+      organisations: { name: string; billing_email: string | null } | null;
+      profiles: { full_name: string } | null;
+    }>();
+
+  if (!invoice) return { ok: false, reason: "unknown" };
+  if (invoice.sent_at) return { ok: true }; // Idempotent: never mail the same invoice twice.
+
+  const to = invoice.organisations?.billing_email;
+  if (!to) return { ok: false, reason: "no_billing_email" };
+
+  const freelancerName = invoice.profiles?.full_name ?? "Zorgprofessional";
+
+  /*
+   * To the facility's billing address, not to whoever approved the hours.
+   * Facilities route invoices to a shared accounts-payable mailbox, and a document
+   * that lands in a coordinator's personal inbox gets paid late.
+   */
+  const ok = await sendInvoiceEmail({
+    to,
+    facilityName: invoice.organisations?.name ?? "",
+    freelancerName,
+    invoiceNumber: invoice.number,
+    totalCents: invoice.total_cents,
+    dueOn: invoice.due_on,
+  });
+
+  if (!ok) return { ok: false, reason: "send_failed" };
+
+  const { error: sentError } = await admin
+    .from("invoices")
+    .update({ sent_at: new Date().toISOString() })
+    .eq("id", invoiceId);
+
+  /*
+   * The mail has gone. If this fails the invoice reads as unsent, so the reminder
+   * cron will chase a facility that already has it and the freelancer is offered a
+   * "Versturen" button that would send it twice. Reported as a failure of the
+   * send, because from the product's point of view that is what it is.
+   */
+  if (sentError) return { ok: false, reason: "unknown" };
+
+  // The freelancer's own copy, if they asked for one. Failure here is not failure
+  // of the invoice: the document reached the party that has to pay it.
+  const settings = await getInvoiceSettings(invoice.freelancer_id);
+  if (settings.copyToSelf) {
+    const { data: user } = await admin.auth.admin.getUserById(invoice.freelancer_id);
+    const own = user?.user?.email;
+    if (own) {
+      await sendInvoiceEmail({
+        to: own,
+        facilityName: invoice.organisations?.name ?? "",
+        freelancerName,
+        invoiceNumber: invoice.number,
+        totalCents: invoice.total_cents,
+        dueOn: invoice.due_on,
+      });
+    }
+  }
+
+  return { ok: true };
+}
+
+/** Releases a held invoice. Called from the freelancer's invoice list. */
+export async function sendExistingInvoice(
+  invoiceId: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  return deliverInvoice(invoiceId);
 }
 
 /**

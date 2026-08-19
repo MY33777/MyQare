@@ -71,7 +71,22 @@ export function regionMatches(
   const shift = (shiftRegion ?? "").trim().toLowerCase();
   const freelancer = (freelancerRegion ?? "").trim().toLowerCase();
 
-  if (!shift || !freelancer) return true;
+  /*
+   * A missing region is not a wildcard.
+   *
+   * This used to `return true` when either side was blank, on the reasoning that
+   * under-offering is the worse error. That holds inside a pool, where the
+   * facility already knows everyone. It does not hold here: region is only
+   * consulted for the one visibility that reaches strangers, and a facility whose
+   * organisation has no city set — the field is optional at onboarding — silently
+   * broadcast every shift to EVERY freelancer on the platform. Each of those
+   * offers is a row in shift_offers, and shift_offers is what grants that facility
+   * standing read access to the freelancer's BIG number and rate.
+   *
+   * So a blank on either side means no match, and the shift form now refuses to
+   * post a region-wide shift without a region at all.
+   */
+  if (!shift || !freelancer) return false;
   return shift.includes(freelancer) || freelancer.includes(shift);
 }
 

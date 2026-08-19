@@ -103,14 +103,24 @@ describe("regionMatches", () => {
   });
 
   /*
-   * Generous in the right direction. A freelancer who never filled in a region has
-   * not opted out of anything, and over-offering is visible and declinable while
-   * under-offering is silent.
+   * A blank is NOT a wildcard, and this test used to assert the opposite.
+   *
+   * The original reasoning — over-offering is visible and declinable while
+   * under-offering is silent — holds inside a pool, where the facility already
+   * knows everyone. regionMatches is only consulted for the one visibility that
+   * reaches strangers, and there a blank on the shift side meant a single post
+   * fanned out to EVERY freelancer on the platform. An organisation's city is
+   * optional at onboarding, so that was reachable by doing nothing wrong.
+   *
+   * Each of those offers is a shift_offers row, and that row is what grants the
+   * facility standing read access to the freelancer's BIG number and rate. So the
+   * cost of the generous reading is not a declinable message; it is a disclosure
+   * that cannot be taken back.
    */
-  it("imposes no restriction when either side is unset", () => {
-    expect(regionMatches("Rotterdam", null)).toBe(true);
-    expect(regionMatches(null, "Groningen")).toBe(true);
-    expect(regionMatches("", "")).toBe(true);
+  it("refuses to match when either side has no region", () => {
+    expect(regionMatches("Rotterdam", null)).toBe(false);
+    expect(regionMatches(null, "Groningen")).toBe(false);
+    expect(regionMatches("", "")).toBe(false);
   });
 });
 

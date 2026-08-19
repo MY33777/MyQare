@@ -13,9 +13,18 @@
  * kept pure so that retry loop is the only stateful part.
  */
 
-const PATTERN = /^(\d{4})-(\d{4,})$/;
+/*
+ * An optional prefix the freelancer chooses (invoice_settings.number_prefix), so
+ * "F2026-0001" and "2026-0001" are both well-formed.
+ *
+ * The prefix is captured but deliberately IGNORED when finding the highest
+ * sequence for a year. Somebody who changes their prefix in July must not restart
+ * at 0001 — that produces two invoices whose numbers differ only by a letter, and
+ * the series stops being a series. Continuity beats tidiness.
+ */
+const PATTERN = /^([A-Za-z0-9-]{0,8}?)(\d{4})-(\d{4,})$/;
 
-export function formatInvoiceNumber(year: number, sequence: number): string {
+export function formatInvoiceNumber(year: number, sequence: number, prefix?: string | null): string {
   if (!Number.isInteger(year) || year < 2000 || year > 9999) {
     throw new Error(`Invalid invoice year: ${year}`);
   }
@@ -24,13 +33,19 @@ export function formatInvoiceNumber(year: number, sequence: number): string {
   }
   // Padded to four digits, but not truncated past it — a freelancer who somehow
   // issues 10,000 invoices in a year gets "2026-10000" rather than a collision.
-  return `${year}-${String(sequence).padStart(4, "0")}`;
+  const clean = (prefix ?? "").trim();
+  if (clean && !/^[A-Za-z0-9-]{1,8}$/.test(clean)) {
+    throw new Error(`Invalid invoice prefix: ${prefix}`);
+  }
+  return `${clean}${year}-${String(sequence).padStart(4, "0")}`;
 }
 
-export function parseInvoiceNumber(value: string): { year: number; sequence: number } | null {
+export function parseInvoiceNumber(
+  value: string,
+): { year: number; sequence: number; prefix: string } | null {
   const match = PATTERN.exec(value.trim());
   if (!match) return null;
-  return { year: Number(match[1]), sequence: Number(match[2]) };
+  return { prefix: match[1], year: Number(match[2]), sequence: Number(match[3]) };
 }
 
 /**
@@ -40,15 +55,32 @@ export function parseInvoiceNumber(value: string): { year: number; sequence: num
  *   from other years are ignored rather than rejected, since the same freelancer
  *   carries a series across years and the caller passes the whole set.
  */
-export function nextInvoiceNumber(existing: string[], year: number): string {
+export function nextInvoiceNumber(
+  existing: string[],
+  year: number,
+  options: { prefix?: string | null; start?: number } = {},
+): string {
   let highest = 0;
   for (const value of existing) {
     const parsed = parseInvoiceNumber(value);
+    // Prefix ignored on purpose — see PATTERN.
     if (parsed && parsed.year === year && parsed.sequence > highest) {
       highest = parsed.sequence;
     }
   }
-  return formatInvoiceNumber(year, highest + 1);
+
+  /*
+   * `start` applies only to an empty year, for somebody continuing a series they
+   * already ran elsewhere. It never pulls the sequence backwards: once 0007
+   * exists, a start of 3 still yields 0008. Reusing a number is worse than
+   * ignoring a setting.
+   */
+  const start = Number.isInteger(options.start) && (options.start as number) >= 1
+    ? (options.start as number)
+    : 1;
+  const next = highest === 0 ? start : highest + 1;
+
+  return formatInvoiceNumber(year, next, options.prefix);
 }
 
 /**

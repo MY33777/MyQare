@@ -38,10 +38,18 @@ export async function verifyOrganisationAction(formData: FormData) {
   const approve = String(formData.get("approve") ?? "") === "true";
   if (!orgId) redirect("/beheer?error=unknown");
 
-  await getSupabaseAdmin()
+  const { error: orgError } = await getSupabaseAdmin()
     .from("organisations")
     .update({ verified_at: approve ? new Date().toISOString() : null })
     .eq("id", orgId);
+
+  /*
+   * Checked, not discarded. This is the gate that decides whether a facility can
+   * post work at all — a staff member seeing "Opgeslagen" over a write that never
+   * landed would leave an unverified organisation looking verified to the only
+   * person who would ever notice.
+   */
+  if (orgError) redirect("/beheer?error=unknown");
 
   revalidatePath("/beheer");
   redirect("/beheer?saved=1");
@@ -61,10 +69,15 @@ export async function verifyBigAction(formData: FormData) {
   const approve = String(formData.get("approve") ?? "") === "true";
   if (!freelancerId) redirect("/beheer?error=unknown");
 
-  await getSupabaseAdmin()
+  const { error: bigError } = await getSupabaseAdmin()
     .from("freelancers")
     .update({ big_verified_at: approve ? new Date().toISOString() : null })
     .eq("profile_id", freelancerId);
+
+  // Facilities lean on this badge for their own Wkkgz duty. A silent failure here
+  // means a number stays in the queue that a human has already looked up — or
+  // worse, that the queue keeps showing work that was in fact done.
+  if (bigError) redirect("/beheer?error=unknown");
 
   revalidatePath("/beheer");
   redirect("/beheer?saved=1");
@@ -82,7 +95,7 @@ export async function reviewDocumentAction(formData: FormData) {
     redirect("/beheer/documenten?error=unknown");
   }
 
-  await getSupabaseAdmin()
+  const { error: docError } = await getSupabaseAdmin()
     .from("documents")
     .update({
       status,
@@ -91,6 +104,11 @@ export async function reviewDocumentAction(formData: FormData) {
       review_note: note,
     })
     .eq("id", documentId);
+
+  // The queue is driven by status = 'pending'. A failed write leaves the document
+  // in it, so the reviewer sees the same one again and assumes they misclicked —
+  // or, worse, approves a second time against a row that never moved.
+  if (docError) redirect("/beheer/documenten?error=unknown");
 
   revalidatePath("/beheer/documenten");
   redirect("/beheer/documenten?saved=1");

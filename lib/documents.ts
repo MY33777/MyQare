@@ -157,7 +157,11 @@ export async function deleteDocument(documentId: string, freelancerId: string): 
   if (document.status === "approved") return false;
 
   await admin.storage.from(DOCUMENT_BUCKET).remove([document.file_path]);
-  await admin.from("documents").delete().eq("id", documentId);
+  const { error } = await admin.from("documents").delete().eq("id", documentId);
+  // The storage object is already gone by this point, so a failure here leaves a
+  // row pointing at nothing. Reported so the caller can say so rather than
+  // showing a document that will 404 when opened.
+  if (error) return false;
   return true;
 }
 

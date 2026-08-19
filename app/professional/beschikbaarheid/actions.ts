@@ -44,11 +44,16 @@ export async function removeBlockAction(formData: FormData) {
   if (!id) redirect(`${PATH}?error=unknown`);
 
   // Scoped to the owner, because the admin client bypasses RLS.
-  await getSupabaseAdmin()
+  const { error } = await getSupabaseAdmin()
     .from("availability_blocks")
     .delete()
     .eq("id", id)
     .eq("freelancer_id", freelancer.userId);
+
+  // A blocked period that silently survives its own deletion is worse than one
+  // that never saved: the freelancer stops seeing offers for days they have since
+  // freed up, and has no reason to look at the page again.
+  if (error) redirect(`${PATH}?error=unknown`);
 
   revalidatePath(PATH);
   redirect(PATH);

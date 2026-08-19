@@ -43,7 +43,12 @@ export async function declineOfferAction(formData: FormData) {
     redirect(`/login?next=${encodeURIComponent(`/professional/aanbod/${shiftId}`)}`);
   }
 
-  await declineOffer(shiftId, freelancer.userId, reason);
+  const declined = await declineOffer(shiftId, freelancer.userId, reason);
+
+  // Says so when it did not land. Reporting "geweigerd" over a failed write leaves
+  // the offer open in the freelancer's own list, which reads as the platform
+  // ignoring them.
+  if (!declined) redirect(`/professional/aanbod/${shiftId}?error=unknown`);
 
   revalidatePath("/professional");
   revalidatePath("/professional/aanbod");

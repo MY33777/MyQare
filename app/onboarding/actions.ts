@@ -99,9 +99,17 @@ export async function completeOnboardingAction(formData: FormData) {
 
   // Phone lives in its own table with a stricter policy (migration 004).
   if (phone) {
-    await admin
+    const { error: phoneError } = await admin
       .from("profile_contact")
       .upsert({ profile_id: user.id, phone }, { onConflict: "profile_id" });
+
+    /*
+     * Logged rather than fatal. A phone number is genuinely optional and losing it
+     * must not strand somebody halfway through onboarding with a profile row that
+     * already exists — the idempotency branch below would then bounce them
+     * straight past the form. But it must not vanish unremarked either.
+     */
+    if (phoneError) console.error(`[onboarding] phone not saved for ${user.id}: ${phoneError.message}`);
   }
 
   if (profileError) {

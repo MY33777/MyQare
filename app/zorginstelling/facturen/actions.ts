@@ -33,10 +33,18 @@ export async function markInvoicePaidAction(formData: FormData) {
   }
 
   if (!invoice.paid_at) {
-    await service
+    const { error } = await service
       .from("invoices")
       .update({ paid_at: new Date().toISOString() })
       .eq("id", invoiceId);
+
+    /*
+     * Checked. A failure here leaves the invoice reading as unpaid, so the
+     * reminder cron keeps chasing a facility that has already paid — and the
+     * coordinator, having clicked the button and seen the page reload, has no
+     * reason to look again.
+     */
+    if (error) redirect("/zorginstelling/facturen?error=unknown");
   }
 
   revalidatePath("/zorginstelling/facturen");

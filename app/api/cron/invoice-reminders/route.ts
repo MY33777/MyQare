@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { cronAuthorised } from "@/lib/cron";
+import { amsterdamDateKey } from "@/lib/timezone";
 import { sendInvoiceReminderEmail } from "@/lib/email";
 
 /*
@@ -17,6 +18,9 @@ const REMINDER_DAYS = [1, 14, 30];
 
 const MAX_REMINDERS = REMINDER_DAYS.length;
 
+/** How many overdue invoices one run will handle. Reported when it bites. */
+const REMINDER_BATCH = 200;
+
 export async function GET(request: NextRequest) {
   if (!cronAuthorised(request)) {
     return NextResponse.json({ error: "unauthorised" }, { status: 401 });
@@ -24,7 +28,12 @@ export async function GET(request: NextRequest) {
 
   const admin = getSupabaseAdmin();
   const today = new Date();
-  const todayKey = today.toISOString().slice(0, 10);
+  /*
+   * Amsterdam, not UTC. toISOString() is the UTC day, which for two hours every
+   * summer evening is yesterday — long enough to leave an invoice that fell due
+   * today out of the run, or to chase one a day early.
+   */
+  const todayKey = amsterdamDateKey(today);
 
   const { data: overdue, error } = await admin
     .from("invoices")
@@ -34,7 +43,16 @@ export async function GET(request: NextRequest) {
     .is("paid_at", null)
     .lt("due_on", todayKey)
     .lt("reminders_sent", MAX_REMINDERS)
-    .limit(200)
+    /*
+     * Oldest first, and say so when the cap bites.
+     *
+     * .limit(200) with no ordering meant Postgres returned whatever 200 it liked,
+     * so past that many overdue invoices some were chased and others were not,
+     * arbitrarily and differently each day — while the endpoint reported a clean
+     * run. Ordering makes the cut deterministic; the report below makes it visible.
+     */
+    .order("due_on", { ascending: true })
+    .limit(REMINDER_BATCH)
     .returns<
       {
         id: string;
@@ -48,6 +66,17 @@ export async function GET(request: NextRequest) {
     >();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  let failed = 0;
+  const problems: string[] = [];
+
+  // The cap was reached, so some overdue invoices were not looked at today. Said
+  // out loud rather than left to be inferred from a number that looks fine.
+  if ((overdue?.length ?? 0) >= REMINDER_BATCH) {
+    problems.push(
+      `batch cap of ${REMINDER_BATCH} reached — older invoices processed first, the rest wait for the next run`,
+    );
+  }
 
   let sent = 0;
   let skipped = 0;
@@ -86,15 +115,45 @@ export async function GET(request: NextRequest) {
     // Counter only advances on a successful send, so a mail outage delays the
     // reminder rather than silently consuming one of the three.
     if (ok) {
-      await admin
+      const { error: counterError } = await admin
         .from("invoices")
         .update({ reminders_sent: invoice.reminders_sent + 1 })
         .eq("id", invoice.id);
-      sent++;
+
+      /*
+       * If the counter does not advance, tomorrow's run sends the identical
+       * reminder to the same facility — and the day after, and forever, because
+       * nothing else moves it. `sent++` ran regardless, so the endpoint reported
+       * a clean run while setting up a mail loop aimed at a customer.
+       */
+      if (counterError) {
+        failed++;
+        problems.push(`${invoice.number}: reminder sent but counter not advanced`);
+      } else {
+        sent++;
+      }
     } else {
       skipped++;
+      failed++;
+      problems.push(`${invoice.number}: reminder could not be sent`);
     }
   }
 
-  return NextResponse.json({ ok: true, considered: overdue?.length ?? 0, sent, skipped });
+  /*
+   * ok reflects whether the run did its job. Reporting true while counting only
+   * successes is the pattern every audit round has caught here: the monitoring
+   * goes green and nobody learns that a month of reminders went nowhere.
+   */
+  return NextResponse.json(
+    {
+      ok: failed === 0,
+      considered: overdue?.length ?? 0,
+      sent,
+      skipped,
+      failed,
+      problems: problems.slice(0, 20),
+      truncatedProblems: Math.max(0, problems.length - 20),
+    },
+    { status: failed === 0 ? 200 : 500 },
+  );
 }

@@ -98,7 +98,24 @@ export default async function TimesheetsPage({
           zorgprofessional is niet vastgesteld. Vraag hen dit in hun profiel in te vullen.
         </FormMessage>
       ) : null}
-      {params.approved && params.invoice && params.invoice !== "vat_undetermined" ? (
+      {/* Not a failure: the freelancer chose to release their own invoices. */}
+      {params.approved && params.invoice === "held" ? (
+        <FormMessage kind="ok">
+          Uren goedgekeurd. De factuur is opgemaakt en staat klaar — deze zorgprofessional
+          controleert haar facturen zelf voordat ze verstuurd worden, dus je ontvangt hem
+          binnenkort.
+        </FormMessage>
+      ) : null}
+      {params.approved && params.invoice === "invoice_details_missing" ? (
+        <FormMessage kind="error">
+          Uren goedgekeurd, maar er is nog geen factuur: deze zorgprofessional heeft haar
+          factuurgegevens nog niet compleet ingevuld (adres, en bij btw-plicht het btw-id). Zij
+          krijgt hiervan bericht; zodra dat is aangevuld gaat de factuur alsnog uit.
+        </FormMessage>
+      ) : null}
+      {params.approved &&
+      params.invoice &&
+      !["vat_undetermined", "held", "invoice_details_missing"].includes(params.invoice) ? (
         <FormMessage kind="error">
           Uren goedgekeurd, maar de factuur kon niet worden opgemaakt. Neem contact met ons op —
           deze opdracht is nog niet gefactureerd.

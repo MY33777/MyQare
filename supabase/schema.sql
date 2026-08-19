@@ -417,6 +417,626 @@ create index if not exists invoices_unpaid_idx on invoices(due_on) where paid_at
  * key from server code (lib/credits.ts), which bypasses RLS. A user can read
  * their own ledger and nothing else.
  */
+/*
+ * The freelancer's own invoicing setup.
+ *
+ * MyQare writes the invoice, but the invoicing party is the freelancer — art. 35a
+ * Wet OB puts the supplier's name, address and (where VAT is charged) btw-id on
+ * the document, and the supplier is them. Without these fields we were issuing
+ * something that is not a valid invoice.
+ *
+ * Also theirs to control: somebody who already runs a numbering series in their
+ * own bookkeeping cannot have a second, conflicting one appearing under their
+ * name, and plenty of people want to see an invoice before it reaches a client
+ * they have to keep working with. See migration 010.
+ */
+create table if not exists invoice_settings (
+  profile_id uuid primary key references freelancers(profile_id) on delete cascade,
+
+  -- Off means the invoice is still created and numbered — allocation happens in
+  -- approval order regardless, because a series with gaps is worse than one sent
+  -- a day late — but waits for the freelancer to release it.
+  auto_send boolean not null default true,
+
+  number_prefix text check (number_prefix is null or number_prefix ~ '^[A-Za-z0-9-]{1,8}
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid not null references profiles(id) on delete cascade,
+  -- Positive for top-ups and refunds, negative for fees.
+  delta_cents integer not null,
+  reason text not null check (reason in ('topup', 'fee', 'fee_refund', 'fee_adjustment', 'manual')),
+  assignment_id uuid references assignments(id) on delete set null,
+  -- Stripe's id for the payment that created a topup. Unique so a webhook
+  -- delivered twice — which Stripe explicitly warns will happen — cannot credit
+  -- the same payment twice.
+  stripe_payment_intent text unique,
+  note text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists credit_ledger_profile_idx on credit_ledger(profile_id, created_at desc);
+create index if not exists credit_ledger_assignment_idx on credit_ledger(assignment_id);
+
+/*
+ * Balance as a function rather than a view so it can be called per profile from
+ * a policy or a server action without scanning the whole table.
+ */
+create or replace function credit_balance_cents(p_profile_id uuid)
+returns integer
+language sql
+stable
+as $$
+  select coalesce(sum(delta_cents), 0)::integer
+  from credit_ledger
+  where profile_id = p_profile_id;
+$$;
+
+-- ============================================================================
+-- RATINGS
+-- ============================================================================
+
+/*
+ * Two things the 2021 plan got wrong, both flagged by its reviewer and fixed
+ * here (spec §7.4):
+ *
+ * 1. An average over fewer than ~20 ratings is noise. The shrinkage toward the
+ *    6.0 baseline lives in lib/ratings.ts, and `score` here is always the raw
+ *    number — never pre-averaged, so the display rule can change later without
+ *    the stored data being wrong.
+ *
+ * 2. A coordinator annoyed about cost is not qualified to score clinical
+ *    performance. So `dimensions` covers collegiality, communication and
+ *    punctuality only. There is deliberately no clinical-quality field: that
+ *    needs a qualified assessor, and inventing one is out of scope for v1.
+ */
+create table if not exists ratings (
+  id uuid primary key default gen_random_uuid(),
+  assignment_id uuid not null references assignments(id) on delete cascade,
+  direction text not null check (direction in ('facility_to_freelancer', 'freelancer_to_facility')),
+  author_id uuid not null references profiles(id) on delete cascade,
+  score integer not null check (score between 0 and 10),
+  dimensions jsonb not null default '{}'::jsonb,
+  comment text,
+  created_at timestamptz not null default now(),
+  unique (assignment_id, direction)
+);
+
+create index if not exists ratings_assignment_idx on ratings(assignment_id);
+
+-- ============================================================================
+-- COMPLIANCE RECORDS — the actual product
+-- ============================================================================
+
+/*
+ * One row per assignment, written at acceptance and never edited. This is what
+ * a facility exports and hands to the Belastingdienst.
+ *
+ * Since January 2025 the tax authority enforces schijnzelfstandigheid rules
+ * again, and for 2026 it has said it is specifically examining three-way
+ * relationships between freelancer, client and intermediary — which is exactly
+ * this platform's shape. The defence is evidence that the freelancer was free:
+ * free to decline, free to negotiate the rate, not exclusive, not directed.
+ *
+ * `snapshot` holds the full state of both parties and the shift at the moment
+ * of acceptance, as JSON. Denormalised on purpose: a dossier that reassembles
+ * itself from live tables would silently change its own history when a
+ * freelancer edits their profile two years later.
+ */
+create table if not exists compliance_records (
+  -- restrict: this is the evidence the product exists to produce, and it must
+  -- survive precisely when somebody would rather it did not.
+  assignment_id uuid primary key references assignments(id) on delete restrict,
+  model_agreement_version text not null,
+  offered_at timestamptz not null,
+  accepted_at timestamptz not null,
+  -- Always true in v1, and recorded rather than assumed: auto-accept was cut
+  -- precisely because a freelancer who cannot refuse looks like an employee.
+  -- If a future version ever adds it back, these rows will show which
+  -- assignments were affected.
+  could_decline boolean not null default true,
+  substitution_allowed boolean not null default false,
+  rate_set_by text not null check (rate_set_by in ('facility_offer_accepted', 'negotiated', 'freelancer_quote')),
+  declined_other_offers integer not null default 0,
+  snapshot jsonb not null,
+  created_at timestamptz not null default now()
+);
+
+-- ============================================================================
+-- RATE LIMITING
+-- ============================================================================
+
+create table if not exists rate_limit_hits (
+  id uuid primary key default gen_random_uuid(),
+  bucket text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists rate_limit_hits_bucket_idx on rate_limit_hits(bucket, created_at desc);
+
+-- ============================================================================
+-- ROW LEVEL SECURITY
+-- ============================================================================
+
+alter table organisations enable row level security;
+alter table profiles enable row level security;
+alter table freelancers enable row level security;
+alter table documents enable row level security;
+alter table pools enable row level security;
+alter table shifts enable row level security;
+alter table shift_offers enable row level security;
+alter table assignments enable row level security;
+alter table timesheets enable row level security;
+alter table invoices enable row level security;
+alter table invoice_settings enable row level security;
+alter table credit_ledger enable row level security;
+alter table ratings enable row level security;
+alter table compliance_records enable row level security;
+alter table rate_limit_hits enable row level security;
+
+-- ---------- organisations ----------
+
+drop policy if exists organisations_select on organisations;
+create policy organisations_select on organisations for select
+  using (
+    id = current_org_id()
+    or is_staff()
+    -- A freelancer must be able to see the name of a facility that is offering
+    -- them work, and of one they have worked for. Limited to those two
+    -- relationships rather than the whole directory.
+    or exists (
+      select 1 from shifts s
+      join shift_offers o on o.shift_id = s.id
+      where s.org_id = organisations.id and o.freelancer_id = auth.uid()
+    )
+    or exists (
+      select 1 from assignments a
+      where a.org_id = organisations.id and a.freelancer_id = auth.uid()
+    )
+  );
+
+drop policy if exists organisations_update on organisations;
+
+-- ---------- profiles ----------
+
+drop policy if exists profiles_select on profiles;
+create policy profiles_select on profiles for select
+  using (
+    id = auth.uid()
+    or is_staff()
+    -- Colleagues at the same facility.
+    or (org_id is not null and org_id = current_org_id())
+    -- A facility may read the profile of a freelancer in its pool or working
+    -- for it. Not the reverse-engineered whole user table.
+    or exists (
+      select 1 from pools p
+      where p.freelancer_id = profiles.id and p.org_id = current_org_id()
+    )
+    or exists (
+      select 1 from assignments a
+      where a.freelancer_id = profiles.id and a.org_id = current_org_id()
+    )
+  );
+
+alter table profile_contact enable row level security;
+
+drop policy if exists profile_contact_select on profile_contact;
+create policy profile_contact_select on profile_contact for select
+  using (
+    profile_id = auth.uid()
+    or is_staff()
+    -- An actual working relationship, not merely a pool entry.
+    or exists (
+      select 1 from assignments a
+      where a.freelancer_id = profile_contact.profile_id
+        and a.org_id = current_org_id()
+        and a.status <> 'cancelled'
+    )
+    or exists (
+      select 1 from profiles p
+      where p.id = profile_contact.profile_id
+        and p.org_id is not null
+        and p.org_id = current_org_id()
+    )
+  );
+
+drop policy if exists profile_contact_write on profile_contact;
+
+drop policy if exists profiles_insert on profiles;
+
+drop policy if exists profiles_update on profiles;
+
+-- ---------- freelancers ----------
+
+drop policy if exists freelancers_select on freelancers;
+create policy freelancers_select on freelancers for select
+  using (
+    profile_id = auth.uid()
+    or is_staff()
+    or exists (
+      select 1 from pools p
+      where p.freelancer_id = freelancers.profile_id and p.org_id = current_org_id()
+    )
+    or exists (
+      select 1 from assignments a
+      where a.freelancer_id = freelancers.profile_id and a.org_id = current_org_id()
+    )
+    -- Region-wide open shifts: a facility that has offered a shift to the
+    -- region needs to see who responded.
+    or exists (
+      select 1 from shifts s
+      join shift_offers o on o.shift_id = s.id
+      where o.freelancer_id = freelancers.profile_id and s.org_id = current_org_id()
+    )
+  );
+
+drop policy if exists freelancers_write on freelancers;
+
+-- ---------- documents ----------
+
+/*
+ * Diplomas, VOGs and ID documents. The facility genuinely needs to confirm
+ * someone is qualified — Wkkgz obliges them to check — but only for people they
+ * actually engage, and only for approved documents. A pending or rejected
+ * upload is between the freelancer and our back office.
+ */
+drop policy if exists documents_select on documents;
+create policy documents_select on documents for select
+  using (
+    freelancer_id = auth.uid()
+    or is_staff()
+    or (
+      status = 'approved'
+      and (
+        exists (
+          select 1 from assignments a
+          where a.freelancer_id = documents.freelancer_id and a.org_id = current_org_id()
+        )
+        -- Pool membership counts too. Wkkgz obliges a facility to check
+        -- qualifications BEFORE engaging someone, and requiring an assignment
+        -- first made that check possible only once it was already too late.
+        -- Reading the row is not reading the file: the bucket is private, so
+        -- file_path is inert without a signed URL, and server code only mints
+        -- those where a real working relationship exists.
+        or exists (
+          select 1 from pools p
+          where p.freelancer_id = documents.freelancer_id
+            and p.org_id = current_org_id()
+            and p.status <> 'hidden'
+        )
+      )
+    )
+  );
+
+drop policy if exists documents_write on documents;
+
+-- ---------- pools ----------
+
+drop policy if exists pools_select on pools;
+create policy pools_select on pools for select
+  using (
+    org_id = current_org_id()
+    or is_staff()
+    -- A freelancer may see that they are in a facility's pool, but the 'hidden'
+    -- status is not theirs to read: telling someone they have been quietly
+    -- deprioritised turns a private staffing preference into a confrontation,
+    -- and there is no obligation to publish it.
+    or (freelancer_id = auth.uid() and status <> 'hidden')
+  );
+
+drop policy if exists pools_write on pools;
+
+-- ---------- shifts ----------
+
+drop policy if exists shifts_select on shifts;
+create policy shifts_select on shifts for select
+  using (
+    org_id = current_org_id()
+    or is_staff()
+    or exists (
+      select 1 from shift_offers o
+      where o.shift_id = shifts.id and o.freelancer_id = auth.uid()
+    )
+  );
+
+drop policy if exists shifts_insert on shifts;
+
+drop policy if exists shifts_update on shifts;
+
+drop policy if exists shifts_delete on shifts;
+
+-- ---------- shift_offers ----------
+
+drop policy if exists shift_offers_select on shift_offers;
+create policy shift_offers_select on shift_offers for select
+  using (
+    freelancer_id = auth.uid()
+    or is_staff()
+    or exists (select 1 from shifts s where s.id = shift_offers.shift_id and s.org_id = current_org_id())
+  );
+
+/*
+ * A freelancer responds to their own offer and nothing else. Accepting is not
+ * an insert here — it goes through a server action that has to create the
+ * assignment, charge the fee and write the compliance record atomically, so the
+ * update policy exists for the decline path and for marking an offer viewed.
+ */
+drop policy if exists shift_offers_update on shift_offers;
+
+drop policy if exists shift_offers_insert on shift_offers;
+
+-- ---------- assignments ----------
+
+drop policy if exists assignments_select on assignments;
+create policy assignments_select on assignments for select
+  using (freelancer_id = auth.uid() or org_id = current_org_id() or is_staff());
+
+/*
+ * No update policy, deliberately — see migration 003.
+ *
+ * agreed_rate_cents is an immutable snapshot and the column invoices bill from,
+ * but a row policy cannot pin columns: granting UPDATE for "my own assignment"
+ * also granted "rewrite the agreed rate after the work". Either party could
+ * inflate or deflate the invoice from an ordinary session, and a direct PATCH to
+ * status='cancelled' bypassed cancel_assignment so the fee was never refunded.
+ *
+ * Every write goes through the service role or a definer function instead.
+ */
+drop policy if exists assignments_update on assignments;
+
+-- Inserts happen only via the service role in the accept action, which also
+-- writes the fee and the compliance record. No user-facing insert policy.
+
+-- ---------- timesheets ----------
+
+drop policy if exists timesheets_select on timesheets;
+create policy timesheets_select on timesheets for select
+  using (
+    is_staff()
+    or exists (
+      select 1 from assignments a
+      where a.id = timesheets.assignment_id
+        and (a.freelancer_id = auth.uid() or a.org_id = current_org_id())
+    )
+  );
+
+drop policy if exists timesheets_write on timesheets;
+
+-- ---------- invoices ----------
+
+drop policy if exists invoices_select on invoices;
+create policy invoices_select on invoices for select
+  using (freelancer_id = auth.uid() or org_id = current_org_id() or is_staff());
+
+/*
+ * No update policy either. It existed so a facility could mark an invoice paid,
+ * but row-wide UPDATE also let the debtor rewrite total_cents and the number on a
+ * document issued in the FREELANCER's name — the one party unable to see it had
+ * been altered. markInvoicePaidAction uses the service role and checks ownership
+ * itself.
+ */
+drop policy if exists invoices_update on invoices;
+
+-- Issued by server code only: the number has to be allocated without a gap.
+
+-- ---------- credit_ledger ----------
+
+/*
+ * Read your own rows. That is the entire user-facing surface.
+ *
+ * Deliberately absent: insert, update and delete policies. Postgres denies any
+ * operation with no matching policy, so this table is append-only from the
+ * client's point of view and writable only with the service role key. See the
+ * comment on the table above for why that matters.
+ */
+drop policy if exists credit_ledger_select on credit_ledger;
+create policy credit_ledger_select on credit_ledger for select
+  using (profile_id = auth.uid() or is_staff());
+
+-- ---------- ratings ----------
+
+drop policy if exists ratings_select on ratings;
+create policy ratings_select on ratings for select
+  using (
+    is_staff()
+    or exists (
+      select 1 from assignments a
+      where a.id = ratings.assignment_id
+        and (a.freelancer_id = auth.uid() or a.org_id = current_org_id())
+    )
+  );
+
+drop policy if exists ratings_insert on ratings;
+
+/*
+ * No update or delete policy. A rating is a statement someone made about
+ * another person's work; being able to quietly rewrite it later would make the
+ * whole history untrustworthy, and it is the basis on which work gets offered.
+ * Corrections go through staff.
+ */
+
+-- ---------- compliance_records ----------
+
+drop policy if exists compliance_records_select on compliance_records;
+create policy compliance_records_select on compliance_records for select
+  using (
+    is_staff()
+    or exists (
+      select 1 from assignments a
+      where a.id = compliance_records.assignment_id
+        and (a.freelancer_id = auth.uid() or a.org_id = current_org_id())
+    )
+  );
+
+-- Written once by the accept action via the service role. No user-facing
+-- insert/update/delete: a dossier nobody can edit after the fact is the only
+-- kind worth showing an inspector.
+
+-- ---------- rate_limit_hits ----------
+
+-- Service role only. No policies at all, so RLS denies every client operation.
+
+-- ============================================================================
+-- STORAGE
+-- ============================================================================
+--
+-- Create a PRIVATE bucket named `documents` in the Supabase dashboard
+-- (Storage > New bucket > uncheck "Public bucket"). Files are read through
+-- short-lived signed URLs minted server-side after the RLS check above has
+-- already decided the caller is entitled to the row.
+--
+-- Do not make this bucket public. It holds VOGs, diplomas and identity
+-- documents; a public bucket means a guessable path is a full disclosure.
+
+-- ============================================================================
+-- AVAILABILITY (added after the first cut)
+-- ============================================================================
+--
+-- Opt-OUT, not opt-in. A freelancer blocks the days they cannot work; everything
+-- else is treated as "might be available".
+--
+-- The reverse — requiring people to mark themselves available — looks tidier and
+-- fails badly: anyone who forgets to maintain a calendar silently vanishes from
+-- every offer, and the first they know about it is that work stopped arriving.
+-- Under-offering is invisible to both sides, which makes it the worse error.
+
+create table if not exists availability_blocks (
+  id uuid primary key default gen_random_uuid(),
+  freelancer_id uuid not null references freelancers(profile_id) on delete cascade,
+  -- Inclusive on both ends: a single blocked day has starts_on = ends_on, which
+  -- is what someone entering "24 December" means.
+  starts_on date not null,
+  ends_on date not null,
+  reason text,
+  created_at timestamptz not null default now(),
+  constraint availability_ends_after_start check (ends_on >= starts_on)
+);
+
+create index if not exists availability_freelancer_idx
+  on availability_blocks(freelancer_id, starts_on);
+
+alter table availability_blocks enable row level security;
+
+drop policy if exists availability_select on availability_blocks;
+create policy availability_select on availability_blocks for select
+  using (freelancer_id = auth.uid() or is_staff());
+
+drop policy if exists availability_write on availability_blocks;
+
+/*
+ * Deliberately NOT readable by facilities. A facility does not need to know why
+ * someone is unavailable, or that they are unavailable at all — it only needs the
+ * shift to reach people who can take it, which the fan-out handles server-side.
+ * Exposing the calendar would turn "I am away that week" into something an
+ * employer can see and draw conclusions from.
+ */
+
+-- Region a shift is being offered into. Defaults from the organisation's city at
+-- posting time, but editable, because a facility on a boundary recruits from both
+-- sides of it.
+alter table shifts add column if not exists region text;
+
+drop policy if exists invoice_settings_select on invoice_settings;
+create policy invoice_settings_select on invoice_settings for select
+  using (profile_id = auth.uid() or is_staff());
+
+/*
+ * The rating written ABOUT you is not yours to read.
+ *
+ * ratings_select grants either party the rows for their assignment, and every
+ * query in the app selects only `score`. But RLS grants ROWS, not columns, and
+ * PostgREST returns whatever is asked for — so select=comment,author_id handed a
+ * freelancer exactly what a coordinator wrote about them and who wrote it, while
+ * the rating form promised the opposite.
+ *
+ * Same shape as the five defects migration 005 dealt with. The instrument for a
+ * column is a column grant, which composes with RLS rather than replacing it.
+ * Scores stay readable because both dashboards average them, and an average over
+ * a run of assignments identifies nobody.
+ */
+revoke select (comment, author_id) on ratings from authenticated, anon;
+
+-- ============================================================================
+-- NO CLIENT WRITES AT ALL (migration 005)
+-- ============================================================================
+-- Every write policy that used to live in this file has been removed, and the
+-- write grants are revoked below.
+--
+-- The reason is that a Postgres ROW policy cannot restrict COLUMNS. "You may
+-- update your own row" therefore also means "you may rewrite any column in it",
+-- and that single fact produced five separate defects across two audits:
+--
+--   assignments.agreed_rate_cents  either party could change the billed rate
+--                                    after the work
+--   invoices.total_cents           the debtor could rewrite the creditor's bill
+--   profiles.phone                 handed to any facility with a pool entry
+--   timesheets.approved_at         blanking it re-armed double settlement AND
+--                                    re-opened a full fee refund on invoiced work
+--   profiles.role                  PATCH yourself to 'staff' and read every
+--                                    document, phone number, invoice and ledger
+--                                    row on the platform
+--
+-- In each case the written defence was a comment saying the UI never posts that
+-- column. The anon key ships to the browser and PostgREST accepts whatever it is
+-- sent, so that was never a control.
+--
+-- Removing them all costs nothing, because the application contains no
+-- client-side writes: all 21 files that write to Postgres use the service role,
+-- which these policies never governed.
+--
+-- WHAT THIS MEANS FOR THE SECURITY MODEL
+-- --------------------------------------
+-- RLS is a READ backstop here, not a write one. Write authorization lives
+-- entirely in lib/auth.ts and the server actions; if one of those forgets its
+-- ownership check, nothing else catches it. Comments in this codebase have
+-- described RLS as "the backstop that holds even when app code is wrong" — true
+-- for reads, false for writes, and overstating it is how several of the defects
+-- above survived review.
+--
+-- If a client-side write is ever genuinely needed: supabase-js reports SUCCESS
+-- with zero rows when RLS blocks an update, so it will fail silently. Add the
+-- policy AND a BEFORE UPDATE trigger pinning the immutable columns.
+
+revoke insert, update, delete on organisations from authenticated, anon;
+revoke insert, update, delete on profiles from authenticated, anon;
+revoke insert, update, delete on profile_contact from authenticated, anon;
+revoke insert, update, delete on freelancers from authenticated, anon;
+revoke insert, update, delete on documents from authenticated, anon;
+revoke insert, update, delete on pools from authenticated, anon;
+revoke insert, update, delete on shifts from authenticated, anon;
+revoke insert, update, delete on shift_offers from authenticated, anon;
+revoke insert, update, delete on assignments from authenticated, anon;
+revoke insert, update, delete on timesheets from authenticated, anon;
+revoke insert, update, delete on invoices from authenticated, anon;
+revoke insert, update, delete on invoice_settings from authenticated, anon;
+revoke insert, update, delete on credit_ledger from authenticated, anon;
+revoke insert, update, delete on ratings from authenticated, anon;
+revoke insert, update, delete on compliance_records from authenticated, anon;
+revoke insert, update, delete on availability_blocks from authenticated, anon;
+revoke insert, update, delete on rate_limit_hits from authenticated, anon;
+),
+  -- Where a series begins in a year with nothing issued yet. Never lowers an
+  -- existing sequence; see lib/invoiceNumber.ts.
+  number_start integer not null default 1 check (number_start >= 1),
+
+  payment_term_days integer not null default 14
+    check (payment_term_days between 0 and 120),
+
+  iban text,
+  account_holder text,
+
+  business_name text,
+  address_line text,
+  postcode text,
+  city text,
+  -- Nullable: somebody invoicing under the medical exemption of art. 11-1-g has
+  -- no VAT to identify. Required at issue time only when VAT is actually charged.
+  vat_number text,
+
+  payment_note text check (payment_note is null or length(payment_note) <= 500),
+  copy_to_self boolean not null default true,
+
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists credit_ledger (
   id uuid primary key default gen_random_uuid(),
   profile_id uuid not null references profiles(id) on delete cascade,

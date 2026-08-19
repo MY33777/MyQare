@@ -95,7 +95,7 @@ export async function setPoolStatusAction(formData: FormData) {
   if (!["member", "star", "hidden"].includes(status)) redirect(`${POOL_PATH}?error=unknown`);
 
   const service = getSupabaseAdmin();
-  await service
+  const { error } = await service
     .from("pools")
     .update({ status })
     .eq("org_id", admin.org.id)

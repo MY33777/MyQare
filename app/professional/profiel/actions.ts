@@ -51,12 +51,17 @@ export async function updateProfileAction(formData: FormData) {
     .eq("profile_id", freelancer.userId)
     .maybeSingle<{ big_number: string | null }>();
 
-  await admin.from("profiles").update({ full_name: fullName }).eq("id", freelancer.userId);
+  const { error: nameError } = await admin
+    .from("profiles")
+    .update({ full_name: fullName })
+    .eq("id", freelancer.userId);
+  if (nameError) redirect(`${PROFILE_PATH}?error=unknown`);
 
   // Separate table, stricter policy — see migration 004.
-  await admin
+  const { error: phoneError } = await admin
     .from("profile_contact")
     .upsert({ profile_id: freelancer.userId, phone, updated_at: new Date().toISOString() }, { onConflict: "profile_id" });
+  if (phoneError) redirect(`${PROFILE_PATH}?error=unknown`);
 
   const { error } = await admin
     .from("freelancers")

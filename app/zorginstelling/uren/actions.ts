@@ -72,6 +72,14 @@ export async function approveTimesheetAction(formData: FormData) {
   if (!invoice.ok) {
     redirect(`${UREN_PATH}?approved=1&invoice=${invoice.reason}`);
   }
+  /*
+   * Held on the freelancer's own instruction, not a failure. The coordinator is
+   * told anyway: an invoice they are expecting and do not receive turns into a
+   * chase, and "she is reviewing it first" is a two-second answer that saves one.
+   */
+  if (invoice.held) {
+    redirect(`${UREN_PATH}?approved=1&invoice=held`);
+  }
   redirect(`${UREN_PATH}?approved=1`);
 }
 
@@ -135,12 +143,27 @@ export async function disputeTimesheetAction(formData: FormData) {
     redirect(`${UREN_PATH}?error=already_settled`);
   }
 
-  await service
+  const { error: sheetError } = await service
     .from("timesheets")
     .update({ disputed_at: new Date().toISOString(), dispute_reason: reason })
     .eq("assignment_id", assignmentId);
 
-  await service.from("assignments").update({ status: "disputed" }).eq("id", assignmentId);
+  /*
+   * Both writes checked, and the timesheet one first.
+   *
+   * If the timesheet update fails and the assignment flip succeeds, the row reads
+   * 'disputed' with no reason attached — the freelancer is told to correct
+   * something and not told what. Failing before the second write leaves the
+   * assignment in the state it was already in, which is recoverable by clicking
+   * again.
+   */
+  if (sheetError) redirect(`${UREN_PATH}?error=unknown`);
+
+  const { error: statusError } = await service
+    .from("assignments")
+    .update({ status: "disputed" })
+    .eq("id", assignmentId);
+  if (statusError) redirect(`${UREN_PATH}?error=unknown`);
 
   revalidatePath(UREN_PATH);
   redirect(`${UREN_PATH}?disputed=1`);

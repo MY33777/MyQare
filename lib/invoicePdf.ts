@@ -18,12 +18,25 @@ export type InvoicePdfInput = {
   issuedOn: Date;
   dueOn: Date;
   freelancer: {
+    /** Trading name from invoice_settings, falling back to the person's name. */
     name: string;
     kvk: string | null;
     bigNumber: string | null;
     email: string | null;
     address?: string | null;
+    postcode?: string | null;
+    city?: string | null;
+    /*
+     * btw-identificatienummer. Required on an invoice that charges VAT
+     * (art. 35a Wet OB) and meaningless on an exempt one, so it is printed only
+     * when present rather than shown as an empty field.
+     */
+    vatNumber?: string | null;
+    iban?: string | null;
+    accountHolder?: string | null;
   };
+  /** Free text under the totals: payment instructions, a reference. */
+  paymentNote?: string | null;
   facility: {
     name: string;
     kvk: string | null;
@@ -72,7 +85,11 @@ export function renderInvoicePdf(input: InvoicePdfInput): Promise<Buffer> {
     doc.fontSize(18).font("Helvetica-Bold").text(input.freelancer.name, MARGIN, MARGIN);
     doc.fontSize(9).font("Helvetica").fillColor("#555555");
     if (input.freelancer.address) doc.text(input.freelancer.address);
+    // Postcode and town on one line, the way a Dutch address is written.
+    const town = [input.freelancer.postcode, input.freelancer.city].filter(Boolean).join("  ");
+    if (town) doc.text(town);
     if (input.freelancer.kvk) doc.text(`KvK ${input.freelancer.kvk}`);
+    if (input.freelancer.vatNumber) doc.text(`Btw-id ${input.freelancer.vatNumber}`);
     if (input.freelancer.bigNumber) doc.text(`BIG ${input.freelancer.bigNumber}`);
     if (input.freelancer.email) doc.text(input.freelancer.email);
 
@@ -160,12 +177,28 @@ export function renderInvoicePdf(input: InvoicePdfInput): Promise<Buffer> {
     doc.fontSize(8).fillColor("#555555").font("Helvetica");
     doc.text(input.vatNote, MARGIN, Math.max(doc.y, y + 30), { width: pageWidth });
     doc.moveDown(0.5);
-    doc.text(
-      `Te voldoen binnen ${Math.round(
-        (input.dueOn.getTime() - input.issuedOn.getTime()) / 86_400_000,
-      )} dagen na factuurdatum.`,
-      { width: pageWidth },
-    );
+    /*
+     * Where the money goes. An invoice without an account number gets paid late
+     * or not at all, and chasing it is the work a freelancer came here to avoid —
+     * so lib/invoiceSettings.ts refuses to issue one without an IBAN.
+     */
+    const term = Math.round((input.dueOn.getTime() - input.issuedOn.getTime()) / 86_400_000);
+    if (input.freelancer.iban) {
+      const holder = input.freelancer.accountHolder || input.freelancer.name;
+      doc.text(
+        `Te voldoen binnen ${term} dagen na factuurdatum op ${input.freelancer.iban} ` +
+          `ten name van ${holder}, onder vermelding van factuurnummer ${input.number}.`,
+        { width: pageWidth },
+      );
+    } else {
+      doc.text(`Te voldoen binnen ${term} dagen na factuurdatum.`, { width: pageWidth });
+    }
+
+    if (input.paymentNote) {
+      doc.moveDown(0.5);
+      doc.text(input.paymentNote, { width: pageWidth });
+    }
+
     doc.moveDown(0.5);
     doc.text(
       `Deze factuur is namens ${input.freelancer.name} automatisch opgemaakt via MyQare. ` +

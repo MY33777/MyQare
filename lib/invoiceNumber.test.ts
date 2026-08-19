@@ -25,11 +25,11 @@ describe("formatInvoiceNumber", () => {
 
 describe("parseInvoiceNumber", () => {
   it("round-trips a formatted number", () => {
-    expect(parseInvoiceNumber("2026-0042")).toEqual({ year: 2026, sequence: 42 });
+    expect(parseInvoiceNumber("2026-0042")).toEqual({ prefix: "", year: 2026, sequence: 42 });
   });
 
   it("tolerates surrounding whitespace", () => {
-    expect(parseInvoiceNumber(" 2026-0042 ")).toEqual({ year: 2026, sequence: 42 });
+    expect(parseInvoiceNumber(" 2026-0042 ")).toEqual({ prefix: "", year: 2026, sequence: 42 });
   });
 
   it("returns null for anything that is not one of our numbers", () => {
@@ -93,5 +93,46 @@ describe("dueDate", () => {
     const issued = new Date("2026-08-14T00:00:00Z");
     dueDate(issued);
     expect(issued.toISOString().slice(0, 10)).toBe("2026-08-14");
+  });
+});
+
+describe("a freelancer's own numbering series", () => {
+  it("puts the chosen prefix in front of the year", () => {
+    expect(formatInvoiceNumber(2026, 1, "F")).toBe("F2026-0001");
+    expect(formatInvoiceNumber(2026, 1, null)).toBe("2026-0001");
+    expect(parseInvoiceNumber("F2026-0042")).toEqual({ prefix: "F", year: 2026, sequence: 42 });
+  });
+
+  it("refuses a prefix that would not survive a filename or a search", () => {
+    expect(() => formatInvoiceNumber(2026, 1, "F/2")).toThrow();
+    expect(() => formatInvoiceNumber(2026, 1, "far-too-long")).toThrow();
+  });
+
+  /*
+   * Somebody continuing a series they already ran in their own bookkeeping. Only
+   * applies to an empty year — see below.
+   */
+  it("starts at the requested number when nothing has been issued this year", () => {
+    expect(nextInvoiceNumber([], 2026, { start: 250 })).toBe("2026-0250");
+    expect(nextInvoiceNumber([], 2026, { start: 250, prefix: "F" })).toBe("F2026-0250");
+  });
+
+  it("never pulls the sequence backwards to honour a start", () => {
+    // Reusing a number is worse than ignoring a setting: two invoices sharing one
+    // number is the thing the whole per-party series exists to prevent.
+    expect(nextInvoiceNumber(["2026-0007"], 2026, { start: 3 })).toBe("2026-0008");
+  });
+
+  /*
+   * Changing the prefix mid-year must not restart the count. Two invoices whose
+   * numbers differ only by a letter are not a series.
+   */
+  it("ignores the prefix when finding the highest number so far", () => {
+    expect(nextInvoiceNumber(["2026-0004"], 2026, { prefix: "F" })).toBe("F2026-0005");
+    expect(nextInvoiceNumber(["F2026-0004"], 2026, { prefix: null })).toBe("2026-0005");
+  });
+
+  it("keeps the series per year", () => {
+    expect(nextInvoiceNumber(["2025-0099"], 2026, { prefix: "F" })).toBe("F2026-0001");
   });
 });

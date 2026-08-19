@@ -9,6 +9,7 @@ const NAV = [
   { href: "/professional/aanbod", label: "Aanbod" },
   { href: "/professional/diensten", label: "Mijn diensten" },
   { href: "/professional/facturen", label: "Facturen" },
+  { href: "/professional/facturatie", label: "Facturatie" },
   { href: "/professional/saldo", label: "Saldo" },
   { href: "/professional/beschikbaarheid", label: "Beschikbaarheid" },
   { href: "/professional/documenten", label: "Documenten" },

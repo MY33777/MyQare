@@ -19,5 +19,15 @@ export default defineConfig({
     // node is markedly faster to boot.
     environment: "node",
     include: ["**/*.test.ts"],
+    /*
+     * Forked processes, not worker threads.
+     *
+     * supabase/sql.test.ts loads PostgreSQL's own grammar compiled to WASM
+     * (pg-query-emscripten). Under worker_threads its function table comes back
+     * mangled — every call fails with "Ma[...] is not a function" — which reads
+     * exactly like a parse failure and would have made the whole SQL suite
+     * vacuously red. Forks cost a few hundred milliseconds on a suite this size.
+     */
+    pool: "forks",
   },
 });

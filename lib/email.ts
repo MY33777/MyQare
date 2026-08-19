@@ -283,6 +283,46 @@ export async function sendFacilityDocumentExpiryEmail(input: {
   });
 }
 
+/**
+ * Tells a freelancer their approved work could not be invoiced yet.
+ *
+ * The mechanism the /zorginstelling/uren banner claimed existed. It said "zij
+ * krijgt hiervan bericht" and nothing sent one, so approved hours with a blocked
+ * invoice were a dead end nobody was told about — and the only person who could
+ * unblock it had no reason to look.
+ */
+export async function sendInvoiceBlockedEmail(input: {
+  to: string;
+  freelancerName: string;
+  facilityName: string;
+  reason: "invoice_details_missing" | "vat_undetermined";
+  missing: string[];
+}): Promise<boolean> {
+  const body =
+    input.reason === "vat_undetermined"
+      ? [
+          `${input.facilityName} heeft je uren goedgekeurd, maar er kon nog geen factuur worden opgemaakt.`,
+          "In je profiel staat nog niet of je btw-vrijgestelde zorg verleent volgens artikel 11-1-g Wet OB. " +
+            "Zolang dat niet vaststaat, kunnen we niet weten of er btw op je factuur hoort — en een verkeerde " +
+            "btw-behandeling is achteraf lastiger recht te zetten dan een dag wachten.",
+          "Je uren en je vergoeding staan al vast. Zodra je dit invult, maak je de factuur alsnog op.",
+        ]
+      : [
+          `${input.facilityName} heeft je uren goedgekeurd, maar er kon nog geen factuur worden opgemaakt.`,
+          "Een factuur moet je naam, adres en — als je btw rekent — je btw-id vermelden. " +
+            `Nog in te vullen: ${input.missing.join(", ")}.`,
+          "Je uren en je vergoeding staan al vast. Zodra je dit aanvult, maak je de factuur alsnog op.",
+        ];
+
+  return send({
+    to: input.to,
+    subject: "Je factuur wacht nog op je gegevens",
+    heading: "Er kon nog geen factuur worden opgemaakt",
+    body,
+    cta: { label: "Gegevens aanvullen", href: absoluteUrl("/professional/facturatie") },
+  });
+}
+
 export function emailConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY);
 }

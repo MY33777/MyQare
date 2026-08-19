@@ -24,13 +24,17 @@ export async function markInvoicePaidAction(formData: FormData) {
   // Scoped to the caller's own organisation, since the admin client bypasses RLS.
   const { data: invoice } = await service
     .from("invoices")
-    .select("id, org_id, paid_at")
+    .select("id, org_id, paid_at, sent_at")
     .eq("id", invoiceId)
-    .maybeSingle<{ id: string; org_id: string; paid_at: string | null }>();
+    .maybeSingle<{ id: string; org_id: string; paid_at: string | null; sent_at: string | null }>();
 
   if (!invoice || invoice.org_id !== admin.org.id) {
     redirect("/zorginstelling/facturen?error=unknown");
   }
+
+  // An invoice the freelancer has not released cannot be marked paid: the
+  // facility has not been sent it, and paid_at would then contradict sent_at.
+  if (!invoice.sent_at) redirect("/zorginstelling/facturen?error=unknown");
 
   if (!invoice.paid_at) {
     const { error } = await service

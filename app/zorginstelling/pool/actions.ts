@@ -101,6 +101,14 @@ export async function setPoolStatusAction(formData: FormData) {
     .eq("org_id", admin.org.id)
     .eq("freelancer_id", freelancerId);
 
+  /*
+   * The error was destructured and never read — which is worse than not checking
+   * at all, because it looks checked. 'hidden' is the private per-facility block:
+   * a coordinator who hides somebody and is shown a normal reload has no reason to
+   * think they are still receiving this facility's shifts.
+   */
+  if (error) redirect(`${POOL_PATH}?error=unknown`);
+
   revalidatePath(POOL_PATH);
   redirect(POOL_PATH);
 }

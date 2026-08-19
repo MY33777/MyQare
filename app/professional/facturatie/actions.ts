@@ -128,3 +128,43 @@ export async function sendInvoiceAction(formData: FormData) {
   revalidatePath("/professional/facturen");
   redirect("/professional/facturen?sent=1");
 }
+
+/**
+ * Issues an invoice for approved work that could not be invoiced at the time.
+ *
+ * The way out of what was a dead end. createInvoiceForAssignment refuses while
+ * the legally required fields are blank, and the approval and the fee settlement
+ * stand regardless — so the work left the facility's queue, no code path retried
+ * it, and the person who could fix it was never told. Now they are told on
+ * /professional/facturen, and this is the button.
+ *
+ * Idempotent through createInvoiceForAssignment, which returns the existing
+ * invoice if one was issued in the meantime.
+ */
+export async function issueInvoiceAction(formData: FormData) {
+  const freelancer = await requireFreelancer("/professional/facturen");
+  const assignmentId = String(formData.get("assignment_id") ?? "");
+  if (!assignmentId) redirect("/professional/facturen?error=unknown");
+
+  const admin = getSupabaseAdmin();
+
+  const { data: assignment } = await admin
+    .from("assignments")
+    .select("id, freelancer_id")
+    .eq("id", assignmentId)
+    .maybeSingle<{ id: string; freelancer_id: string }>();
+
+  // The admin client bypasses RLS, so ownership is established here or nowhere.
+  if (!assignment || assignment.freelancer_id !== freelancer.userId) {
+    redirect("/professional/facturen?error=unknown");
+  }
+
+  const { createInvoiceForAssignment } = await import("@/lib/invoices");
+  const result = await createInvoiceForAssignment(assignmentId);
+
+  if (!result.ok) redirect(`/professional/facturen?error=${result.reason}`);
+
+  revalidatePath("/professional/facturen");
+  revalidatePath("/zorginstelling/facturen");
+  redirect("/professional/facturen?issued=1");
+}

@@ -122,8 +122,16 @@ export async function POST(request: NextRequest) {
    * window somebody would use.
    */
   if (event.type === "charge.refunded" || event.type === "charge.dispute.created") {
-    const reversal = await reverseCharge(event);
-    return NextResponse.json({ received: true, ...reversal });
+    try {
+      const reversal = await reverseCharge(event);
+      return NextResponse.json({ received: true, ...reversal });
+    } catch (error) {
+      // 500 asks Stripe to retry. An unthrown error here would be reported as
+      // handled and never redelivered, leaving credit on a balance that the bank
+      // has already taken back.
+      const message = error instanceof Error ? error.message : "reversal failed";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ received: true });
@@ -140,58 +148,111 @@ export async function POST(request: NextRequest) {
 async function reverseCharge(
   event: Stripe.Event,
 ): Promise<{ reversed?: number; skipped?: string }> {
-  const charge =
-    event.type === "charge.refunded"
-      ? (event.data.object as Stripe.Charge)
-      : ((event.data.object as Stripe.Dispute).charge as Stripe.Charge | string);
+  /*
+   * The PAYMENT INTENT id, which is what credit_ledger.stripe_payment_intent
+   * holds. The first version of this read `dispute.charge` — a CHARGE id, "ch_…"
+   * — and looked it up in a column that only ever contains "pi_…". It never
+   * matched, so every dispute silently returned no_matching_topup and reversed
+   * nothing. The handler existed and did nothing, which is worse than not having
+   * written it, because it looked handled.
+   *
+   * A Dispute carries payment_intent directly. A Charge carries it too, expanded
+   * or as a string depending on the request.
+   */
+  let paymentIntent: string | null = null;
+  let reversibleCents = 0;
 
-  const paymentIntent =
-    typeof charge === "string"
-      ? charge
-      : typeof charge.payment_intent === "string"
+  if (event.type === "charge.refunded") {
+    const charge = event.data.object as Stripe.Charge;
+    paymentIntent =
+      typeof charge.payment_intent === "string"
         ? charge.payment_intent
-        : (charge.payment_intent?.id ?? charge.id);
+        : (charge.payment_intent?.id ?? null);
+    // CUMULATIVE across every refund on this charge, which is what makes the
+    // arithmetic below idempotent for partial refunds.
+    reversibleCents = charge.amount_refunded ?? 0;
+  } else {
+    const dispute = event.data.object as Stripe.Dispute;
+    paymentIntent =
+      typeof dispute.payment_intent === "string"
+        ? dispute.payment_intent
+        : (dispute.payment_intent?.id ?? null);
+    reversibleCents = dispute.amount ?? 0;
+  }
 
   if (!paymentIntent) return { skipped: "no_payment_intent" };
 
   const admin = getSupabaseAdmin();
 
-  const { data: original } = await admin
+  const { data: original, error: lookupError } = await admin
     .from("credit_ledger")
     .select("profile_id, delta_cents")
     .eq("stripe_payment_intent", paymentIntent)
     .eq("reason", "topup")
     .maybeSingle<{ profile_id: string; delta_cents: number }>();
 
+  /*
+   * A failed read is not "nothing to reverse". Discarding it meant a transient
+   * database blip abandoned the reversal and told Stripe the event was handled,
+   * so it would never be redelivered and the balance stayed credited forever.
+   */
+  if (lookupError) throw new Error(`reversal lookup failed: ${lookupError.message}`);
+
   // Nothing was ever credited for this payment, so there is nothing to take back.
   if (!original) return { skipped: "no_matching_topup" };
+
+  /*
+   * How much SHOULD be gone, versus how much already is.
+   *
+   * Derived from the ledger rather than trusting the event, the same shape as
+   * settle_timesheet. The first version reversed the whole top-up on any
+   * charge.refunded, so a €5 refund on a €500 top-up wiped all €500 — and then
+   * the idempotency key blocked every correction, because the key was the
+   * payment intent and it had been used.
+   *
+   * Capped at the top-up: Stripe's amounts are in the charge's currency and a
+   * reversal must never remove more than we granted.
+   */
+  const { data: existing } = await admin
+    .from("credit_ledger")
+    .select("delta_cents")
+    .eq("assignment_id", null)
+    .eq("reason", "chargeback")
+    .like("stripe_payment_intent", `reversal:${paymentIntent}%`)
+    .returns<{ delta_cents: number }[]>();
+
+  const alreadyReversed = (existing ?? []).reduce((sum, row) => sum - row.delta_cents, 0);
+  const shouldBeReversed = Math.min(reversibleCents, original.delta_cents);
+  const delta = shouldBeReversed - alreadyReversed;
+
+  if (delta <= 0) return { skipped: "already_reversed", reversed: alreadyReversed };
 
   try {
     await recordLedgerEntry({
       profileId: original.profile_id,
-      // Negative: the credit leaves the balance. Exactly what was granted, so a
-      // reversal can never remove more than the top-up put in.
-      deltaCents: -original.delta_cents,
+      // Negative: the credit leaves the balance.
+      deltaCents: -delta,
       reason: "chargeback",
       /*
-       * Prefixed so it is unique against the top-up's own row while still getting
-       * idempotency from the same index. Stripe redelivers dispute events as
-       * readily as payment ones, and reversing twice would be the mirror of the
-       * bug this fixes.
+       * Keyed on the cumulative amount, so a redelivered event produces the same
+       * key and collides on the unique index, while a SECOND partial refund
+       * produces a different one and lands. Prefixed so it never collides with
+       * the top-up's own row.
        */
-      stripePaymentIntent: `reversal:${paymentIntent}`,
+      stripePaymentIntent: `reversal:${paymentIntent}:${shouldBeReversed}`,
       note:
         event.type === "charge.refunded"
           ? "Terugbetaling van een opwaardering"
           : "Opwaardering teruggeboekt na een betaalgeschil",
     });
   } catch (error) {
-    // 500 so Stripe retries. Balance that should be gone and is not is the same
-    // class of problem as balance that was paid for and never arrived.
+    // Rethrown so the caller returns 500 and Stripe retries. Balance that should
+    // be gone and is not is the same class of problem as balance that was paid
+    // for and never arrived.
     const message = error instanceof Error ? error.message : "reversal failed";
     console.error(`[stripe] reversal failed for ${paymentIntent}: ${message}`);
     throw error;
   }
 
-  return { reversed: original.delta_cents };
+  return { reversed: delta };
 }

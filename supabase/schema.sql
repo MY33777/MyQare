@@ -977,10 +977,19 @@ create policy invoice_settings_select on invoice_settings for select
  *
  * Same shape as the five defects migration 005 dealt with. The instrument for a
  * column is a column grant, which composes with RLS rather than replacing it.
+ *
+ * Note the ORDER. A bare `revoke select (comment, author_id)` — which is what
+ * migration 010 shipped — does nothing: Supabase grants SELECT on the whole table
+ * to anon and authenticated, that covers every column, and a column-level revoke
+ * only removes a column-level grant. The table-wide privilege has to go first.
+ * See migration 012.
+ *
  * Scores stay readable because both dashboards average them, and an average over
  * a run of assignments identifies nobody.
  */
-revoke select (comment, author_id) on ratings from authenticated, anon;
+revoke select on ratings from authenticated, anon;
+grant select (id, assignment_id, direction, score, dimensions, created_at)
+  on ratings to authenticated, anon;
 
 -- ============================================================================
 -- NO CLIENT WRITES AT ALL (migration 005)

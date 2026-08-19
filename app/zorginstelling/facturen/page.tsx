@@ -32,6 +32,13 @@ export default async function FacilityInvoicesPage() {
       "id, number, issued_on, due_on, amount_ex_vat_cents, vat_amount_cents, total_cents, vat_treatment, paid_at, profiles!invoices_freelancer_id_fkey(full_name)",
     )
     .eq("org_id", org.id)
+    /*
+     * A held invoice has not been issued to this facility yet — the freelancer is
+     * reviewing it before it goes out. It was appearing in this list, counted into
+     * the payables total and flagged overdue once its due date passed, for a
+     * document the facility had never been sent.
+     */
+    .not("sent_at", "is", null)
     .order("issued_on", { ascending: false })
     .limit(100)
     .returns<InvoiceRow[]>();

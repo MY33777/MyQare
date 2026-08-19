@@ -74,3 +74,37 @@ describe("document kinds", () => {
     expect(MAX_DOCUMENT_BYTES).toBeLessThan(6 * 1024 * 1024);
   });
 });
+
+describe("daysUntilExpiry does not drift through the day", () => {
+  /*
+   * It used to parse the expiry as midnight UTC and subtract the current instant,
+   * so the answer changed as the day went on. At 23:00 Amsterdam in summer the
+   * UTC clock reads 21:00 the same day, and the rounding tipped a day early — a
+   * VOG showed "verlopen" an evening before it was, and the expiry cron, which
+   * matches an exact day count, could miss its window entirely.
+   */
+  const expiry = "2026-08-20";
+
+  it("gives the same answer at 00:30 and 23:30 Amsterdam", () => {
+    // 00:30 and 23:30 CEST on 18 August = 22:30 on the 17th and 21:30 on the 18th UTC.
+    const earlyMorning = new Date("2026-08-17T22:30:00Z");
+    const lateEvening = new Date("2026-08-18T21:30:00Z");
+
+    expect(daysUntilExpiry(expiry, earlyMorning)).toBe(2);
+    expect(daysUntilExpiry(expiry, lateEvening)).toBe(2);
+  });
+
+  it("is zero on the day itself, whatever the hour", () => {
+    expect(daysUntilExpiry(expiry, new Date("2026-08-19T22:30:00Z"))).toBe(0); // 00:30 on the 20th
+    expect(daysUntilExpiry(expiry, new Date("2026-08-20T21:30:00Z"))).toBe(0); // 23:30 on the 20th
+  });
+
+  it("goes negative only once the day has passed", () => {
+    expect(daysUntilExpiry(expiry, new Date("2026-08-20T21:59:00Z"))).toBe(0);
+    expect(daysUntilExpiry(expiry, new Date("2026-08-20T22:01:00Z"))).toBe(-1);
+  });
+
+  it("still returns null when nothing expires", () => {
+    expect(daysUntilExpiry(null)).toBeNull();
+  });
+});

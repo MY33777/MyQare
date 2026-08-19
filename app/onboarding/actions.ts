@@ -66,6 +66,15 @@ export async function completeOnboardingAction(formData: FormData) {
   if (role === "freelancer" && !isKnownQualification(profession)) {
     redirect("/onboarding?error=missing_qualification");
   }
+
+  /*
+   * A region is required for a freelancer, because a blank one now matches
+   * nothing. Leaving it optional would silently hide every region-wide offer from
+   * everybody who skipped the field — the same class of invisible under-offering
+   * the strict matching was meant to prevent, pointed the other way.
+   */
+  const region = String(formData.get("region") ?? "").trim();
+  if (role === "freelancer" && !region) redirect("/onboarding?error=region_required");
   if (role === "facility_admin" && !orgName) redirect("/onboarding?error=org_name_required");
 
   let orgId: string | null = null;
@@ -127,6 +136,7 @@ export async function completeOnboardingAction(formData: FormData) {
     const { error: freelancerError } = await admin.from("freelancers").insert({
       profile_id: user.id,
       profession,
+      region,
       // vat_exempt stays null on purpose: undetermined is the honest starting
       // state, and lib/vat.ts refuses to issue an invoice until someone decides.
       vat_exempt: null,

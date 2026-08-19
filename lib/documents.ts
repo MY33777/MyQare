@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { amsterdamDateKey } from "@/lib/timezone";
 
 /*
  * Diplomas, VOGs, insurance certificates and KvK extracts.
@@ -168,8 +169,29 @@ export async function deleteDocument(documentId: string, freelancerId: string): 
 /** Days until expiry, or null when the kind does not expire. Negative means lapsed. */
 export function daysUntilExpiry(expiresOn: string | null, now = new Date()): number | null {
   if (!expiresOn) return null;
-  const expiry = new Date(`${expiresOn}T00:00:00Z`);
-  return Math.round((expiry.getTime() - now.getTime()) / 86_400_000);
+
+  /*
+   * Two calendar dates in Amsterdam, subtracted — not a date against an instant.
+   *
+   * This used to parse the expiry as midnight UTC and subtract `now` from it, so
+   * the answer moved through the day: at 23:00 Amsterdam in summer the UTC clock
+   * is 21:00, and the difference rounded to a different number of days than it
+   * did that morning. A VOG read "verlopen" an evening early, and the expiry cron
+   * — which matches on an exact day count — could miss its window entirely.
+   */
+  const today = amsterdamDateKey(now);
+  const a = Date.UTC(
+    Number(today.slice(0, 4)),
+    Number(today.slice(5, 7)) - 1,
+    Number(today.slice(8, 10)),
+  );
+  const b = Date.UTC(
+    Number(expiresOn.slice(0, 4)),
+    Number(expiresOn.slice(5, 7)) - 1,
+    Number(expiresOn.slice(8, 10)),
+  );
+
+  return Math.round((b - a) / 86_400_000);
 }
 
 export type ExpiryState = "geldig" | "verloopt_binnenkort" | "verlopen" | "geen_datum";

@@ -26,6 +26,8 @@ export async function GET(request: NextRequest) {
       "number, issued_on, due_on, paid_at, minutes_billed, rate_cents, amount_ex_vat_cents, vat_rate_bp, vat_amount_cents, total_cents, vat_treatment, profiles!invoices_freelancer_id_fkey(full_name), freelancers!invoices_freelancer_id_fkey(kvk, big_number)",
     )
     .eq("org_id", admin.org.id)
+    // Held invoices have not been issued to this facility yet. See the list page.
+    .not("sent_at", "is", null)
     .order("issued_on", { ascending: true })
     .limit(2000);
 

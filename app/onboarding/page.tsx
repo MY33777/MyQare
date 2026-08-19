@@ -119,6 +119,34 @@ export default async function OnboardingPage({
             */}
             <QualificationSelect name="profession" id="profession" />
             <p className="hint">Je kunt later specialisaties en documenten toevoegen.</p>
+
+            {/*
+              Asked HERE, not only on the profile page.
+
+              regionMatches stopped treating a blank as a wildcard, which fixed a
+              facility with no city broadcasting to the entire platform — and
+              created the mirror problem: onboarding never collected a region, so
+              every new freelancer had none and was invisible to every region-wide
+              shift. Silent in the other direction, and worse, because the person
+              affected has no way to know they are missing offers.
+            */}
+            <div className="mt-4">
+              <label className="label" htmlFor="region">
+                Regio waarin je werkt
+              </label>
+              <input
+                className="input"
+                id="region"
+                name="region"
+                type="text"
+                placeholder="bijv. Rotterdam-Rijnmond"
+                required
+              />
+              <p className="hint">
+                Bepaalt welke diensten je te zien krijgt van instellingen waar je nog niet werkt.
+                Aan te passen in je profiel.
+              </p>
+            </div>
           </div>
         )}
 

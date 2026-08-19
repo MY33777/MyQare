@@ -29,6 +29,7 @@ export type AcceptFailure =
   | "not_offered"
   | "insufficient_credits"
   | "respond_window_closed"
+  | "shift_already_started"
   | "unknown";
 
 export type AcceptResult =
@@ -162,6 +163,9 @@ function mapAcceptError(message: string, code?: string): AcceptFailure {
   if (text.includes("niet aan jou aangeboden")) return "not_offered";
   if (text.includes("al op deze dienst gereageerd")) return "already_responded";
   if (text.includes("reactietermijn")) return "respond_window_closed";
+  // Migration 009's guard. Unmapped, it fell through to "unknown" and the
+  // freelancer was told "Er ging iets mis" for a shift that had simply started.
+  if (text.includes("al begonnen")) return "shift_already_started";
   if (text.includes("niet meer beschikbaar") || text.includes("bestaat niet meer")) {
     return "shift_unavailable";
   }

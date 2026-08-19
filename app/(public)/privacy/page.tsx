@@ -78,6 +78,23 @@ export default function PrivacyPage() {
           </li>
         </ul>
 
+        <h3>Voor het opmaken van je facturen</h3>
+        <p>
+          Als zelfstandige ben jij de opsteller van de factuur; wij maken hem namens jou op. Daarvoor
+          moeten je eigen gegevens erop staan (artikel 35a Wet OB). Je vult ze zelf in bij Facturatie:
+        </p>
+        <ul>
+          <li>Bedrijfsnaam, adres, postcode en plaats</li>
+          <li>Btw-identificatienummer, als je btw in rekening brengt</li>
+          <li>IBAN en de naam van de rekeninghouder</li>
+          <li>Je nummerreeks, betaaltermijn en een eventuele vaste tekst op de factuur</li>
+        </ul>
+        <p>
+          Deze gegevens zijn alleen zichtbaar voor jou en voor medewerkers van MyQare. Ze komen op de
+          facturen die namens jou naar een zorginstelling gaan — dat is het doel ervan — maar een
+          instelling kan ze niet los opvragen.
+        </p>
+
         <h3>Van zorginstellingen</h3>
         <ul>
           <li>Naam, KvK-nummer, adres en facturatie-e-mailadres van de organisatie</li>
@@ -96,8 +113,9 @@ export default function PrivacyPage() {
             zagen op het moment van accepteren
           </li>
           <li>
-            Technische gegevens om misbruik tegen te gaan, zoals het aantal inlogpogingen per
-            IP-adres
+            Technische gegevens om misbruik tegen te gaan: een teller per e-mailadres van het aantal
+            inlogpogingen, wachtwoordherstel-verzoeken en contactformulieren binnen een kort
+            tijdvenster. Er wordt geen IP-adres vastgelegd.
           </li>
         </ul>
 
@@ -215,7 +233,10 @@ export default function PrivacyPage() {
             verwijdert, en niet langer dan nodig voor de opdrachten waarvoor ze golden.
           </li>
           <li>
-            <strong>Profielgegevens:</strong> zolang je account bestaat.
+            <strong>Profiel- en factuurgegevens:</strong> zolang je account bestaat. Je
+            factuurinstellingen worden bewaard omdat elke volgende factuur ze nodig heeft; de
+            gegevens zoals ze op een reeds verstuurde factuur staan, vallen onder de bewaarplicht
+            hierboven en veranderen niet meer mee als je ze later aanpast.
           </li>
           <li>
             <strong>Technische gegevens tegen misbruik:</strong> kort, hooguit enkele dagen.

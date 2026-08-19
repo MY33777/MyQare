@@ -41,6 +41,17 @@ export async function GET(request: NextRequest) {
       "id, number, due_on, total_cents, reminders_sent, organisations(name, billing_email), profiles!invoices_freelancer_id_fkey(full_name)",
     )
     .is("paid_at", null)
+    /*
+     * Only invoices the facility actually has.
+     *
+     * A freelancer with auto_send off gets an invoice created and numbered but
+     * deliberately not delivered. This query had no sent_at filter, so the cron
+     * chased facilities for documents they had never received — a dunning letter
+     * about an invoice number they cannot find, three times, escalating. The
+     * embarrassment lands on the freelancer, who did nothing but choose to review
+     * their own invoices first.
+     */
+    .not("sent_at", "is", null)
     .lt("due_on", todayKey)
     .lt("reminders_sent", MAX_REMINDERS)
     /*

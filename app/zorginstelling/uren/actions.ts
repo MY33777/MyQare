@@ -6,6 +6,8 @@ import { getFacilityAdmin } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { approveTimesheet } from "@/lib/assignments";
 import { createInvoiceForAssignment } from "@/lib/invoices";
+import { sendInvoiceBlockedEmail } from "@/lib/email";
+import { MISSING_FIELD_LABELS, type MissingField } from "@/lib/invoiceSettings";
 
 const UREN_PATH = "/zorginstelling/uren";
 
@@ -70,6 +72,18 @@ export async function approveTimesheetAction(formData: FormData) {
    * freelancer chased payment for a shift that was never invoiced.
    */
   if (!invoice.ok) {
+    /*
+     * Tell the freelancer, because they are the only one who can unblock it and
+     * the banner shown to the coordinator says they have been told.
+     *
+     * Best effort: the approval and the fee settlement already stand, and a mail
+     * failure must not undo them. The work also now surfaces on the freelancer's
+     * own invoice page with a button, so this is a nudge rather than the only
+     * route back.
+     */
+    if (invoice.reason === "invoice_details_missing" || invoice.reason === "vat_undetermined") {
+      await notifyFreelancerInvoiceBlocked(assignmentId, invoice.reason, invoice.missing ?? []);
+    }
     redirect(`${UREN_PATH}?approved=1&invoice=${invoice.reason}`);
   }
   /*
@@ -167,4 +181,43 @@ export async function disputeTimesheetAction(formData: FormData) {
 
   revalidatePath(UREN_PATH);
   redirect(`${UREN_PATH}?disputed=1`);
+}
+
+/**
+ * Emails the freelancer that their approved work is waiting on their own details.
+ *
+ * Separate function because the approval path must stay readable, and because
+ * everything in here is allowed to fail without affecting anything that already
+ * happened.
+ */
+async function notifyFreelancerInvoiceBlocked(
+  assignmentId: string,
+  reason: "invoice_details_missing" | "vat_undetermined",
+  missing: MissingField[],
+): Promise<void> {
+  const service = getSupabaseAdmin();
+
+  const { data: assignment } = await service
+    .from("assignments")
+    .select("freelancer_id, organisations(name), profiles!assignments_freelancer_id_fkey(full_name)")
+    .eq("id", assignmentId)
+    .maybeSingle<{
+      freelancer_id: string;
+      organisations: { name: string } | null;
+      profiles: { full_name: string } | null;
+    }>();
+
+  if (!assignment) return;
+
+  const { data: user } = await service.auth.admin.getUserById(assignment.freelancer_id);
+  const to = user?.user?.email;
+  if (!to) return;
+
+  await sendInvoiceBlockedEmail({
+    to,
+    freelancerName: assignment.profiles?.full_name ?? "",
+    facilityName: assignment.organisations?.name ?? "De zorginstelling",
+    reason,
+    missing: missing.map((field) => MISSING_FIELD_LABELS[field]),
+  });
 }

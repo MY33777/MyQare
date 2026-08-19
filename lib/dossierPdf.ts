@@ -1,4 +1,5 @@
 import PDFDocument from "pdfkit";
+import { winAnsiSafe } from "@/lib/winAnsi";
 import { formatEuros } from "@/lib/money";
 import { formatDate, formatMinutes } from "@/lib/hours";
 
@@ -14,6 +15,21 @@ import { formatDate, formatMinutes } from "@/lib/hours";
  * Deliberately plain. It is evidence, not marketing — no logo, no colour, nothing
  * that invites the reader to wonder what else was styled for their benefit.
  */
+
+/*
+ * Routes every string through winAnsiSafe on its way to the page.
+ *
+ * Wrapping the method once rather than each of the forty call sites: pdfkit
+ * corrupts the REST of a text run when it meets a character outside WinAnsi, so a
+ * single missed call would silently mangle a name — and the next person to add a
+ * doc.text() would have no way to know they had to remember. See lib/winAnsi.ts.
+ */
+function guardText(doc: PDFKit.PDFDocument): void {
+  const original = doc.text.bind(doc);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (doc as any).text = (value: unknown, ...rest: unknown[]) =>
+    original(typeof value === "string" ? winAnsiSafe(value) : (value as string), ...(rest as []));
+}
 
 export type DossierEntry = {
   freelancerName: string;
@@ -51,6 +67,7 @@ const RATE_SET_BY_LABELS: Record<string, string> = {
 export function renderDossierPdf(input: DossierInput): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", margin: MARGIN, font: "Helvetica" });
+    guardText(doc);
 
     const chunks: Buffer[] = [];
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));

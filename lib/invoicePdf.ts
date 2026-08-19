@@ -1,4 +1,5 @@
 import PDFDocument from "pdfkit";
+import { winAnsiSafe } from "@/lib/winAnsi";
 import { formatEuros } from "@/lib/money";
 import { formatDate, formatMinutes } from "@/lib/hours";
 
@@ -12,6 +13,21 @@ import { formatDate, formatMinutes } from "@/lib/hours";
  * invoice, which is both wrong and precisely the impression the whole product is
  * built to avoid.
  */
+
+/*
+ * Routes every string through winAnsiSafe on its way to the page.
+ *
+ * Wrapping the method once rather than each of the forty call sites: pdfkit
+ * corrupts the REST of a text run when it meets a character outside WinAnsi, so a
+ * single missed call would silently mangle a name — and the next person to add a
+ * doc.text() would have no way to know they had to remember. See lib/winAnsi.ts.
+ */
+function guardText(doc: PDFKit.PDFDocument): void {
+  const original = doc.text.bind(doc);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (doc as any).text = (value: unknown, ...rest: unknown[]) =>
+    original(typeof value === "string" ? winAnsiSafe(value) : (value as string), ...(rest as []));
+}
 
 export type InvoicePdfInput = {
   number: string;
@@ -72,6 +88,7 @@ export function renderInvoicePdf(input: InvoicePdfInput): Promise<Buffer> {
     // has to be bundled or found on disk at runtime — which is the usual way
     // pdfkit breaks in a serverless deployment.
     const doc = new PDFDocument({ size: "A4", margin: MARGIN, font: "Helvetica" });
+    guardText(doc);
 
     const chunks: Buffer[] = [];
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));

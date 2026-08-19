@@ -26,6 +26,10 @@ const REASON_LABELS: Record<string, string> = {
   fee_refund: "Terugbetaling",
   fee_adjustment: "Correctie",
   manual: "Handmatig",
+  // A top-up pulled back after a refund or a disputed payment. Its own label, not
+  // folded into "Correctie": somebody looking at a balance that dropped needs to
+  // see what actually happened. See migration 011.
+  chargeback: "Opwaardering teruggeboekt",
 };
 
 const PRESETS = [2500, 5000, 10000, 25000];

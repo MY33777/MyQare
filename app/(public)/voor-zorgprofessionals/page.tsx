@@ -15,7 +15,14 @@ const FEE_INCL_VAT_PERCENT = ((PLATFORM_FEE_BP * (10000 + VAT_STANDARD_BP)) / 10
 const FEATURES = [
   {
     title: "Alleen wat bij je past",
-    body: "Diensten worden gefilterd op je kwalificatie en je regio. Je krijgt geen meldingen voor werk dat je niet mag of niet wilt doen.",
+    /*
+     * Was "gefilterd op je kwalificatie en je regio", which described only the
+     * region-wide path — pool and stars offered everyone in the pool regardless of
+     * qualification. Qualification now filters everywhere; region still applies
+     * only where it should, because a facility's own pool member who moved house
+     * should not silently stop hearing from a client they work with.
+     */
+    body: "Diensten worden altijd gefilterd op je kwalificatie: je krijgt geen aanbod voor werk dat je niet mag doen. Regio geldt bij diensten die breed worden uitgezet; van instellingen waar je zelf in de pool zit, hoor je ongeacht waar je woont.",
   },
   {
     title: "Weigeren kost je niets",

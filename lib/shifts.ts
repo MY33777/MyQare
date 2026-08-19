@@ -233,11 +233,43 @@ async function findRecipients(input: NewShift): Promise<string[]> {
 
   const { data: poolRows } = await admin
     .from("pools")
-    .select("freelancer_id")
+    .select("freelancer_id, freelancers(profession, specialisations)")
     .eq("org_id", input.orgId)
-    .in("status", poolStatuses);
+    .in("status", poolStatuses)
+    .returns<
+      {
+        freelancer_id: string;
+        freelancers: { profession: string | null; specialisations: string[] | null } | null;
+      }[]
+    >();
 
-  const ids = new Set((poolRows ?? []).map((row) => row.freelancer_id as string));
+  /*
+   * Pool members are filtered on qualification too.
+   *
+   * They were not: 'pool' and 'stars' offered every non-hidden member the shift
+   * regardless of what they are qualified to do, so a night shift needing an
+   * MBO-Verpleegkundige niveau 4 also went to every Helpende niveau 2 in the pool.
+   *
+   * Three public pages say offers are filtered on qualification, and they were
+   * describing what only the 'region' path did. The cost is not only a misleading
+   * claim: an offer someone cannot legally accept is noise that teaches people to
+   * stop reading them, and the facility sees declines that look like unwillingness.
+   *
+   * Region is deliberately NOT applied here. Somebody the facility put in its own
+   * pool has already been vetted by them, and a pool member who moved house should
+   * not silently stop hearing from a client they work with.
+   */
+  const ids = new Set(
+    (poolRows ?? [])
+      .filter((row) =>
+        qualificationMatches(
+          input.qualification,
+          row.freelancers?.profession,
+          row.freelancers?.specialisations,
+        ),
+      )
+      .map((row) => row.freelancer_id),
+  );
 
   if (input.visibility === "region") {
     /*

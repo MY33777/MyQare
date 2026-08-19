@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
 import { recordLedgerEntry } from "@/lib/credits";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 /*
  * Stripe webhook — the only place a top-up is credited.
@@ -60,6 +61,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true, skipped: "missing_metadata" });
     }
 
+    /*
+     * Confirm the id names an actual freelancer before crediting it.
+     *
+     * metadata is set by us when the session is created, so under normal operation
+     * this always holds. It is checked anyway because a ledger entry against a
+     * profile that does not exist, or against a facility admin who has no balance
+     * page, is money that is gone from Stripe and present nowhere — and the
+     * append-only ledger has no clean way to move it afterwards.
+     */
+    const { data: recipient } = await getSupabaseAdmin()
+      .from("freelancers")
+      .select("profile_id")
+      .eq("profile_id", profileId)
+      .maybeSingle<{ profile_id: string }>();
+
+    if (!recipient) {
+      // 200, not 500: retrying will not make the profile exist, and a webhook
+      // Stripe keeps redelivering forever is its own problem.
+      console.error(`[stripe] top-up for unknown freelancer ${profileId}, session ${session.id}`);
+      return NextResponse.json({ received: true, skipped: "unknown_freelancer" });
+    }
+
     const paymentIntent =
       typeof session.payment_intent === "string"
         ? session.payment_intent
@@ -84,5 +107,91 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  /*
+   * Money going back out.
+   *
+   * There was no handler for any of this. Somebody could top up €500, spend it
+   * accepting shifts, dispute the charge with their bank, and keep the balance —
+   * Stripe pulls the money back, MyQare never hears, and the ledger still says
+   * they have it.
+   *
+   * charge.refunded covers a refund we or Stripe issued; charge.dispute.created
+   * covers a chargeback, and deliberately reverses at the moment the dispute is
+   * OPENED rather than when it is lost. The funds are withdrawn immediately either
+   * way, and leaving spendable balance in place during a dispute is exactly the
+   * window somebody would use.
+   */
+  if (event.type === "charge.refunded" || event.type === "charge.dispute.created") {
+    const reversal = await reverseCharge(event);
+    return NextResponse.json({ received: true, ...reversal });
+  }
+
   return NextResponse.json({ received: true });
+}
+
+/**
+ * Takes back credit for a payment that was refunded or disputed.
+ *
+ * Finds the original top-up by its payment intent rather than trusting anything on
+ * the reversal event — the amount reversed can differ from the amount credited
+ * (a partial refund, a different currency presentation), and the ledger's own
+ * record of what was granted is the only safe basis for what to remove.
+ */
+async function reverseCharge(
+  event: Stripe.Event,
+): Promise<{ reversed?: number; skipped?: string }> {
+  const charge =
+    event.type === "charge.refunded"
+      ? (event.data.object as Stripe.Charge)
+      : ((event.data.object as Stripe.Dispute).charge as Stripe.Charge | string);
+
+  const paymentIntent =
+    typeof charge === "string"
+      ? charge
+      : typeof charge.payment_intent === "string"
+        ? charge.payment_intent
+        : (charge.payment_intent?.id ?? charge.id);
+
+  if (!paymentIntent) return { skipped: "no_payment_intent" };
+
+  const admin = getSupabaseAdmin();
+
+  const { data: original } = await admin
+    .from("credit_ledger")
+    .select("profile_id, delta_cents")
+    .eq("stripe_payment_intent", paymentIntent)
+    .eq("reason", "topup")
+    .maybeSingle<{ profile_id: string; delta_cents: number }>();
+
+  // Nothing was ever credited for this payment, so there is nothing to take back.
+  if (!original) return { skipped: "no_matching_topup" };
+
+  try {
+    await recordLedgerEntry({
+      profileId: original.profile_id,
+      // Negative: the credit leaves the balance. Exactly what was granted, so a
+      // reversal can never remove more than the top-up put in.
+      deltaCents: -original.delta_cents,
+      reason: "chargeback",
+      /*
+       * Prefixed so it is unique against the top-up's own row while still getting
+       * idempotency from the same index. Stripe redelivers dispute events as
+       * readily as payment ones, and reversing twice would be the mirror of the
+       * bug this fixes.
+       */
+      stripePaymentIntent: `reversal:${paymentIntent}`,
+      note:
+        event.type === "charge.refunded"
+          ? "Terugbetaling van een opwaardering"
+          : "Opwaardering teruggeboekt na een betaalgeschil",
+    });
+  } catch (error) {
+    // 500 so Stripe retries. Balance that should be gone and is not is the same
+    // class of problem as balance that was paid for and never arrived.
+    const message = error instanceof Error ? error.message : "reversal failed";
+    console.error(`[stripe] reversal failed for ${paymentIntent}: ${message}`);
+    throw error;
+  }
+
+  return { reversed: original.delta_cents };
 }

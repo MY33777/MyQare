@@ -17,8 +17,28 @@ cp .env.local.example .env.local   # then fill it in
 npm run dev
 ```
 
-Run `supabase/schema.sql` in the Supabase SQL editor first, and create a **private** Storage
-bucket named `documents`.
+### Database setup
+
+In the Supabase SQL editor, **in this order**:
+
+1. `supabase/schema.sql` — tables, RLS policies, grants
+2. `supabase/functions.sql` — `accept_shift`, `settle_timesheet`, `cancel_assignment`,
+   `lookup_account_by_email`
+
+This step used to list only `schema.sql`, which left a fresh database without any of the four
+RPCs the app calls. Nothing would have worked past the first shift acceptance, with a Postgres
+"function does not exist" surfacing as a generic error.
+
+`schema.sql` and `functions.sql` already contain everything the migrations do — they are the
+current state, not the original. `supabase/migrations/` exists for a database that has already
+been set up and needs bringing forward; on a fresh one, skip it.
+
+Then create a **private** Storage bucket named `documents`.
+
+> **Nothing here has ever been run.** There is no Supabase project yet, so every file in
+> `supabase/` is untested against a real database. Migration 007 shipped selecting a column that
+> does not exist and would have aborted in full — found by an audit, not by running it. Expect to
+> fix things on first execution, and run them one file at a time so a failure is visible.
 
 Every variable in `.env.local` must **also** be added by hand in the Vercel dashboard.
 `.env.local` is never uploaded, so a secret that works locally will fail in production until it

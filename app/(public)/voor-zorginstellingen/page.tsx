@@ -18,7 +18,14 @@ const FEATURES = [
   },
   {
     title: "Documenten die je moet zien",
-    body: "VOG, diploma, beroepsaansprakelijkheidsverzekering en KvK-uittreksel worden gecontroleerd voordat iemand in je pool komt. Je ziet de goedgekeurde documenten van je poolleden vóór je iemand inhuurt — de Wkkgz-check hoort vooraf, niet achteraf.",
+    /*
+     * This said documents are checked "voordat iemand in je pool komt". They are
+     * not: addToPoolAction checks no documents at all, and adding somebody by
+     * email puts them in the pool immediately. What is true is that MyQare reviews
+     * every uploaded document, and that you can see the approved ones before you
+     * hire — which is the check the Wkkgz actually puts on the facility.
+     */
+    body: "Elk geüpload document — VOG, diploma, beroepsaansprakelijkheidsverzekering, KvK-uittreksel — wordt door ons beoordeeld voordat het als goedgekeurd geldt. Je ziet de goedgekeurde documenten van je poolleden vóór je iemand inhuurt, want de Wkkgz-check hoort vooraf. Iemand in je pool zetten is geen goedkeuring: dat blijft jouw beoordeling.",
   },
   {
     title: "Verlopende documenten",

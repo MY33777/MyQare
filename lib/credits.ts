@@ -41,7 +41,14 @@ export async function creditBalanceCents(
   return data.reduce((sum, row) => sum + (row.delta_cents as number), 0);
 }
 
-export type LedgerReason = "topup" | "fee" | "fee_refund" | "fee_adjustment" | "manual";
+export type LedgerReason =
+  | "topup"
+  | "fee"
+  | "fee_refund"
+  | "fee_adjustment"
+  | "manual"
+  /** A top-up pulled back: a Stripe refund or a disputed charge. See migration 011. */
+  | "chargeback";
 
 /**
  * Appends one movement to the ledger.
@@ -74,11 +81,20 @@ export async function recordLedgerEntry(entry: {
 
   if (error) {
     /*
-     * 23505 is a unique violation, which here can only be the stripe_payment_intent
-     * index — i.e. a webhook Stripe delivered twice. That is the index doing its
-     * job, so swallow it rather than crediting the same payment again.
+     * Swallow the duplicate ONLY when it is the one we expect.
+     *
+     * 23505 is any unique violation. This used to swallow all of them on the
+     * reasoning that stripe_payment_intent is the only unique index on the table —
+     * true today, and the kind of assumption that stops being true the moment
+     * somebody adds a constraint. Every other 23505 would then have been silently
+     * dropped: a ledger entry that never landed, on an append-only table, with the
+     * caller told it succeeded.
+     *
+     * Matched on the constraint name so a new index cannot quietly join the club.
      */
-    if (error.code === "23505") return;
+    const duplicateTopUp =
+      error.code === "23505" && (error.message ?? "").includes("stripe_payment_intent");
+    if (duplicateTopUp) return;
     throw new Error(`Kon creditmutatie niet vastleggen: ${error.message}`);
   }
 }

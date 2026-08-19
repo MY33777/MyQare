@@ -443,7 +443,10 @@ create table if not exists invoice_settings (
   profile_id uuid not null references profiles(id) on delete cascade,
   -- Positive for top-ups and refunds, negative for fees.
   delta_cents integer not null,
-  reason text not null check (reason in ('topup', 'fee', 'fee_refund', 'fee_adjustment', 'manual')),
+  -- 'chargeback' is a reversal: a refund or a disputed payment pulled back by the
+  -- bank. Its own reason rather than a negative 'topup', because it has to be
+  -- visible as what it is and countable separately. See migration 011.
+  reason text not null check (reason in ('topup', 'fee', 'fee_refund', 'fee_adjustment', 'manual', 'chargeback')),
   assignment_id uuid references assignments(id) on delete set null,
   -- Stripe's id for the payment that created a topup. Unique so a webhook
   -- delivered twice — which Stripe explicitly warns will happen — cannot credit
@@ -1042,7 +1045,10 @@ create table if not exists credit_ledger (
   profile_id uuid not null references profiles(id) on delete cascade,
   -- Positive for top-ups and refunds, negative for fees.
   delta_cents integer not null,
-  reason text not null check (reason in ('topup', 'fee', 'fee_refund', 'fee_adjustment', 'manual')),
+  -- 'chargeback' is a reversal: a refund or a disputed payment pulled back by the
+  -- bank. Its own reason rather than a negative 'topup', because it has to be
+  -- visible as what it is and countable separately. See migration 011.
+  reason text not null check (reason in ('topup', 'fee', 'fee_refund', 'fee_adjustment', 'manual', 'chargeback')),
   assignment_id uuid references assignments(id) on delete set null,
   -- Stripe's id for the payment that created a topup. Unique so a webhook
   -- delivered twice — which Stripe explicitly warns will happen — cannot credit

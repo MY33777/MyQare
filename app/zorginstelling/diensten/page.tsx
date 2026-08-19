@@ -67,7 +67,19 @@ export default async function ShiftsPage({
         }
       />
 
-      {posted !== null ? (
+      {/*
+        Nothing was created. Checked FIRST, because the branches below both read
+        as some flavour of success: a series where every insert failed came out as
+        "Dienst geplaatst, maar aan niemand aangeboden" and blamed the facility's
+        pool for a failure on our side. The coordinator then goes looking for a
+        shift that does not exist.
+      */}
+      {posted !== null && posted === 0 ? (
+        <FormMessage kind="error">
+          Er is geen enkele dienst geplaatst — er ging iets mis aan onze kant, niet aan die van
+          jou. Probeer het opnieuw; blijft het misgaan, laat het ons weten.
+        </FormMessage>
+      ) : posted !== null ? (
         offered > 0 ? (
           <FormMessage kind="ok">
             {posted === 1 ? "Dienst" : `${posted} diensten`} geplaatst, samen {offered} keer

@@ -138,6 +138,61 @@ as $$
   select coalesce((select role = 'staff' from profiles where id = auth.uid()), false);
 $$;
 
+/*
+ * Does the current user hold an offer for this shift?
+ *
+ * Replaces the subquery inside shifts_select. Runs as owner, so reading
+ * shift_offers here does not re-enter shift_offers_select.
+ */
+create or replace function has_offer_for_shift(p_shift_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from shift_offers
+    where shift_id = p_shift_id and freelancer_id = auth.uid()
+  );
+$$;
+
+/*
+ * Which organisation owns this shift?
+ *
+ * Replaces the subquery inside shift_offers_select. Returns an organisation id
+ * for a shift id and nothing else — the caller already has to know the shift id,
+ * and shift ids are uuids.
+ */
+create or replace function shift_org(p_shift_id uuid)
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select org_id from shifts where id = p_shift_id;
+$$;
+
+/*
+ * Can the current user appoint admins?
+ *
+ * Parameterless, like is_staff(), and for the same reason: it answers a question
+ * about the caller and cannot be pointed at anybody else.
+ */
+create or replace function can_manage_admins()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from staff_permissions
+    where profile_id = auth.uid() and capability = 'manage_admins'
+  );
+$$;
+
 -- ============================================================================
 -- FREELANCERS
 -- ============================================================================
@@ -762,10 +817,10 @@ create policy shifts_select on shifts for select
   using (
     org_id = current_org_id()
     or is_staff()
-    or exists (
-      select 1 from shift_offers o
-      where o.shift_id = shifts.id and o.freelancer_id = auth.uid()
-    )
+    -- A definer helper, NOT a subquery: shift_offers_select reads shifts, so an
+    -- inline exists() here made the two policies expand each other and Postgres
+    -- raise 42P17 on every authenticated read of either table. See migration 016.
+    or has_offer_for_shift(shifts.id)
   );
 
 drop policy if exists shifts_insert on shifts;
@@ -781,7 +836,8 @@ create policy shift_offers_select on shift_offers for select
   using (
     freelancer_id = auth.uid()
     or is_staff()
-    or exists (select 1 from shifts s where s.id = shift_offers.shift_id and s.org_id = current_org_id())
+    -- The other half of the same cycle. See migration 016.
+    or shift_org(shift_offers.shift_id) = current_org_id()
   );
 
 /*
@@ -1041,13 +1097,9 @@ alter table staff_permissions enable row level security;
  */
 drop policy if exists staff_permissions_select on staff_permissions;
 create policy staff_permissions_select on staff_permissions for select
-  using (
-    profile_id = auth.uid()
-    or exists (
-      select 1 from staff_permissions mine
-      where mine.profile_id = auth.uid() and mine.capability = 'manage_admins'
-    )
-  );
+  -- Reading staff_permissions inside staff_permissions' own policy is the exact
+  -- case this file's header warns about. See migration 016.
+  using (profile_id = auth.uid() or can_manage_admins());
 
 revoke insert, update, delete on staff_permissions from authenticated, anon;
 
@@ -1095,12 +1147,8 @@ alter table admin_audit_log enable row level security;
 -- were trusted with.
 drop policy if exists admin_audit_log_select on admin_audit_log;
 create policy admin_audit_log_select on admin_audit_log for select
-  using (
-    exists (
-      select 1 from staff_permissions mine
-      where mine.profile_id = auth.uid() and mine.capability = 'manage_admins'
-    )
-  );
+  -- Inherited the recursion above through staff_permissions. See migration 016.
+  using (can_manage_admins());
 
 revoke insert, update, delete on admin_audit_log from authenticated, anon;
 

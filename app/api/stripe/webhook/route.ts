@@ -3,6 +3,13 @@ import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
 import { recordLedgerEntry } from "@/lib/credits";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import {
+  computeReversal,
+  computeRestore,
+  reversalKey,
+  restoreKey,
+  type PriorMovement,
+} from "@/lib/reversal";
 
 /*
  * Stripe webhook — the only place a top-up is credited.
@@ -108,20 +115,6 @@ export async function POST(request: NextRequest) {
   }
 
   /*
-   * Money going back out.
-   *
-   * There was no handler for any of this. Somebody could top up €500, spend it
-   * accepting shifts, dispute the charge with their bank, and keep the balance —
-   * Stripe pulls the money back, MyQare never hears, and the ledger still says
-   * they have it.
-   *
-   * charge.refunded covers a refund we or Stripe issued; charge.dispute.created
-   * covers a chargeback, and deliberately reverses at the moment the dispute is
-   * OPENED rather than when it is lost. The funds are withdrawn immediately either
-   * way, and leaving spendable balance in place during a dispute is exactly the
-   * window somebody would use.
-   */
-  /*
    * A dispute the freelancer WON. The reversal has to be two-way.
    *
    * charge.dispute.created reverses at the moment a dispute opens, because the
@@ -187,6 +180,16 @@ async function reverseCharge(
    */
   let paymentIntent: string | null = null;
   let reversibleCents = 0;
+  /*
+   * Which kind of reversal this is, recorded in the key.
+   *
+   * A refund is permanent; a dispute can be won, and winning must give back only
+   * what the DISPUTE took. Both used to write `reversal:<pi>:<amount>`, so
+   * restoreWonDispute could not tell them apart and handed back refunded money
+   * too. The cause belongs in the key because the key is the only thing that
+   * survives into the ledger.
+   */
+  let cause: "refund" | "dispute" = "refund";
 
   if (event.type === "charge.refunded") {
     const charge = event.data.object as Stripe.Charge;
@@ -199,6 +202,21 @@ async function reverseCharge(
     reversibleCents = charge.amount_refunded ?? 0;
   } else {
     const dispute = event.data.object as Stripe.Dispute;
+
+    /*
+     * An INQUIRY is not a chargeback.
+     *
+     * Stripe fires charge.dispute.created for early warnings and inquiries too,
+     * whose status is prefixed `warning_`. No funds are withdrawn for those —
+     * the bank is asking a question. Reversing on one takes money off somebody
+     * because their cardholder rang their bank, and the closing event for an
+     * inquiry does not carry status 'won', so nothing would give it back.
+     */
+    if ((dispute.status ?? "").startsWith("warning_")) {
+      return { skipped: `inquiry_${dispute.status}` };
+    }
+
+    cause = "dispute";
     paymentIntent =
       typeof dispute.payment_intent === "string"
         ? dispute.payment_intent
@@ -239,25 +257,61 @@ async function reverseCharge(
    * Capped at the top-up: Stripe's amounts are in the charge's currency and a
    * reversal must never remove more than we granted.
    */
-  const { data: existing } = await admin
+  /*
+   * The NET position on this payment, not just what was taken off it.
+   *
+   * Two bugs lived in the previous three lines.
+   *
+   * `.eq("assignment_id", null)` sends `assignment_id=eq.null` to PostgREST,
+   * which compares against the literal string "null" rather than meaning IS NULL
+   * — it is the only `.eq(col, null)` in the repo; everywhere else uses `.is()`.
+   * So this matched nothing, alreadyReversed was permanently 0, and each new
+   * event reversed the cumulative amount AGAIN under a fresh key. Two partial
+   * refunds of €50 and €30 removed €130.
+   *
+   * And filtering to reason='chargeback' ignored what restoreWonDispute had
+   * already given back. After a dispute was reversed and then won, a later refund
+   * saw the reversal, computed delta = 0, and took nothing — the platform paid
+   * the money out of Stripe and the freelancer kept the balance.
+   *
+   * Both rows are keyed `reversal:<pi>…` or `restored:<pi>`, so summing the
+   * DELTAS of everything under this payment other than the original top-up gives
+   * the position directly: negative means still removed, zero means square.
+   */
+  const { data: existing, error: existingError } = await admin
     .from("credit_ledger")
-    .select("delta_cents")
-    .eq("assignment_id", null)
-    .eq("reason", "chargeback")
-    .like("stripe_payment_intent", `reversal:${paymentIntent}%`)
-    .returns<{ delta_cents: number }[]>();
+    .select("delta_cents, stripe_payment_intent")
+    .or(
+      `stripe_payment_intent.like.reversal:${paymentIntent}%,` +
+        `stripe_payment_intent.like.restored:${paymentIntent}%`,
+    )
+    .returns<{ delta_cents: number; stripe_payment_intent: string }[]>();
 
-  const alreadyReversed = (existing ?? []).reduce((sum, row) => sum - row.delta_cents, 0);
-  const shouldBeReversed = Math.min(reversibleCents, original.delta_cents);
-  const delta = shouldBeReversed - alreadyReversed;
+  // A failed read is not "nothing has been reversed". Discarding it is what let
+  // the recomputation start from zero every time.
+  if (existingError) throw new Error(`reversal history unreadable: ${existingError.message}`);
 
-  if (delta <= 0) return { skipped: "already_reversed", reversed: alreadyReversed };
+  const prior: PriorMovement[] = (existing ?? []).map((row) => ({
+    deltaCents: row.delta_cents,
+    key: row.stripe_payment_intent,
+  }));
+
+  // The arithmetic lives in lib/reversal.ts, where it can be tested without a
+  // database. Three audits found a defect in it while it was tangled up in these
+  // queries; none of them could have been caught by a test that did not exist.
+  const decision = computeReversal({
+    topUpCents: original.delta_cents,
+    reversibleCents,
+    prior,
+  });
+
+  if (!decision.act) return { skipped: decision.reason };
 
   try {
     await recordLedgerEntry({
       profileId: original.profile_id,
       // Negative: the credit leaves the balance.
-      deltaCents: -delta,
+      deltaCents: -decision.deltaCents,
       reason: "chargeback",
       /*
        * Keyed on the cumulative amount, so a redelivered event produces the same
@@ -265,7 +319,7 @@ async function reverseCharge(
        * produces a different one and lands. Prefixed so it never collides with
        * the top-up's own row.
        */
-      stripePaymentIntent: `reversal:${paymentIntent}:${shouldBeReversed}`,
+      stripePaymentIntent: reversalKey(paymentIntent, cause, decision.cumulative),
       note:
         event.type === "charge.refunded"
           ? "Terugbetaling van een opwaardering"
@@ -280,7 +334,7 @@ async function reverseCharge(
     throw error;
   }
 
-  return { reversed: delta };
+  return { reversed: decision.deltaCents };
 }
 
 /**
@@ -303,30 +357,43 @@ async function restoreWonDispute(
 
   const admin = getSupabaseAdmin();
 
-  const { data: reversals, error } = await admin
+  /*
+   * Only what the DISPUTE removed, and only what has not been given back.
+   *
+   * The first version summed every reversal on this payment, which included any
+   * refund — permanently correct money — and handed it back. It also ignored
+   * earlier restores, so a redelivered close event credited a second time.
+   */
+  const { data: rows, error } = await admin
     .from("credit_ledger")
-    .select("profile_id, delta_cents")
-    .eq("reason", "chargeback")
-    .like("stripe_payment_intent", `reversal:${paymentIntent}%`)
-    .returns<{ profile_id: string; delta_cents: number }[]>();
+    .select("profile_id, delta_cents, stripe_payment_intent")
+    .or(
+      `stripe_payment_intent.like.reversal:${paymentIntent}:dispute:%,` +
+        `stripe_payment_intent.like.restored:${paymentIntent}%`,
+    )
+    .returns<{ profile_id: string; delta_cents: number; stripe_payment_intent: string }[]>();
 
   if (error) throw new Error(`restore lookup failed: ${error.message}`);
-  if (!reversals || reversals.length === 0) return { skipped: "nothing_was_reversed" };
+  if (!rows || rows.length === 0) return { skipped: "nothing_was_reversed" };
 
-  // Reversal rows are negative, so negating the sum gives what to give back.
-  const takenCents = reversals.reduce((sum, row) => sum - row.delta_cents, 0);
-  if (takenCents <= 0) return { skipped: "nothing_to_restore" };
+  const decision = computeRestore(
+    rows.map((row) => ({ deltaCents: row.delta_cents, key: row.stripe_payment_intent })),
+  );
+
+  if (!decision.act) return { skipped: decision.reason };
 
   await recordLedgerEntry({
-    profileId: reversals[0].profile_id,
-    deltaCents: takenCents,
+    profileId: rows[0].profile_id,
+    deltaCents: decision.deltaCents,
     reason: "topup",
     // Distinct from both the original top-up and its reversal, and stable, so a
     // redelivered close event collides on the unique index instead of crediting
     // a second time.
-    stripePaymentIntent: `restored:${paymentIntent}`,
+    // Includes the dispute id, so a charge disputed twice restores twice while a
+    // redelivered event for the SAME dispute collides on the unique index.
+    stripePaymentIntent: restoreKey(paymentIntent, dispute.id),
     note: "Teruggeboekt bedrag hersteld: het betaalgeschil is in jouw voordeel beslecht",
   });
 
-  return { restored: takenCents };
+  return { restored: decision.deltaCents };
 }

@@ -277,81 +277,14 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
     return { ok: false, reason: "number_race", detail: lastError?.message ?? "number_race" };
   }
 
-  // The PDF is a rendering of the row, not the record itself. If this fails the
-  // invoice still legally exists and can be re-rendered; losing the row would be
-  // the real problem, which is why it is written first.
-  try {
-    const pdf = await renderInvoicePdf({
-      number: invoice.number,
-      issuedOn: new Date(`${issuedOnKey}T12:00:00Z`),
-      dueOn: new Date(`${dueOnKey}T12:00:00Z`),
-      freelancer: {
-        // The trading name if they gave one — a zzp'er often invoices under a
-        // business name that is not their own — otherwise the person's name.
-        name: settings.businessName?.trim() || profile?.full_name || "Zorgprofessional",
-        kvk: freelancer.kvk,
-        bigNumber: freelancer.big_number,
-        email: null,
-        address: settings.addressLine,
-        postcode: settings.postcode,
-        city: settings.city,
-        vatNumber: settings.vatNumber,
-        iban: formatIban(settings.iban),
-        accountHolder: settings.accountHolder,
-      },
-      paymentNote: settings.paymentNote,
-      facility: {
-        name: org.name,
-        kvk: org.kvk,
-        address: org.address_line,
-        postcode: org.postcode,
-        city: org.city,
-      },
-      line: {
-        description: qualificationLabel(assignment.shifts.profession),
-        shiftDate: new Date(assignment.shifts.starts_at),
-        minutes,
-        rateCents: assignment.agreed_rate_cents,
-      },
-      amountExVatCents: amounts.amountExVatCents,
-      vatRateBp: amounts.vatRateBp,
-      vatAmountCents: amounts.vatAmountCents,
-      totalCents: amounts.totalCents,
-      vatNote: amounts.vatNote,
-    });
-
-    const path = `invoices/${assignment.freelancer_id}/${invoice.number}.pdf`;
-
-    /*
-     * Checked. Storage resolves with { error } exactly like PostgREST, and this
-     * discarded it while the very next statement checked the error on writing
-     * pdf_path — so a failed upload produced an invoice row asserting a PDF that
-     * does not exist. Both download routes then mint a signed URL for a missing
-     * object and hand the user a broken link for their own invoice.
-     */
-    const { error: uploadError } = await admin.storage
-      .from(INVOICE_BUCKET)
-      .upload(path, pdf, { contentType: "application/pdf", upsert: true });
-
-    if (uploadError) {
-      // Deliberately not fatal: the invoice legally exists, is numbered and can
-      // still be emailed. Only the stored copy is missing, and pdf_path stays
-      // null so nothing offers a link to it.
-      console.error(`[invoice] pdf upload failed for ${invoice.number}: ${uploadError.message}`);
-      throw uploadError;
-    }
-
-    const { error: pathError } = await admin
-      .from("invoices")
-      .update({ pdf_path: path })
-      .eq("id", invoice.id);
-
-    // The PDF is in the bucket but nothing points at it — which is exactly the
-    // state that made pdf_path unreadable for months without anyone noticing.
-    if (pathError) console.error(`[invoice] pdf uploaded but path not stored: ${invoice.number}`);
-  } catch {
-    // Left with pdf_path null; the invoice list offers a re-render.
-  }
+  /*
+   * The PDF is a rendering of the row, not the record itself. If this fails the
+   * invoice still legally exists — losing the row would be the real problem,
+   * which is why it is written first — and /professional/facturen offers a
+   * re-render, which is now a thing that exists rather than a thing a comment
+   * claimed.
+   */
+  await renderAndStoreInvoicePdf(invoice.id);
 
   /*
    * Emailed to the facility's billing address, not to whoever approved the hours.
@@ -496,3 +429,163 @@ export async function invoiceDownloadUrl(pdfPath: string): Promise<string | null
   const { data } = await admin.storage.from(INVOICE_BUCKET).createSignedUrl(pdfPath, 300);
   return data?.signedUrl ?? null;
 }
+
+
+/**
+ * Renders an invoice's PDF from the STORED row and puts it in the bucket.
+ *
+ * Called once when the invoice is created, and again from the re-render action
+ * when that upload failed. Split out for the second caller, which used to be
+ * described in a comment and implemented nowhere: a failed bucket write left the
+ * invoice with pdf_path null and no route back, permanently.
+ *
+ * RENDERS THE ROW, NOT A FRESH CALCULATION
+ * ----------------------------------------
+ * Every amount comes from the invoices table — minutes_billed, rate_cents,
+ * vat_rate_bp, vat_note, the lot — and none of it is recomputed. An invoice must
+ * be able to explain itself years later without depending on the freelancer's
+ * current settings, and a re-render that recalculated would quietly produce a
+ * DIFFERENT document under a number already sent to a facility: the same invoice
+ * saying two things, which is the one thing a numbered series must never do.
+ *
+ * The party details (name, address, IBAN) do come from the profile as it is now.
+ * They are how to pay and who to pay, not what is owed, and a freelancer who has
+ * moved house wants the new address on a re-issued copy.
+ *
+ * Returns false on any failure, having logged it. Never throws: every caller is
+ * doing something else that must not fail because a rendering did.
+ */
+export async function renderAndStoreInvoicePdf(invoiceId: string): Promise<boolean> {
+  const admin = getSupabaseAdmin();
+
+  try {
+    const { data: invoice, error } = await admin
+      .from("invoices")
+      .select(
+        "id, number, issued_on, due_on, minutes_billed, rate_cents, amount_ex_vat_cents, " +
+          "vat_rate_bp, vat_amount_cents, total_cents, vat_note, freelancer_id, org_id, " +
+          "assignments(shifts(profession, starts_at)), " +
+          "freelancers!invoices_freelancer_id_fkey(kvk, big_number), " +
+          "organisations(name, kvk, address_line, postcode, city), " +
+          "profiles!invoices_freelancer_id_fkey(full_name)",
+      )
+      .eq("id", invoiceId)
+      .maybeSingle<StoredInvoice>();
+
+    if (error || !invoice) {
+      console.error(`[invoice] cannot re-render ${invoiceId}: ${error?.message ?? "not found"}`);
+      return false;
+    }
+
+    const settings = await getInvoiceSettings(invoice.freelancer_id);
+
+    const pdf = await renderInvoicePdf({
+      number: invoice.number,
+      // Midday UTC, so neither end of the Amsterdam day lands on the day before.
+      issuedOn: new Date(`${invoice.issued_on}T12:00:00Z`),
+      dueOn: new Date(`${invoice.due_on}T12:00:00Z`),
+      freelancer: {
+        // The trading name if they gave one — a zzp'er often invoices under a
+        // business name that is not their own — otherwise the person's name.
+        name: settings.businessName?.trim() || invoice.profiles?.full_name || "Zorgprofessional",
+        kvk: invoice.freelancers?.kvk ?? null,
+        bigNumber: invoice.freelancers?.big_number ?? null,
+        email: null,
+        address: settings.addressLine,
+        postcode: settings.postcode,
+        city: settings.city,
+        vatNumber: settings.vatNumber,
+        iban: formatIban(settings.iban),
+        accountHolder: settings.accountHolder,
+      },
+      paymentNote: settings.paymentNote,
+      facility: {
+        name: invoice.organisations?.name ?? "",
+        kvk: invoice.organisations?.kvk ?? null,
+        address: invoice.organisations?.address_line ?? null,
+        postcode: invoice.organisations?.postcode ?? null,
+        city: invoice.organisations?.city ?? null,
+      },
+      line: {
+        description: qualificationLabel(invoice.assignments?.shifts?.profession ?? ""),
+        shiftDate: new Date(invoice.assignments?.shifts?.starts_at ?? `${invoice.issued_on}T12:00:00Z`),
+        minutes: invoice.minutes_billed,
+        rateCents: invoice.rate_cents,
+      },
+      amountExVatCents: invoice.amount_ex_vat_cents,
+      vatRateBp: invoice.vat_rate_bp,
+      vatAmountCents: invoice.vat_amount_cents,
+      totalCents: invoice.total_cents,
+      /*
+       * The column is nullable and the renderer prints it unconditionally.
+       * Falling back to the empty string rather than a description of the VAT
+       * treatment: a note that explains WHY no VAT was charged is a legal
+       * statement (art. 11-1-g), and inventing one at render time for a row that
+       * does not carry it would put a claim on the invoice that nobody made when
+       * it was issued.
+       */
+      vatNote: invoice.vat_note ?? "",
+    });
+
+    const path = `invoices/${invoice.freelancer_id}/${invoice.number}.pdf`;
+
+    /*
+     * Checked. Storage resolves with { error } exactly like PostgREST, and this
+     * discarded it while the very next statement checked the error on writing
+     * pdf_path — so a failed upload produced an invoice row asserting a PDF that
+     * does not exist. Both download routes then mint a signed URL for a missing
+     * object and hand the user a broken link for their own invoice.
+     */
+    const { error: uploadError } = await admin.storage
+      .from(INVOICE_BUCKET)
+      .upload(path, pdf, { contentType: "application/pdf", upsert: true });
+
+    if (uploadError) {
+      console.error(`[invoice] pdf upload failed for ${invoice.number}: ${uploadError.message}`);
+      return false;
+    }
+
+    const { error: pathError } = await admin
+      .from("invoices")
+      .update({ pdf_path: path })
+      .eq("id", invoice.id);
+
+    if (pathError) {
+      // The object is in the bucket but nothing points at it — the state that
+      // made pdf_path unreadable for months without anyone noticing.
+      console.error(`[invoice] pdf uploaded but path not stored: ${invoice.number}`);
+      return false;
+    }
+
+    return true;
+  } catch (thrown) {
+    console.error(`[invoice] pdf render threw for ${invoiceId}: ${String(thrown)}`);
+    return false;
+  }
+}
+
+type StoredInvoice = {
+  id: string;
+  number: string;
+  issued_on: string;
+  due_on: string;
+  minutes_billed: number;
+  rate_cents: number;
+  amount_ex_vat_cents: number;
+  vat_rate_bp: number;
+  vat_amount_cents: number;
+  total_cents: number;
+  vat_note: string | null;
+  freelancer_id: string;
+  org_id: string;
+  assignments: { shifts: { profession: string; starts_at: string } | null } | null;
+  freelancers: { kvk: string | null; big_number: string | null } | null;
+  organisations: {
+    name: string;
+    kvk: string | null;
+    address_line: string | null;
+    postcode: string | null;
+    city: string | null;
+  } | null;
+  profiles: { full_name: string } | null;
+};

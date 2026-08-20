@@ -10,7 +10,11 @@ import { formatEuros } from "@/lib/money";
 import { formatDate } from "@/lib/hours";
 import { byQuarter, summariseEarnings, summariseReceivables } from "@/lib/earnings";
 import { amsterdamDateKey } from "@/lib/timezone";
-import { sendInvoiceAction, issueInvoiceAction } from "@/app/professional/facturatie/actions";
+import {
+  issueInvoiceAction,
+  regenerateInvoicePdfAction,
+  sendInvoiceAction,
+} from "@/app/professional/facturatie/actions";
 
 export const metadata: Metadata = { title: "Facturen" };
 
@@ -91,13 +95,16 @@ const MESSAGES: Record<string, string> = {
     "Je factuurgegevens zijn nog niet compleet. Vul ze aan bij Facturatie, dan kan de factuur alsnog de deur uit.",
   vat_undetermined:
     "Je btw-behandeling is nog niet vastgesteld. Geef bij Profiel aan of je btw-vrijgestelde zorg verleent.",
+  pdf_failed:
+    "De pdf kon niet worden gemaakt. De factuur zelf is gewoon geldig — probeer het " +
+    "zo opnieuw, of neem contact op als het blijft misgaan.",
   unknown: "Er ging iets mis. Probeer het opnieuw.",
 };
 
 export default async function FreelancerInvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sent?: string; issued?: string; error?: string }>;
+  searchParams: Promise<{ sent?: string; issued?: string; error?: string; pdf?: string }>;
 }) {
   const params = await searchParams;
   const { userId } = await requireFreelancer("/professional/facturen");
@@ -209,6 +216,9 @@ export default async function FreelancerInvoicesPage({
         </FormMessage>
       ) : null}
       {params.sent ? <FormMessage kind="ok">Factuur verstuurd.</FormMessage> : null}
+      {params.pdf ? (
+        <FormMessage kind="ok">Pdf gemaakt. Je kunt de factuur nu downloaden.</FormMessage>
+      ) : null}
       {params.issued === "sent" ? (
         <FormMessage kind="ok">Factuur opgemaakt en verstuurd.</FormMessage>
       ) : null}
@@ -427,7 +437,22 @@ export default async function FreelancerInvoicesPage({
                           >
                             Pdf
                           </a>
-                        ) : null}
+                        ) : (
+                          /*
+                            No document, because the upload failed when the invoice
+                            was created. The invoice is legally issued either way —
+                            it is numbered and recorded — so this offers the one
+                            thing that was missing rather than pretending the row
+                            is broken. lib/invoices.ts claimed this button existed
+                            for months before it did.
+                          */
+                          <form action={regenerateInvoicePdfAction}>
+                            <input type="hidden" name="invoice_id" value={invoice.id} />
+                            <button className="btn btn-secondary" type="submit">
+                              Pdf maken
+                            </button>
+                          </form>
+                        )}
                         {!invoice.sent_at ? (
                           <form action={sendInvoiceAction}>
                             <input type="hidden" name="invoice_id" value={invoice.id} />

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { qualificationLabel } from "@/lib/qualifications";
 import type { Metadata } from "next";
 import { EmptyState, PageHeader } from "@/components/AppHeader";
 import { requireFreelancer } from "@/lib/auth";
@@ -75,7 +76,17 @@ export default async function FreelancerDashboard() {
     <>
       <PageHeader
         title={`Hallo ${profile.full_name.split(" ")[0] || ""}`.trim()}
-        description={freelancer?.profession || "Vul je profiel aan om diensten te ontvangen."}
+        /*
+          qualificationLabel, not the raw column. profession holds a slug —
+          "verpleegkundige_mbo_niveau_4" — and this printed it under the person's
+          own name as their job title. There is a label table for exactly this and
+          every other screen uses it.
+        */
+        description={
+          freelancer?.profession
+            ? qualificationLabel(freelancer.profession)
+            : "Vul je profiel aan om diensten te ontvangen."
+        }
       />
 
       <div className="grid gap-4 sm:grid-cols-3 mb-6">
@@ -138,39 +149,50 @@ export default async function FreelancerDashboard() {
           body="Zodra een instelling waar je in de pool zit een dienst plaatst, verschijnt die hier en krijg je een e-mail."
         />
       ) : (
-        <div className="card table-scroll">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Wanneer</th>
-                <th>Instelling</th>
-                <th>Functie</th>
-                <th>Tarief</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {openOffers.map((offer) => (
-                <tr key={offer.id}>
-                  <td className="tnum">
-                    {offer.shifts
-                      ? formatShiftWindow(offer.shifts.starts_at, offer.shifts.ends_at)
-                      : "—"}
-                  </td>
-                  <td>{offer.shifts?.organisations?.name ?? "—"}</td>
-                  <td>{offer.shifts?.profession ?? "—"}</td>
-                  <td className="tnum">
-                    {offer.shifts ? `${formatEuros(offer.shifts.hourly_rate_cents)} / uur` : "—"}
-                  </td>
-                  <td>
-                    <Link className="btn btn-secondary" href={`/professional/aanbod/${offer.shift_id}`}>
-                      Bekijken
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        /*
+          Cards, not a five-column table.
+
+          This was a table inside overflow-x:auto, so at 375px — which is where
+          this screen is read — the rate was off the right edge and the "Bekijken"
+          link that opens the offer was off it entirely. The whole row is the link
+          now, which is one tap anywhere instead of a horizontal scroll to find a
+          button, and the same shape /professional/aanbod already uses.
+
+          It also printed offer.shifts.profession raw: a slug like
+          "verpleegkundige_mbo_niveau_4" where a job title belonged.
+        */
+        <div className="grid gap-3">
+          {openOffers.map((offer) => (
+            <Link
+              key={offer.id}
+              href={`/professional/aanbod/${offer.shift_id}`}
+              className="card p-4 block hover:border-[var(--brand)] transition-colors"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="font-bold truncate">
+                    {offer.shifts ? qualificationLabel(offer.shifts.profession) : "—"}
+                  </p>
+                  <p className="text-sm truncate" style={{ color: "var(--text-muted)" }}>
+                    {offer.shifts?.organisations?.name ?? "—"}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="font-semibold tnum">
+                    {offer.shifts ? formatEuros(offer.shifts.hourly_rate_cents) : "—"}
+                  </p>
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    per uur
+                  </p>
+                </div>
+              </div>
+              <p className="text-sm tnum mt-2">
+                {offer.shifts
+                  ? formatShiftWindow(offer.shifts.starts_at, offer.shifts.ends_at)
+                  : "—"}
+              </p>
+            </Link>
+          ))}
         </div>
       )}
     </>

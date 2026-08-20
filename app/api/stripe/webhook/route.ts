@@ -341,6 +341,8 @@ async function reverseCharge(
   const decision = computeReversal({
     topUpCents: original.delta_cents,
     reversibleCents,
+    cause,
+    causeId,
     prior,
   });
 

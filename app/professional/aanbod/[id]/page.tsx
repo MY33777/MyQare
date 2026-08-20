@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/AppHeader";
 import { FormMessage } from "@/components/AuthShell";
+import { SubmitButton } from "@/components/SubmitButton";
 import { authErrorMessage } from "@/lib/authErrors";
 import { requireFreelancer } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -71,8 +72,34 @@ export default async function OfferDetailPage({
   const balance = await creditBalanceCents(userId, supabase);
 
   const windowClosed = shift.respond_by ? new Date(shift.respond_by) < new Date() : false;
-  const canRespond =
-    !offer.responded_at && shift.status === "open" && !windowClosed && balance >= fee.feeTotalCents;
+
+  /*
+   * The shift has to still be startable. accept_shift() refuses one that has
+   * already begun, and this page did not check it — so a shift whose start time
+   * passed while the tab sat open still rendered an enabled Aannemen button and
+   * failed on the server with "Deze dienst is al begunnen".
+   */
+  const alreadyStarted = new Date(shift.starts_at) <= new Date();
+
+  const stillOpen =
+    !offer.responded_at && shift.status === "open" && !windowClosed && !alreadyStarted;
+
+  /*
+   * TWO FLAGS, NOT ONE, AND THIS IS NOT A STYLING DECISION.
+   *
+   * A single `canRespond` gated both buttons and had the balance check in it. So
+   * a freelancer whose balance had run low could not say "niet beschikbaar" — the
+   * refusal costs nothing, moves no money and writes one row — and the only thing
+   * she could still click on a screen that says in so many words "je bent vrij om
+   * deze dienst te weigeren" was a link to pay us.
+   *
+   * The freedom to refuse work is the legal foundation the whole product stands
+   * on (Wet DBA). It cannot be conditional on anything, least of all on a balance
+   * owed to the platform. Any future flag that gates accepting and refusing
+   * together is this bug again.
+   */
+  const canDecline = stillOpen;
+  const canAccept = stillOpen && balance >= fee.feeTotalCents;
 
   return (
     <div className="max-w-2xl">
@@ -150,15 +177,31 @@ export default async function OfferDetailPage({
           </p>
         ) : null}
 
-        {/* The money, spelled out before they commit rather than after. */}
+        {/*
+          The money, spelled out before they commit rather than after — and
+          weighted like the thing being decided.
+
+          "Je verdient" was text-sm font-semibold: the same weight as the word
+          "Locatie" two rows above it. On a phone the figure the whole decision
+          turns on sat below the fold, in fourteen pixels, while the dashboard
+          renders its headline numbers at text-3xl. This is the one screen where a
+          number moves real money.
+        */}
         <div className="rounded-lg p-4" style={{ background: "var(--surface-sunken)" }}>
-          <div className="flex justify-between text-sm">
+          <div className="flex items-baseline justify-between gap-4">
+            <span className="text-sm" style={{ color: "var(--text-muted)" }}>
+              Je verdient
+            </span>
+            <span className="text-3xl font-bold tnum">
+              {formatEuros(fee.assignmentValueCents)}
+            </span>
+          </div>
+          <div
+            className="flex justify-between text-sm mt-2 pt-2"
+            style={{ borderTop: "1px solid var(--border)" }}
+          >
             <span>Tarief</span>
             <span className="tnum">{formatEuros(shift.hourly_rate_cents)} per uur</span>
-          </div>
-          <div className="flex justify-between text-sm mt-1">
-            <span>Je verdient</span>
-            <span className="tnum font-semibold">{formatEuros(fee.assignmentValueCents)}</span>
           </div>
           <div
             className="flex justify-between text-sm mt-1 pt-2"
@@ -183,7 +226,13 @@ export default async function OfferDetailPage({
         </div>
 
         {offer.responded_at ? (
-          <FormMessage kind={offer.response === "accept" ? "ok" : "error"}>
+          /*
+            "Je hebt deze dienst geweigerd" was painted danger red and announced
+            with role="alert". Refusing is a choice the product exists to protect,
+            not a failure — colouring it like one, and interrupting a screen reader
+            to deliver it, tells the reader they did something wrong.
+          */
+          <FormMessage kind={offer.response === "accept" ? "ok" : "warn"}>
             {offer.response === "accept"
               ? "Je hebt deze dienst aangenomen."
               : "Je hebt deze dienst geweigerd."}
@@ -192,26 +241,39 @@ export default async function OfferDetailPage({
           <FormMessage kind="error">Deze dienst is inmiddels door iemand anders aangenomen.</FormMessage>
         ) : windowClosed ? (
           <FormMessage kind="error">De reactietermijn is verstreken.</FormMessage>
+        ) : alreadyStarted ? (
+          <FormMessage kind="error">Deze dienst is inmiddels begonnen.</FormMessage>
         ) : balance < fee.feeTotalCents ? (
-          <FormMessage kind="error">
-            Je saldo is te laag voor de bemiddelingsvergoeding.{" "}
-            <Link href="/professional/saldo">Saldo opwaarderen</Link>.
+          <FormMessage kind="warn">
+            Je komt {formatEuros(fee.feeTotalCents - balance)} tekort voor de
+            bemiddelingsvergoeding, dus aannemen kan nu niet.{" "}
+            <Link href={`/professional/saldo?next=${encodeURIComponent(`/professional/aanbod/${shift.id}`)}`}>
+              Saldo opwaarderen
+            </Link>{" "}
+            — daarna kom je terug op deze dienst.
           </FormMessage>
         ) : null}
 
-        {canRespond ? (
-          <div className="flex flex-wrap gap-3 pt-2">
-            <form action={acceptShiftAction}>
+        {canDecline ? (
+          <div className="flex flex-col gap-3 pt-2 sm:flex-row">
+            {canAccept ? (
+              <form action={acceptShiftAction} className="w-full sm:w-auto">
+                <input type="hidden" name="shift_id" value={shift.id} />
+                <SubmitButton className="btn btn-primary w-full sm:w-auto" pending="Bezig…">
+                  Dienst aannemen
+                </SubmitButton>
+              </form>
+            ) : null}
+            {/*
+              Always rendered when the offer is still open, whatever the balance
+              says. See the note on canDecline above: refusing costs nothing, and
+              a screen that tells somebody they are free to refuse has to let them.
+            */}
+            <form action={declineOfferAction} className="w-full sm:w-auto">
               <input type="hidden" name="shift_id" value={shift.id} />
-              <button className="btn btn-primary" type="submit">
-                Dienst aannemen
-              </button>
-            </form>
-            <form action={declineOfferAction}>
-              <input type="hidden" name="shift_id" value={shift.id} />
-              <button className="btn btn-secondary" type="submit">
+              <SubmitButton className="btn btn-secondary w-full sm:w-auto" pending="Bezig…">
                 Niet beschikbaar
-              </button>
+              </SubmitButton>
             </form>
           </div>
         ) : null}

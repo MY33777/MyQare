@@ -40,12 +40,12 @@ describe("partial refunds", () => {
     // The round 6 defect: €50 then €30 removed €130 from a €500 top-up.
     let prior: PriorMovement[] = [];
 
-    const first = computeReversal({ topUpCents: TOP_UP, reversibleCents: 5_000, prior });
+    const first = computeReversal({ topUpCents: TOP_UP, reversibleCents: 5_000, cause: "refund", prior });
     expect(first).toEqual({ act: true, deltaCents: 5_000, cumulative: 5_000 });
     prior = apply(prior, "refund", 5_000, 5_000);
 
     // Stripe sends the CUMULATIVE amount_refunded on the second event.
-    const second = computeReversal({ topUpCents: TOP_UP, reversibleCents: 8_000, prior });
+    const second = computeReversal({ topUpCents: TOP_UP, reversibleCents: 8_000, cause: "refund", prior });
     expect(second).toEqual({ act: true, deltaCents: 3_000, cumulative: 8_000 });
     prior = apply(prior, "refund", 8_000, 3_000);
 
@@ -55,7 +55,7 @@ describe("partial refunds", () => {
 
   it("does nothing on a redelivered event", () => {
     const prior = apply([], "refund", 5_000, 5_000);
-    expect(computeReversal({ topUpCents: TOP_UP, reversibleCents: 5_000, prior })).toEqual({
+    expect(computeReversal({ topUpCents: TOP_UP, reversibleCents: 5_000, cause: "refund", prior })).toEqual({
       act: false,
       reason: "already_settled",
     });
@@ -63,7 +63,7 @@ describe("partial refunds", () => {
 
   it("never removes more than the top-up granted", () => {
     // A refund in a different currency, or Stripe reporting more than we credited.
-    const decision = computeReversal({ topUpCents: TOP_UP, reversibleCents: 90_000, prior: [] });
+    const decision = computeReversal({ topUpCents: TOP_UP, reversibleCents: 90_000, cause: "refund", prior: [] });
     expect(decision).toEqual({ act: true, deltaCents: TOP_UP, cumulative: TOP_UP });
   });
 });
@@ -74,8 +74,17 @@ describe("a partial refund followed by a dispute", () => {
     // top-up, driving the balance negative with no in-app way back.
     let prior = apply([], "refund", 5_000, 5_000);
 
-    const dispute = computeReversal({ topUpCents: TOP_UP, reversibleCents: TOP_UP, prior });
-    expect(dispute).toEqual({ act: true, deltaCents: 45_000, cumulative: TOP_UP });
+    const dispute = computeReversal({
+      topUpCents: TOP_UP,
+      reversibleCents: TOP_UP,
+      cause: "dispute",
+      causeId: DISPUTE,
+      prior,
+    });
+    // €450, and the cumulative recorded for THIS cause is €450 too — the ceiling
+    // clamped it, because €50 of the disputed charge had already gone back as a
+    // refund and Stripe cannot take the same €50 twice.
+    expect(dispute).toEqual({ act: true, deltaCents: 45_000, cumulative: 45_000 });
     prior = apply(prior, "dispute", TOP_UP, 45_000);
 
     expect(prior.reduce((sum, row) => sum - row.deltaCents, 0)).toBe(TOP_UP);
@@ -127,8 +136,113 @@ describe("a refund AFTER a dispute was won", () => {
       { deltaCents: TOP_UP, key: restoreKey(PI, DISPUTE) },
     ];
 
-    const decision = computeReversal({ topUpCents: TOP_UP, reversibleCents: TOP_UP, prior });
+    const decision = computeReversal({
+      topUpCents: TOP_UP,
+      reversibleCents: TOP_UP,
+      cause: "refund",
+      prior,
+    });
     expect(decision).toEqual({ act: true, deltaCents: TOP_UP, cumulative: TOP_UP });
+  });
+});
+
+/*
+ * The round 8 defect, and the fourth found in this file.
+ *
+ * "How much is already reversed" was the net of EVERY movement on the payment,
+ * compared against a figure scoped to one cause. Refunds and disputes are
+ * independent — Stripe takes the money for each separately — so the second cause
+ * looked mostly settled by the first.
+ */
+describe("a refund and a dispute for DIFFERENT money", () => {
+  it("takes back both, not just the larger one", () => {
+    // €100 top-up, €30 refunded, then €70 disputed. Stripe took €100.
+    const topUp = 10_000;
+    let prior: PriorMovement[] = [];
+
+    const refund = computeReversal({
+      topUpCents: topUp,
+      reversibleCents: 3_000,
+      cause: "refund",
+      prior,
+    });
+    expect(refund).toEqual({ act: true, deltaCents: 3_000, cumulative: 3_000 });
+    prior = apply(prior, "refund", 3_000, 3_000);
+
+    const dispute = computeReversal({
+      topUpCents: topUp,
+      reversibleCents: 7_000,
+      cause: "dispute",
+      causeId: DISPUTE,
+      prior,
+    });
+    // Was €4.000 — the €30 refund counted against the €70 dispute — leaving €30
+    // of money Stripe had taken sitting on the balance as spendable credit.
+    expect(dispute).toEqual({ act: true, deltaCents: 7_000, cumulative: 7_000 });
+    prior = apply(prior, "dispute", 7_000, 7_000);
+
+    expect(prior.reduce((sum, row) => sum - row.deltaCents, 0)).toBe(topUp);
+  });
+
+  it("works in the other order too, where the old code removed nothing at all", () => {
+    // Dispute first: the refund then computed a NEGATIVE delta and did nothing.
+    const topUp = 10_000;
+    let prior = apply([], "dispute", 7_000, 7_000);
+
+    const refund = computeReversal({
+      topUpCents: topUp,
+      reversibleCents: 3_000,
+      cause: "refund",
+      prior,
+    });
+    expect(refund).toEqual({ act: true, deltaCents: 3_000, cumulative: 3_000 });
+    prior = apply(prior, "refund", 3_000, 3_000);
+
+    expect(prior.reduce((sum, row) => sum - row.deltaCents, 0)).toBe(topUp);
+  });
+
+  it("still never removes more than the top-up, whatever Stripe reports", () => {
+    // The ceiling, doing the job the per-cause totals cannot: two causes that
+    // overlap on the same money must not both take it.
+    const topUp = 10_000;
+    let prior = apply([], "refund", 8_000, 8_000);
+
+    const dispute = computeReversal({
+      topUpCents: topUp,
+      reversibleCents: 10_000,
+      cause: "dispute",
+      causeId: DISPUTE,
+      prior,
+    });
+    expect(dispute).toEqual({ act: true, deltaCents: 2_000, cumulative: 2_000 });
+    prior = apply(prior, "dispute", 2_000, 2_000);
+
+    expect(prior.reduce((sum, row) => sum - row.deltaCents, 0)).toBe(topUp);
+  });
+
+  it("keeps two disputes on one charge apart", () => {
+    const topUp = 10_000;
+    let prior = apply([], "dispute", 3_000, 3_000, "dp_1");
+
+    const second = computeReversal({
+      topUpCents: topUp,
+      reversibleCents: 4_000,
+      cause: "dispute",
+      causeId: "dp_2",
+      prior,
+    });
+    // dp_1's €30 must not count as dp_2's already-reversed.
+    expect(second).toEqual({ act: true, deltaCents: 4_000, cumulative: 4_000 });
+  });
+
+  it("a redelivered refund still does nothing once a dispute has also landed", () => {
+    const topUp = 10_000;
+    let prior = apply([], "refund", 3_000, 3_000);
+    prior = apply(prior, "dispute", 7_000, 7_000);
+
+    expect(
+      computeReversal({ topUpCents: topUp, reversibleCents: 3_000, cause: "refund", prior }),
+    ).toEqual({ act: false, reason: "already_settled" });
   });
 });
 
@@ -174,7 +288,18 @@ describe("a charge disputed twice", () => {
       { deltaCents: -TOP_UP, key: reversalKey(PI, "dispute", TOP_UP, "dp_1") },
       { deltaCents: TOP_UP, key: restoreKey(PI, "dp_1") },
     ];
-    expect(computeReversal({ topUpCents: TOP_UP, reversibleCents: TOP_UP, prior })).toEqual({
+    // A SECOND dispute, so dp_1's reversed-then-restored pair must not count as
+    // dp_2's already-reversed — and the ceiling is clear again because the
+    // restore gave the headroom back.
+    expect(
+      computeReversal({
+        topUpCents: TOP_UP,
+        reversibleCents: TOP_UP,
+        cause: "dispute",
+        causeId: "dp_2",
+        prior,
+      }),
+    ).toEqual({
       act: true,
       deltaCents: TOP_UP,
       cumulative: TOP_UP,

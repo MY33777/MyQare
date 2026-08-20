@@ -176,3 +176,47 @@ export async function issueInvoiceAction(formData: FormData) {
    */
   redirect(`/professional/facturen?issued=${result.held ? "held" : "sent"}`);
 }
+
+/**
+ * Renders an invoice's PDF again, for one whose upload failed.
+ *
+ * lib/invoices.ts has said "the invoice list offers a re-render" since the day
+ * the render was written, and no such thing existed anywhere. So a bucket write
+ * that failed once left the invoice with pdf_path null forever: legally issued,
+ * numbered, chased by the reminder cron, and with no document either party could
+ * obtain. The stated route out was imaginary.
+ *
+ * Renders from the stored row, so a re-render reproduces the invoice as issued
+ * rather than as it would be calculated today — see renderAndStoreInvoicePdf.
+ */
+export async function regenerateInvoicePdfAction(formData: FormData) {
+  const freelancer = await requireFreelancer("/professional/facturen");
+  const invoiceId = String(formData.get("invoice_id") ?? "");
+  if (!invoiceId) redirect("/professional/facturen?error=unknown");
+
+  const admin = getSupabaseAdmin();
+
+  const { data: invoice } = await admin
+    .from("invoices")
+    .select("id, freelancer_id, pdf_path")
+    .eq("id", invoiceId)
+    .maybeSingle<{ id: string; freelancer_id: string; pdf_path: string | null }>();
+
+  // The admin client bypasses RLS, so ownership is established here or nowhere.
+  if (!invoice || invoice.freelancer_id !== freelancer.userId) {
+    redirect("/professional/facturen?error=unknown");
+  }
+
+  // Already has one. Not an error worth a message — the button simply should not
+  // have been there, which happens when two tabs are open on the same list.
+  if (invoice.pdf_path) {
+    revalidatePath("/professional/facturen");
+    redirect("/professional/facturen");
+  }
+
+  const { renderAndStoreInvoicePdf } = await import("@/lib/invoices");
+  const ok = await renderAndStoreInvoicePdf(invoiceId);
+
+  revalidatePath("/professional/facturen");
+  redirect(ok ? "/professional/facturen?pdf=1" : "/professional/facturen?error=pdf_failed");
+}

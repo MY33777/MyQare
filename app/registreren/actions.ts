@@ -43,7 +43,19 @@ export async function signUpAction(formData: FormData) {
     email,
     password,
     options: {
-      emailRedirectTo: absoluteUrl("/onboarding"),
+      /*
+       * Through the callback, exactly like password recovery.
+       *
+       * This pointed straight at /onboarding, which fails three separate ways:
+       * Supabase refuses to redirect anywhere not on the project's allowlist and
+       * only /auth/callback is on it; /onboarding is a Server Component and
+       * cannot spend a ?code= even if it arrived, because writing the session
+       * cookie needs a Route Handler; and /onboarding is in the proxy's
+       * PROTECTED_PREFIXES, so an unauthenticated arrival is bounced to /login
+       * with the code discarded. Every confirmation link a new account received
+       * was broken.
+       */
+      emailRedirectTo: absoluteUrl("/auth/callback?next=%2Fonboarding"),
       data: {
         role,
         full_name: fullName,

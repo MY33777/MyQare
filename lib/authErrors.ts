@@ -35,6 +35,11 @@ const MESSAGES: Record<string, string> = {
   vat_undetermined: "De btw-behandeling van deze zorgprofessional is nog niet vastgesteld.",
   freelancer_not_found: "Geen MyQare-account gevonden met dit e-mailadres.",
   not_a_freelancer: "Dit account is geen zelfstandig zorgprofessional.",
+  topup_too_low:
+    "Het laagste bedrag is € 5,00. Daaronder kosten de transactiekosten meer dan " +
+    "de opwaardering waard is.",
+  topup_too_high:
+    "Je kunt maximaal € 5.000,00 per keer opwaarderen. Meer nodig? Doe het in twee keer.",
   invalid_amount: "Vul een geldig bedrag in, bijvoorbeeld 50,00.",
   bad_kind: "Kies een geldig soort document.",
   finish_onboarding_first:

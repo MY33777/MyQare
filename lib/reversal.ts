@@ -40,21 +40,86 @@ export type ReversalDecision =
  * what already is" makes a redelivered event compute zero, which is what makes
  * this idempotent without depending on the unique index to save it.
  *
- * Capped at the top-up: a reversal must never remove more than was granted, and
- * `alreadyReversed` is the NET of every prior reversal and restore so a won
- * dispute that was given back does not count as still removed.
+ * WHAT "WHAT ALREADY IS" HAS TO MEAN
+ * ----------------------------------
+ * Per CAUSE, and this is the fourth defect found in this file.
+ *
+ * It used to net every prior movement on the payment together while comparing
+ * that total against a figure scoped to ONE cause. Refunds and disputes are
+ * independent — Stripe takes the money for each of them separately — so mixing
+ * them made the second one look mostly settled by the first:
+ *
+ *     €100 top-up
+ *     partial refund of €30  ->  reversible 30, already 0   -> removes €30  OK
+ *     dispute for €70        ->  reversible 70, already 30  -> removes €40  WRONG
+ *
+ * Stripe took €100. We removed €70 and left €30 of somebody else's money on the
+ * balance. In the other order it is worse: the €30 refund computes a NEGATIVE
+ * delta after a €70 dispute and removes nothing at all.
+ *
+ * So the running total is scoped to the cause, and a separate ceiling keeps the
+ * SUM of all causes within the top-up — because two causes cannot legitimately
+ * take back more than was ever granted, whatever Stripe reports for each.
  */
 export function computeReversal(input: {
   topUpCents: number;
   reversibleCents: number;
+  /** Refunds and disputes keep separate running totals. See above. */
+  cause: "refund" | "dispute";
+  /** The dispute's own id. Required for a dispute; ignored for a refund. */
+  causeId?: string;
   prior: PriorMovement[];
 }): ReversalDecision {
-  const alreadyReversed = netReversed(input.prior);
-  const shouldBeReversed = Math.min(input.reversibleCents, input.topUpCents);
-  const delta = shouldBeReversed - alreadyReversed;
+  const mine = priorForCause(input.prior, input.cause, input.causeId);
+
+  const alreadyForCause = netReversed(mine);
+  const targetForCause = Math.min(input.reversibleCents, input.topUpCents);
+
+  /*
+   * How much may still be taken off in total, across every cause. A won dispute
+   * that was restored frees its share again, which is why this is the net rather
+   * than the sum of reversals.
+   */
+  const headroom = input.topUpCents - netReversed(input.prior);
+
+  const delta = Math.min(targetForCause - alreadyForCause, headroom);
 
   if (delta <= 0) return { act: false, reason: "already_settled" };
-  return { act: true, deltaCents: delta, cumulative: shouldBeReversed };
+
+  /*
+   * The cumulative figure that goes into the key is what this CAUSE has now
+   * removed — not the target — so a delta clamped by the ceiling still produces a
+   * key that a redelivery of the same event reproduces exactly.
+   */
+  return { act: true, deltaCents: delta, cumulative: alreadyForCause + delta };
+}
+
+/**
+ * The prior movements belonging to one cause.
+ *
+ * A dispute owns its own reversals AND its restore, so a won-then-reopened
+ * dispute nets back to zero and can reverse again. A refund owns every
+ * `:refund:` reversal on the payment, because Stripe reports refunds as one
+ * cumulative figure rather than individually.
+ */
+function priorForCause(
+  prior: PriorMovement[],
+  cause: "refund" | "dispute",
+  causeId?: string,
+): PriorMovement[] {
+  if (cause === "refund") return prior.filter((row) => row.key.includes(":refund:"));
+
+  /*
+   * Without an id there is no way to tell one dispute's rows from another's, so
+   * this scopes to nothing rather than to everything. Reversing too much is the
+   * failure that leaves a freelancer with a negative balance and no route back;
+   * reversing too little is visible in the Stripe dashboard and correctable.
+   */
+  if (!causeId) return [];
+
+  return prior.filter(
+    (row) => row.key.includes(`:dispute:${causeId}:`) || row.key.endsWith(`:${causeId}`),
+  );
 }
 
 export type RestoreDecision =

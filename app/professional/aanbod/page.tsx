@@ -48,9 +48,28 @@ export default async function OffersPage({
     .limit(50)
     .returns<OfferRow[]>();
 
-  // A shift someone else already claimed should not sit in the list looking
-  // available — the offer row survives, but it is no longer actionable.
-  const open = (offers ?? []).filter((offer) => offer.shifts?.status === "open");
+  /*
+   * Only what she can actually still take.
+   *
+   * This filtered on status alone, so two kinds of dead offer sat in the list
+   * looking live: one whose respond_by had lapsed, and one whose shift had
+   * already started. Both render an Aannemen button that accept_shift() then
+   * refuses. Someone scrolling this list at 22:00 is deciding how to spend
+   * tomorrow; an offer that cannot be taken is not information, it is a wasted
+   * tap and a small breach of trust.
+   *
+   * Filtered here rather than in the query because the two conditions live in
+   * different columns with different meanings and a PostgREST or-chain over them
+   * would be unreadable — and because accept_shift() is the authority either way.
+   */
+  const now = new Date();
+  const open = (offers ?? []).filter((offer) => {
+    const shift = offer.shifts;
+    if (!shift || shift.status !== "open") return false;
+    if (new Date(shift.starts_at) <= now) return false;
+    if (shift.respond_by && new Date(shift.respond_by) < now) return false;
+    return true;
+  });
 
   return (
     <>

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { safeNextPath } from "@/lib/nextPath";
 import { FEE_PERCENT_LABEL, VAT_PERCENT_LABEL } from "@/lib/fees";
 import { EmptyState, PageHeader } from "@/components/AppHeader";
 import { FormMessage } from "@/components/AuthShell";
@@ -38,7 +39,7 @@ const PRESETS = [2500, 5000, 10000, 25000];
 export default async function BalancePage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; topup?: string }>;
+  searchParams: Promise<{ error?: string; topup?: string; next?: string }>;
 }) {
   const { userId } = await requireFreelancer("/professional/saldo");
   const params = await searchParams;
@@ -83,6 +84,13 @@ export default async function BalancePage({
 
         {stripeConfigured() ? (
           <form action={startTopupAction} className="mt-5 flex flex-wrap items-end gap-3">
+            {/*
+              Carried through Stripe and back, so somebody who came here from a
+              shift they could not afford lands back on that shift rather than on
+              a balance page with no memory of why they were topping up.
+              Sanitised again in the action — this is a form field.
+            */}
+            <input type="hidden" name="next" value={safeNextPath(params.next) ?? ""} />
             <div>
               <label className="label" htmlFor="amount">
                 Bedrag opwaarderen

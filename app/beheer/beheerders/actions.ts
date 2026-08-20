@@ -139,10 +139,20 @@ export async function setCapabilityAction(formData: FormData) {
    * read a count of two, both pass, and both writes land. The self-check does not
    * help — neither is removing their own.
    *
-   * The database settles it. `delete ... where <the last-manager condition is
-   * false>` re-evaluates the count inside the statement, so the second delete
-   * matches zero rows and reports it. The count above stays because it produces a
-   * message a person can act on; this is what makes the guarantee true.
+   * This comment used to claim the delete below carried a `where` clause that
+   * re-evaluated the count inside the statement. It does not, and never did — the
+   * delete is a plain two-column match. What actually holds the guarantee is the
+   * COMPENSATING WRITE further down: after the row is gone, the count is taken
+   * again, and if it has reached zero the row goes straight back.
+   *
+   * That converges from either interleaving. Both admins delete, both re-count;
+   * whichever reads zero puts its row back, and a second one reading zero puts
+   * its own back too. The failure direction is one manager too many, never none.
+   * There is a window of a few milliseconds where the count is zero and nobody
+   * can be appointed, which nobody can observe and no write depends on.
+   *
+   * The pre-check above stays because it produces a message a person can act on
+   * before anything happens, rather than a change that silently undoes itself.
    */
 
   if (grant) {

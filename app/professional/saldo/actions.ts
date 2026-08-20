@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { getFreelancer } from "@/lib/auth";
 import { getStripe } from "@/lib/stripe";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
-import { clampTopupCents } from "@/lib/credits";
+import { MAX_TOPUP_CENTS, MIN_TOPUP_CENTS, clampTopupCents } from "@/lib/credits";
+import { safeNextPath } from "@/lib/nextPath";
 import { FEE_PERCENT_LABEL } from "@/lib/fees";
 import { parseEurosToCents } from "@/lib/money";
 import { absoluteUrl } from "@/lib/site";
@@ -40,7 +41,32 @@ export async function startTopupAction(formData: FormData) {
   const requested = parseEurosToCents(String(formData.get("amount") ?? ""));
   if (requested === null) redirect(`${SALDO_PATH}?error=invalid_amount`);
 
+  /*
+   * Refused, not silently corrected.
+   *
+   * clampTopupCents was applied straight to the Stripe line item, so typing
+   * "10000" meaning ten thousand euros produced a checkout for five thousand —
+   * a different amount from the one on the screen, with no warning, on a payment
+   * page. The clamp is a last-line guard against a nonsense value reaching
+   * Stripe, not a licence to change what somebody asked for.
+   *
+   * The rest of this product explains its rules rather than enforcing them
+   * invisibly; a payment form is the last place to make an exception.
+   */
+  if (requested < MIN_TOPUP_CENTS) redirect(`${SALDO_PATH}?error=topup_too_low`);
+  if (requested > MAX_TOPUP_CENTS) redirect(`${SALDO_PATH}?error=topup_too_high`);
+
   const amountCents = clampTopupCents(requested);
+
+  /*
+   * Where to go after paying.
+   *
+   * Somebody tops up because a shift they want costs more than their balance —
+   * so the natural end of this journey is that shift, not this page. Sanitised
+   * through safeNextPath: it arrives in a form field, and an unchecked value
+   * here would make our own Stripe return an open redirect.
+   */
+  const next = safeNextPath(String(formData.get("next") ?? "")) ?? SALDO_PATH;
 
   const stripe = getStripe();
   const session = await stripe.checkout.sessions.create({
@@ -69,8 +95,13 @@ export async function startTopupAction(formData: FormData) {
      * request that URL directly.
      */
     metadata: { profile_id: freelancer.userId },
-    success_url: absoluteUrl(`${SALDO_PATH}?topup=success`),
-    cancel_url: absoluteUrl(`${SALDO_PATH}?topup=cancelled`),
+    /*
+     * Back to whatever they were doing. `topup=success` still rides along so the
+     * destination can say the money arrived — and, on the shift page, so the
+     * reader is not left wondering whether the balance shown is the new one.
+     */
+    success_url: absoluteUrl(`${next}${next.includes("?") ? "&" : "?"}topup=success`),
+    cancel_url: absoluteUrl(`${next}${next.includes("?") ? "&" : "?"}topup=cancelled`),
   });
 
   if (!session.url) redirect(`${SALDO_PATH}?error=unknown`);

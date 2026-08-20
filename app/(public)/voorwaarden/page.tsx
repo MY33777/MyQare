@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Prose, DraftNotice, LastUpdated } from "@/components/Prose";
-import { PLATFORM_FEE_BP, VAT_STANDARD_BP } from "@/lib/fees";
+import {
+  FEE_PERCENT_LABEL,
+  FEE_INCL_VAT_PERCENT_LABEL,
+  VAT_PERCENT_LABEL,
+} from "@/lib/fees";
 
 export const metadata: Metadata = {
   title: "Algemene voorwaarden",
@@ -9,8 +13,6 @@ export const metadata: Metadata = {
     "De voorwaarden voor het gebruik van MyQare: wat het platform doet, wat het niet doet, wat het kost en wie waarvoor verantwoordelijk is.",
 };
 
-const FEE_PERCENT = PLATFORM_FEE_BP / 100;
-const VAT_PERCENT = VAT_STANDARD_BP / 100;
 
 export default function VoorwaardenPage() {
   return (
@@ -119,7 +121,7 @@ export default function VoorwaardenPage() {
         <ul>
           <li>Voor zorginstellingen is MyQare gratis.</li>
           <li>
-            Een zorgprofessional betaalt {FEE_PERCENT}% van de opdrachtwaarde, plus {VAT_PERCENT}%
+            Een zorgprofessional betaalt {FEE_PERCENT_LABEL}% van de opdrachtwaarde, plus {VAT_PERCENT_LABEL}%
             btw daarover, per aangenomen dienst. De opdrachtwaarde is het uurtarief maal de
             gewerkte tijd zonder pauze.
           </li>

@@ -1,5 +1,9 @@
 import Link from "next/link";
-import { PLATFORM_FEE_BP, VAT_STANDARD_BP } from "@/lib/fees";
+import {
+  FEE_PERCENT_LABEL,
+  FEE_INCL_VAT_PERCENT_LABEL,
+  VAT_PERCENT_LABEL,
+} from "@/lib/fees";
 
 /**
  * The landing page.
@@ -10,10 +14,6 @@ import { PLATFORM_FEE_BP, VAT_STANDARD_BP } from "@/lib/fees";
  * is the thing a coordinator cannot get anywhere else.
  */
 
-// Written out rather than hardcoded as "5%" — the fee lives in one place and the
-// homepage should not be able to drift away from what the ledger actually books.
-const FEE_PERCENT = PLATFORM_FEE_BP / 100;
-const FEE_INCL_VAT_PERCENT = ((PLATFORM_FEE_BP * (10000 + VAT_STANDARD_BP)) / 10000 / 100).toFixed(2).replace(".", ",");
 
 const PILLARS = [
   {
@@ -76,8 +76,8 @@ export default function HomePage() {
           </Link>
         </div>
         <p className="mt-4 text-sm" style={{ color: "var(--text-muted)" }}>
-          Gratis voor zorginstellingen. Zorgprofessionals betalen {FEE_PERCENT}% van de
-          opdrachtwaarde plus btw — {FEE_INCL_VAT_PERCENT}% in totaal — per aangenomen dienst.{" "}
+          Gratis voor zorginstellingen. Zorgprofessionals betalen {FEE_PERCENT_LABEL}% van de
+          opdrachtwaarde plus btw — {FEE_INCL_VAT_PERCENT_LABEL}% in totaal — per aangenomen dienst.{" "}
           <Link href="/tarieven">Bekijk een rekenvoorbeeld</Link>.
         </p>
       </section>

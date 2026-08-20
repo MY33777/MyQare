@@ -12,7 +12,19 @@ import { applyRate, type BasisPoints } from "@/lib/money";
  * Changing it later means changing this constant and who the ledger charges,
  * which is why the fee lives in one place.
  */
-export const PLATFORM_FEE_BP: BasisPoints = 500; // 5%
+/*
+ * 1.5%, EXCLUDING VAT — so a freelancer pays 1.5% of the assignment value plus
+ * 21% VAT on that fee, which is 1.815% of the assignment value in total.
+ *
+ * Was 500 (5%). Lowered deliberately: 5% of a €340 shift is €20.57, which is a
+ * lot to take off somebody's day rate for software that does not negotiate, does
+ * not assign and takes no risk on the work.
+ *
+ * Everything derives from this. The public pages compute their percentages from
+ * it rather than printing a literal, so the number here and the number a customer
+ * reads cannot drift apart.
+ */
+export const PLATFORM_FEE_BP: BasisPoints = 150; // 1.5% ex VAT
 
 /** Dutch standard VAT rate, applied to our own fee. Always — we are not a medical service. */
 export const VAT_STANDARD_BP: BasisPoints = 2100; // 21%
@@ -61,3 +73,42 @@ export function calculateFee(minutes: number, rateCents: number): FeeBreakdown {
     feeTotalCents: feeExVat + feeVat,
   };
 }
+
+/**
+ * The fee as a Dutch-formatted percentage string, without a % sign.
+ *
+ * Six pages each derived this themselves as `PLATFORM_FEE_BP / 100`, which was
+ * fine while the answer was the integer 5 and started printing "1.5" the moment
+ * it was not — a decimal point in a Dutch price. Deriving one rule in six places
+ * is also exactly how the payment term silently halved.
+ *
+ * Trailing zeros are dropped: 1,5 rather than 1,50, and 21 rather than 21,00.
+ */
+function dutchPercent(basisPoints: BasisPoints): string {
+  const value = basisPoints / 100;
+  return (Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0$/, "")).replace(
+    ".",
+    ",",
+  );
+}
+
+/** "1,5" — the fee excluding VAT. */
+export const FEE_PERCENT_LABEL = dutchPercent(PLATFORM_FEE_BP);
+
+/** "21" — the VAT rate applied to the fee. */
+export const VAT_PERCENT_LABEL = dutchPercent(VAT_STANDARD_BP);
+
+/**
+ * "1,815" — what a freelancer actually pays, as a share of the assignment value.
+ *
+ * Three decimals rather than a tidy two, because rounding 1,815 to 1,82 would be
+ * quoting a price slightly above the one that gets charged. Understating is worse
+ * still: this figure exists so nobody discovers the VAT afterwards.
+ */
+export const FEE_INCL_VAT_PERCENT_LABEL = (
+  (PLATFORM_FEE_BP * (10_000 + VAT_STANDARD_BP)) / 10_000 / 100
+)
+  .toFixed(3)
+  .replace(/0+$/, "")
+  .replace(/[.,]$/, "")
+  .replace(".", ",");

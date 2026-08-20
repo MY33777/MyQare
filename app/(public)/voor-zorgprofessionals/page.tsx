@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PLATFORM_FEE_BP, VAT_STANDARD_BP } from "@/lib/fees";
+import {
+  FEE_PERCENT_LABEL,
+  FEE_INCL_VAT_PERCENT_LABEL,
+  VAT_PERCENT_LABEL,
+} from "@/lib/fees";
 import { QUALIFICATIONS } from "@/lib/qualifications";
 
 export const metadata: Metadata = {
@@ -9,8 +13,6 @@ export const metadata: Metadata = {
     "Diensten die bij je kwalificatie en regio passen. Zelf bepalen wat je aanneemt, geen marge op je uurtarief, facturen worden voor je opgemaakt.",
 };
 
-const FEE_PERCENT = PLATFORM_FEE_BP / 100;
-const FEE_INCL_VAT_PERCENT = ((PLATFORM_FEE_BP * (10000 + VAT_STANDARD_BP)) / 10000 / 100).toFixed(2).replace(".", ",");
 
 const FEATURES = [
   {
@@ -71,7 +73,7 @@ export default function VoorZorgprofessionalsPage() {
         </Link>
       </div>
       <p className="text-sm mb-16" style={{ color: "var(--text-muted)" }}>
-        {FEE_PERCENT}% van de opdrachtwaarde plus btw — {FEE_INCL_VAT_PERCENT}% in totaal — en
+        {FEE_PERCENT_LABEL}% van de opdrachtwaarde plus btw — {FEE_INCL_VAT_PERCENT_LABEL}% in totaal — en
         alleen bij een dienst die je aanneemt. Wordt de dienst geannuleerd, dan krijg je alles
         terug.
       </p>

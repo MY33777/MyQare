@@ -14,7 +14,7 @@ const UREN_PATH = "/zorginstelling/uren";
 /**
  * Facility approves the hours.
  *
- * This is the moment the fee difference settles: the 5% was charged at
+ * This is the moment the fee difference settles: the fee was charged at
  * acceptance on the scheduled duration, and approving the real hours writes a
  * second, smaller ledger entry for the difference. The first entry is never
  * rewritten — see the append-only note in supabase/schema.sql.

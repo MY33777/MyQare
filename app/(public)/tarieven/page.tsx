@@ -1,18 +1,20 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PLATFORM_FEE_BP, VAT_STANDARD_BP, calculateFee } from "@/lib/fees";
+import {
+  FEE_PERCENT_LABEL,
+  FEE_INCL_VAT_PERCENT_LABEL,
+  VAT_PERCENT_LABEL,
+  calculateFee,
+} from "@/lib/fees";
 import { formatEuros } from "@/lib/money";
 import { formatMinutes } from "@/lib/hours";
 
 export const metadata: Metadata = {
   title: "Tarieven",
   description:
-    "Gratis voor zorginstellingen. Zorgprofessionals betalen 5% van de opdrachtwaarde plus btw per aangenomen dienst. Met rekenvoorbeeld.",
+    "Gratis voor zorginstellingen. Zorgprofessionals betalen 1,5% van de opdrachtwaarde plus btw per aangenomen dienst. Met rekenvoorbeeld.",
 };
 
-const FEE_PERCENT = PLATFORM_FEE_BP / 100;
-const VAT_PERCENT = VAT_STANDARD_BP / 100;
-const FEE_INCL_VAT_PERCENT = ((PLATFORM_FEE_BP * (10000 + VAT_STANDARD_BP)) / 10000 / 100).toFixed(2).replace(".", ",");
 
 /*
  * Worked through the same function the ledger uses, not typed out by hand.
@@ -55,11 +57,11 @@ export default function TarievenPage() {
         <div className="card p-6">
           <h2 className="text-lg font-bold mb-1">Zorgprofessionals</h2>
           <p className="text-3xl font-bold mb-1" style={{ color: "var(--brand-text)" }}>
-            {FEE_PERCENT}%
+            {FEE_PERCENT_LABEL}%
           </p>
           <p className="text-sm mb-3" style={{ color: "var(--text-muted)" }}>
-            van de opdrachtwaarde, plus {VAT_PERCENT}% btw over die {FEE_PERCENT}% — samen{" "}
-            {FEE_INCL_VAT_PERCENT}% van de opdrachtwaarde. Alleen bij een dienst die je aanneemt.
+            van de opdrachtwaarde, plus {VAT_PERCENT_LABEL}% btw over die {FEE_PERCENT_LABEL}% — samen{" "}
+            {FEE_INCL_VAT_PERCENT_LABEL}% van de opdrachtwaarde. Alleen bij een dienst die je aanneemt.
           </p>
           <ul className="text-sm space-y-2" style={{ color: "var(--text-muted)" }}>
             <li>Geen kosten als je niets aanneemt</li>
@@ -113,7 +115,7 @@ export default function TarievenPage() {
       <p className="text-sm max-w-2xl mb-14" style={{ color: "var(--text-muted)" }}>
         &ldquo;Je houdt over&rdquo; is voor btw op je eigen factuur aan de instelling. Verleen je
         btw-vrijgestelde zorg volgens artikel 11-1-g Wet OB, dan factureer je zonder btw en is de
-        btw op onze kosten voor jou niet aftrekbaar; die {VAT_PERCENT}% is dan een echte kostenpost.
+        btw op onze kosten voor jou niet aftrekbaar; die {VAT_PERCENT_LABEL}% is dan een echte kostenpost.
         MyQare houdt bij welke van de twee op jou van toepassing is en past de factuur daarop aan.
       </p>
 

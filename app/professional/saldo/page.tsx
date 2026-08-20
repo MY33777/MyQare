@@ -58,7 +58,7 @@ export default async function BalancePage({
     <div className="max-w-3xl">
       <PageHeader
         title="Saldo"
-        description="Hiervan wordt de bemiddelingsvergoeding afgeschreven zodra je een dienst aanneemt: 5% van de opdrachtwaarde plus 21% btw."
+        description="Hiervan wordt de bemiddelingsvergoeding afgeschreven zodra je een dienst aanneemt: 1,5% van de opdrachtwaarde plus 21% btw."
       />
 
       {params.error ? <FormMessage kind="error">{authErrorMessage(params.error)}</FormMessage> : null}

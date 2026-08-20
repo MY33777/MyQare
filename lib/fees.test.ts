@@ -3,6 +3,9 @@ import {
   PLATFORM_FEE_BP,
   assignmentValueCents,
   calculateFee,
+  FEE_PERCENT_LABEL,
+  VAT_PERCENT_LABEL,
+  FEE_INCL_VAT_PERCENT_LABEL,
 } from "@/lib/fees";
 
 describe("assignmentValueCents", () => {
@@ -28,30 +31,41 @@ describe("assignmentValueCents", () => {
 
 describe("calculateFee", () => {
   /*
-   * The worked example straight out of the 2021 business plan: a €400 day yields
-   * a €20 fee, €24.20 including VAT. If this test ever fails, the product is no
-   * longer charging what it tells customers it charges.
+   * A €400 day. The 2021 plan assumed 5%, which came to €24.20 including VAT;
+   * the fee is now 1,5%, so the same day costs €7.26. If this test fails, the
+   * product is no longer charging what it tells customers it charges.
    */
-  it("reproduces the €400 → €24.20 example from the business plan", () => {
+  it("charges €7.26 on a €400 day", () => {
     const fee = calculateFee(480, 5000);
     expect(fee.assignmentValueCents).toBe(40_000);
-    expect(fee.feeExVatCents).toBe(2_000);
-    expect(fee.feeVatCents).toBe(420);
-    expect(fee.feeTotalCents).toBe(2_420);
+    expect(fee.feeExVatCents).toBe(600);
+    expect(fee.feeVatCents).toBe(126);
+    expect(fee.feeTotalCents).toBe(726);
   });
 
-  it("is 5% before VAT", () => {
-    expect(PLATFORM_FEE_BP).toBe(500);
+  it("is 1,5% before VAT", () => {
+    expect(PLATFORM_FEE_BP).toBe(150);
     const fee = calculateFee(60, 10_000); // 1h @ €100
-    expect(fee.feeExVatCents).toBe(500);
+    expect(fee.feeExVatCents).toBe(150);
   });
 
   it("rounds half-up on awkward amounts", () => {
-    // 1h @ €33.33 = 3333c. 5% = 166.65 → 167. 21% of 167 = 35.07 → 35.
+    // 1h @ €33.33 = 3333c. 1,5% = 49.995 → 50. 21% of 50 = 10.5 → 11.
     const fee = calculateFee(60, 3_333);
-    expect(fee.feeExVatCents).toBe(167);
-    expect(fee.feeVatCents).toBe(35);
-    expect(fee.feeTotalCents).toBe(202);
+    expect(fee.feeExVatCents).toBe(50);
+    expect(fee.feeVatCents).toBe(11);
+    expect(fee.feeTotalCents).toBe(61);
+  });
+
+  /*
+   * The number a freelancer actually feels. Guards against the fee quietly
+   * drifting back up: the public pages compute their percentage from
+   * PLATFORM_FEE_BP, so this is what they would start printing.
+   */
+  it("costs 1,815% of the assignment value all-in", () => {
+    const fee = calculateFee(480, 5000);
+    const allIn = (fee.feeTotalCents / fee.assignmentValueCents) * 100;
+    expect(allIn).toBeCloseTo(1.815, 3);
   });
 
   it("charges nothing on a zero-value assignment", () => {
@@ -67,5 +81,35 @@ describe("calculateFee", () => {
         expect(Number.isInteger(fee.feeTotalCents)).toBe(true);
       }
     }
+  });
+});
+
+describe("the percentages a customer reads", () => {
+  /*
+   * Six public pages used to derive these themselves. That was invisible while
+   * the fee was the integer 5 and became "1.5%" — a decimal point in a Dutch
+   * price — the moment it was not. It is also the shape that let the payment term
+   * silently halve: one rule, written down twice.
+   */
+  it("formats the fee the Dutch way", () => {
+    expect(FEE_PERCENT_LABEL).toBe("1,5");
+    expect(VAT_PERCENT_LABEL).toBe("21");
+  });
+
+  it("states the all-in figure without rounding it down", () => {
+    // 1,815%. Rounding to 1,82 would quote above what is charged; to 1,81 below.
+    expect(FEE_INCL_VAT_PERCENT_LABEL).toBe("1,815");
+  });
+
+  it("never prints a decimal point", () => {
+    for (const label of [FEE_PERCENT_LABEL, VAT_PERCENT_LABEL, FEE_INCL_VAT_PERCENT_LABEL]) {
+      expect(label).not.toContain(".");
+    }
+  });
+
+  it("agrees with what calculateFee actually charges", () => {
+    const fee = calculateFee(480, 5000);
+    const allIn = ((fee.feeTotalCents / fee.assignmentValueCents) * 100).toFixed(3).replace(".", ",");
+    expect(allIn).toBe(FEE_INCL_VAT_PERCENT_LABEL);
   });
 });

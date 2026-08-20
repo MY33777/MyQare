@@ -11,7 +11,7 @@
 --
 --   1. claim the shift, exactly once, even if two freelancers tap at the same moment
 --   2. create the assignment
---   3. charge the 5% fee against the credit ledger
+--   3. charge the platform fee against the credit ledger
 --   4. write the compliance record
 --   5. retire the other outstanding offers
 --
@@ -128,7 +128,7 @@ begin
   -- Negative: a fee is money leaving the balance.
   insert into credit_ledger (profile_id, delta_cents, reason, assignment_id, note)
   values (p_freelancer_id, -p_fee_total_cents, 'fee', v_assignment_id,
-          'Bemiddelingsvergoeding 5% plus btw');
+          'Bemiddelingsvergoeding plus btw');
 
   update shift_offers
   set responded_at = now(), response = 'accept'

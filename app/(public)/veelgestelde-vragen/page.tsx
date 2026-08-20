@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PLATFORM_FEE_BP, VAT_STANDARD_BP } from "@/lib/fees";
+import {
+  FEE_PERCENT_LABEL,
+  FEE_INCL_VAT_PERCENT_LABEL,
+  VAT_PERCENT_LABEL,
+} from "@/lib/fees";
 
 export const metadata: Metadata = {
   title: "Veelgestelde vragen",
@@ -8,8 +12,6 @@ export const metadata: Metadata = {
     "Wat MyQare kost, hoe het dossier werkt, wat er met je documenten gebeurt en wat er nog niet af is.",
 };
 
-const FEE_PERCENT = PLATFORM_FEE_BP / 100;
-const FEE_INCL_VAT_PERCENT = ((PLATFORM_FEE_BP * (10000 + VAT_STANDARD_BP)) / 10000 / 100).toFixed(2).replace(".", ",");
 
 type Question = { q: string; a: React.ReactNode };
 
@@ -58,8 +60,8 @@ const SECTIONS: { heading: string; questions: Question[] }[] = [
         q: "Wat kost het?",
         a: (
           <>
-            Voor zorginstellingen niets. Een zorgprofessional betaalt {FEE_PERCENT}% van de
-            opdrachtwaarde plus btw daarover — samen {FEE_INCL_VAT_PERCENT}% — en alleen bij een
+            Voor zorginstellingen niets. Een zorgprofessional betaalt {FEE_PERCENT_LABEL}% van de
+            opdrachtwaarde plus btw daarover — samen {FEE_INCL_VAT_PERCENT_LABEL}% — en alleen bij een
             dienst die hij aanneemt. Zie <Link href="/tarieven">tarieven</Link> voor een
             rekenvoorbeeld dat met dezelfde functie is doorgerekend als de administratie gebruikt.
           </>

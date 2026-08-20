@@ -9,8 +9,12 @@ import { localInputToIso } from "@/lib/timezone";
 import { createShiftSeries, type ShiftVisibility } from "@/lib/shifts";
 import { expandRecurrence, type RecurrencePattern } from "@/lib/recurrence";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { clearFormDraft, saveFormDraft } from "@/lib/formDraft";
 
 const NEW_SHIFT_PATH = "/zorginstelling/diensten/nieuw";
+
+/** Scopes the draft cookie to this form. See lib/formDraft.ts. */
+const DRAFT_KEY = "shift";
 
 export async function createShiftAction(formData: FormData) {
   const admin = await getFacilityAdmin();
@@ -22,6 +26,17 @@ export async function createShiftAction(formData: FormData) {
    * wasn't shown" is not a control.
    */
   if (!admin.org.verified_at) redirect(`${NEW_SHIFT_PATH}?error=not_verified`);
+
+  /*
+   * Everything typed, kept, before the first bail-out.
+   *
+   * Every redirect below sends the browser back with a fresh GET, which empties
+   * the form. Twelve fields, filled in because somebody called in sick an hour
+   * ago, one mistyped rate, and all of it gone. People retype it once; the second
+   * time they phone an agency. Written here rather than at each call site so a
+   * validation branch added later cannot forget.
+   */
+  await saveFormDraft(DRAFT_KEY, formData, NEW_SHIFT_PATH);
 
   const allowed = await checkRateLimit(bucketKey("shift_create", admin.org.id), 40, 3600);
   if (!allowed) redirect(`${NEW_SHIFT_PATH}?error=rate_limited`);
@@ -166,6 +181,10 @@ export async function createShiftAction(formData: FormData) {
     occurrences,
     explicitRespondBy,
   );
+
+  // The shift exists; the draft is now last week's half-finished form waiting to
+  // repopulate the next one. Dropped before the redirect, not after.
+  await clearFormDraft(DRAFT_KEY, NEW_SHIFT_PATH);
 
   revalidatePath("/zorginstelling");
   revalidatePath("/zorginstelling/diensten");

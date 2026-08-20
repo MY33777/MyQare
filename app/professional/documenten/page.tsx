@@ -51,7 +51,7 @@ function expiryBadge(expiresOn: string | null) {
 export default async function DocumentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; uploaded?: string }>;
+  searchParams: Promise<{ error?: string; uploaded?: string; kind?: string }>;
 }) {
   const { userId } = await requireFreelancer("/professional/documenten");
   const params = await searchParams;
@@ -88,7 +88,18 @@ export default async function DocumentsPage({
             <label className="label" htmlFor="kind">
               Soort document
             </label>
-            <select className="select" id="kind" name="kind" defaultValue="vog" required>
+            {/*
+              The kind comes back after a rejection. It decides whether an expiry
+              date is required, so losing it handed somebody rejected for a
+              missing VOG date a form that no longer said one was needed.
+            */}
+            <select
+              className="select"
+              id="kind"
+              name="kind"
+              defaultValue={params.kind ?? "vog"}
+              required
+            >
               {kinds.map((kind) => (
                 <option key={kind} value={kind}>
                   {DOCUMENT_KIND_LABELS[kind]}

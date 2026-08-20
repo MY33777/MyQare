@@ -5,10 +5,27 @@ import { createClient } from "@/lib/supabase/server";
 import { mapAuthError } from "@/lib/authErrors";
 import { bucketKey, checkRateLimit } from "@/lib/rateLimit";
 import { absoluteUrl } from "@/lib/site";
+import { clearFormDraft, saveFormDraft } from "@/lib/formDraft";
+
+/** Scopes the draft cookie to this form. See lib/formDraft.ts. */
+const DRAFT_KEY = "signup";
+const DRAFT_PATH = "/registreren";
 
 const MIN_PASSWORD_LENGTH = 8;
 
 export async function signUpAction(formData: FormData) {
+  /*
+   * Everything typed, kept, before anything can send them back.
+   *
+   * A validation redirect empties the form. On this one that means a name, an
+   * email address and a chosen role retyped on a phone. Stored in an httpOnly
+   * cookie rather than the query string precisely because two of those are
+   * personal data about a named healthcare worker, and a query string ends up
+   * in history, referrers and every access log on the way. Passwords are
+   * dropped by saveFormDraft itself.
+   */
+  await saveFormDraft(DRAFT_KEY, formData, DRAFT_PATH);
+
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const passwordConfirm = String(formData.get("password_confirm") ?? "");
@@ -65,6 +82,10 @@ export async function signUpAction(formData: FormData) {
   });
 
   if (error) redirect(backTo(mapAuthError(error.message)));
+
+  // Registered. The draft is now somebody else's half-finished form waiting
+  // to repopulate the next one on a shared workstation.
+  await clearFormDraft(DRAFT_KEY, DRAFT_PATH);
 
   redirect("/registreren/bevestig");
 }

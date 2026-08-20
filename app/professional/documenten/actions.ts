@@ -39,7 +39,20 @@ export async function uploadDocumentAction(formData: FormData) {
     expiresOn,
   });
 
-  if (!result.ok) redirect(`${DOCS_PATH}?error=${result.reason}`);
+  /*
+   * The chosen kind comes back with the error.
+   *
+   * A rejection sends the browser back with a fresh GET, so the kind selector
+   * returned to its first option — and the expiry rule depends on the kind, which
+   * meant somebody rejected for a missing VOG date was handed a form that no
+   * longer said a date was needed. Only the kind: the two dates are facts about a
+   * certificate of conduct, and a query string ends up in history and referrers.
+   * The file cannot be carried back by anything, which is why the message names
+   * that it has to be chosen again.
+   */
+  if (!result.ok) {
+    redirect(`${DOCS_PATH}?error=${result.reason}&kind=${encodeURIComponent(kind)}`);
+  }
 
   revalidatePath(DOCS_PATH);
   revalidatePath("/professional");

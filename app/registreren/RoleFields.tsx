@@ -11,8 +11,27 @@ type Role = "facility_admin" | "freelancer";
  * what the whole account can do, and it is worth spelling out both options in
  * full rather than hiding one behind a dropdown.
  */
-export function RoleFields() {
-  const [role, setRole] = useState<Role | "">("");
+export function RoleFields({
+  defaultRole,
+  defaultOrgName,
+}: {
+  /*
+   * Carried back after a validation redirect, which otherwise empties the whole
+   * form — including which of the two accounts somebody had chosen, on the very
+   * first screen of the product. See lib/formDraft.ts.
+   */
+  defaultRole?: string;
+  defaultOrgName?: string;
+} = {}) {
+  /*
+   * Narrowed, not asserted. defaultRole arrives from a cookie this component does
+   * not control, and an unrecognised value dropped straight into state would
+   * check neither radio and leave the fieldset in a state the form cannot submit.
+   */
+  const initialRole: Role | "" =
+    defaultRole === "facility_admin" || defaultRole === "freelancer" ? defaultRole : "";
+
+  const [role, setRole] = useState<Role | "">(initialRole);
 
   const options: { value: Role; title: string; body: string }[] = [
     {
@@ -80,7 +99,14 @@ export function RoleFields() {
           <label className="label" htmlFor="org_name">
             Naam zorginstelling
           </label>
-          <input className="input" id="org_name" name="org_name" type="text" required />
+          <input
+            className="input"
+            id="org_name"
+            name="org_name"
+            type="text"
+            defaultValue={defaultOrgName ?? ""}
+            required
+          />
           <p className="hint">
             We controleren je KvK-inschrijving voordat je diensten kunt plaatsen.
           </p>

@@ -4,6 +4,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { isKnownQualification } from "@/lib/qualifications";
+import { clearFormDraft, saveFormDraft } from "@/lib/formDraft";
+
+/** Scopes the draft cookie to this form. See lib/formDraft.ts. */
+const DRAFT_KEY = "onboarding";
+const DRAFT_PATH = "/onboarding";
 
 /**
  * Creates the application-level rows for a freshly confirmed account.
@@ -18,6 +23,18 @@ import { isKnownQualification } from "@/lib/qualifications";
  * twice, must not end up with two organisations.
  */
 export async function completeOnboardingAction(formData: FormData) {
+  /*
+   * Everything typed, kept, before anything can send them back.
+   *
+   * A validation redirect empties the form. On this one that means a name, an
+   * email address and a chosen role retyped on a phone. Stored in an httpOnly
+   * cookie rather than the query string precisely because two of those are
+   * personal data about a named healthcare worker, and a query string ends up
+   * in history, referrers and every access log on the way. Passwords are
+   * dropped by saveFormDraft itself.
+   */
+  await saveFormDraft(DRAFT_KEY, formData, DRAFT_PATH);
+
   const supabase = await createClient();
   const {
     data: { user },

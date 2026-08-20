@@ -5,6 +5,7 @@ import { authErrorMessage } from "@/lib/authErrors";
 import { RoleFields } from "./RoleFields";
 import { signUpAction } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { readFormDraft } from "@/lib/formDraft";
 
 export const metadata: Metadata = { title: "Account aanmaken" };
 
@@ -15,6 +16,13 @@ export default async function RegisterPage({
 }) {
   const params = await searchParams;
   const error = authErrorMessage(params.error);
+
+  /*
+   * What was typed, but only while an error is showing — otherwise somebody
+   * opening the page fresh on a shared ward workstation would find a stranger's
+   * name and email address already in it.
+   */
+  const draft = await readFormDraft("signup", Boolean(params.error));
 
   return (
     <AuthShell
@@ -30,7 +38,7 @@ export default async function RegisterPage({
 
       <form action={signUpAction} className="space-y-4">
         {/* Role choice reveals the organisation field, so it needs client state. */}
-        <RoleFields />
+        <RoleFields defaultRole={draft.role} defaultOrgName={draft.org_name} />
 
         <div>
           <label className="label" htmlFor="full_name">
@@ -40,6 +48,7 @@ export default async function RegisterPage({
             className="input"
             id="full_name"
             name="full_name"
+            defaultValue={draft.full_name ?? ""}
             type="text"
             autoComplete="name"
             required
@@ -54,6 +63,7 @@ export default async function RegisterPage({
             className="input"
             id="email"
             name="email"
+            defaultValue={draft.email ?? ""}
             type="email"
             autoComplete="email"
             required

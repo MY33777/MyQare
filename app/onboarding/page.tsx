@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { QualificationSelect } from "@/components/QualificationSelect";
 import { completeOnboardingAction } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { readFormDraft } from "@/lib/formDraft";
 
 export const metadata: Metadata = { title: "Gegevens aanvullen" };
 
@@ -15,6 +16,9 @@ export default async function OnboardingPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const params = await searchParams;
+
+  // Same rule as the other two forms: only while an error is on screen.
+  const draft = await readFormDraft("onboarding", Boolean(params.error));
   const error = authErrorMessage(params.error);
 
   const supabase = await createClient();
@@ -62,7 +66,8 @@ export default async function OnboardingPage({
             id="full_name"
             name="full_name"
             type="text"
-            defaultValue={String(metadata.full_name ?? "")}
+            /* The draft is what they just typed; the metadata is from signup. */
+            defaultValue={draft.full_name ?? String(metadata.full_name ?? "")}
             required
           />
         </div>
@@ -71,7 +76,14 @@ export default async function OnboardingPage({
           <label className="label" htmlFor="phone">
             Telefoonnummer
           </label>
-          <input className="input" id="phone" name="phone" type="tel" autoComplete="tel" />
+          <input
+            className="input"
+            id="phone"
+            name="phone"
+            type="tel"
+            autoComplete="tel"
+            defaultValue={draft.phone ?? ""}
+          />
           <p className="hint">
             {isFacility
               ? "Alleen gebruikt als er iets met een dienst misgaat."
@@ -90,7 +102,7 @@ export default async function OnboardingPage({
                 id="org_name"
                 name="org_name"
                 type="text"
-                defaultValue={String(metadata.org_name ?? "")}
+                defaultValue={draft.org_name ?? String(metadata.org_name ?? "")}
                 required
               />
             </div>
@@ -98,7 +110,14 @@ export default async function OnboardingPage({
               <label className="label" htmlFor="kvk">
                 KvK-nummer
               </label>
-              <input className="input" id="kvk" name="kvk" type="text" inputMode="numeric" />
+              <input
+                className="input"
+                id="kvk"
+                name="kvk"
+                type="text"
+                inputMode="numeric"
+                defaultValue={draft.kvk ?? ""}
+              />
               <p className="hint">
                 We controleren dit voordat je diensten kunt plaatsen. Dat duurt meestal één werkdag.
               </p>
@@ -118,7 +137,7 @@ export default async function OnboardingPage({
               shift, silently, on both sides. Two write paths for one column need
               one control.
             */}
-            <QualificationSelect name="profession" id="profession" />
+            <QualificationSelect name="profession" id="profession" defaultValue={draft.profession} />
             <p className="hint">Je kunt later specialisaties en documenten toevoegen.</p>
 
             {/*
@@ -139,6 +158,7 @@ export default async function OnboardingPage({
                 className="input"
                 id="region"
                 name="region"
+                defaultValue={draft.region ?? ""}
                 type="text"
                 placeholder="bijv. Rotterdam-Rijnmond"
                 required

@@ -49,11 +49,27 @@ export type Organisation = {
 
 /** The signed-in user, or null. Never redirects — for pages that render either way. */
 export async function getSessionUser() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  return user;
+  /*
+   * Returns null when it cannot ask, rather than throwing.
+   *
+   * This is the only auth helper the PUBLIC pages use — the header calls it to
+   * decide between "Inloggen" and "Naar mijn account". Every other helper here
+   * guards something and must fail loudly.
+   *
+   * "Is anybody signed in?" has a safe answer when Supabase is unconfigured or
+   * unreachable: no. Throwing instead meant the landing page, the pricing page
+   * and the privacy statement all returned 500 over a key none of them use.
+   */
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    return user;
+  } catch (error) {
+    console.error(`[auth] could not read the session: ${String(error)}`);
+    return null;
+  }
 }
 
 /**

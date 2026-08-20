@@ -15,31 +15,66 @@ const AUTH_PAGES = ["/login", "/registreren"];
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options),
-          );
-        },
+  /*
+   * Fail OPEN. Both of this function's jobs are optional; taking the site down is
+   * not one of them.
+   *
+   * These used to be read with `!`, which is a TypeScript assertion that compiles
+   * to nothing. With the variables unset — a fresh Vercel project before anyone
+   * has filled them in — createServerClient received undefined and threw, and
+   * because the matcher below covers nearly every path, EVERY request 500'd. The
+   * public marketing site, robots.txt and the statically generated pages all went
+   * down over a missing key none of them use.
+   *
+   * Passing the request through is safe precisely because this is not a security
+   * boundary: lib/auth.ts re-checks on every protected page and server action,
+   * and those fail loudly on their own. The worst case here is a stale session
+   * cookie and no optimistic redirect.
+   */
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !anonKey) {
+    console.error(
+      "[proxy] NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY is not set. " +
+        "Session refresh is disabled; protected pages will redirect to /login. " +
+        "These are inlined at BUILD time, so set them in Vercel and redeploy.",
+    );
+    return response;
+  }
+
+  const supabase = createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        response = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, value, options }) =>
+          response.cookies.set(name, value, options),
+        );
       },
     },
-  );
+  });
 
-  // Required: this call is what refreshes an expiring session. Removing it
-  // causes intermittent logouts that are maddening to reproduce, because they
-  // only happen once a token actually ages out.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  /*
+   * Required: this call is what refreshes an expiring session. Removing it causes
+   * intermittent logouts that are maddening to reproduce, because they only
+   * happen once a token actually ages out.
+   *
+   * Wrapped for the same reason as the check above: Supabase being unreachable is
+   * a bad afternoon, not a reason for the marketing site to return 500.
+   */
+  let user = null;
+  try {
+    ({
+      data: { user },
+    } = await supabase.auth.getUser());
+  } catch (error) {
+    console.error(`[proxy] session refresh failed: ${String(error)}`);
+    return response;
+  }
 
   const path = request.nextUrl.pathname;
 

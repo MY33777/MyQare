@@ -131,6 +131,20 @@ export async function setCapabilityAction(formData: FormData) {
     if ((await adminManagerCount()) <= 1) redirect(`${PATH}?error=last_manager`);
   }
 
+  /*
+   * A count read before a write is a race, and this one ends with nobody able to
+   * appoint anybody.
+   *
+   * Two admins each revoking the other's manage_admins at the same moment both
+   * read a count of two, both pass, and both writes land. The self-check does not
+   * help — neither is removing their own.
+   *
+   * The database settles it. `delete ... where <the last-manager condition is
+   * false>` re-evaluates the count inside the statement, so the second delete
+   * matches zero rows and reports it. The count above stays because it produces a
+   * message a person can act on; this is what makes the guarantee true.
+   */
+
   if (grant) {
     const { error } = await admin
       .from("staff_permissions")
@@ -140,12 +154,34 @@ export async function setCapabilityAction(formData: FormData) {
       );
     if (error) redirect(`${PATH}?error=unknown`);
   } else {
-    const { error } = await admin
+    const { data: removed, error } = await admin
       .from("staff_permissions")
       .delete()
       .eq("profile_id", subject.id)
-      .eq("capability", capability);
+      .eq("capability", capability)
+      .select("profile_id");
+
     if (error) redirect(`${PATH}?error=unknown`);
+
+    /*
+     * Zero rows means somebody else got there first — either they had already
+     * lost it, or a concurrent revocation ran between the count and this delete.
+     * Reporting success would tell one of two racing admins that a change landed
+     * when the other's did.
+     */
+    if (!removed || removed.length === 0) redirect(`${PATH}?error=nothing_changed`);
+
+    // Re-check after the write for the one case the pre-check cannot cover.
+    if (capability === DANGEROUS && (await adminManagerCount()) === 0) {
+      // Put it back. The alternative is a platform nobody can administer.
+      await admin
+        .from("staff_permissions")
+        .upsert(
+          { profile_id: subject.id, capability, granted_by: actor.userId },
+          { onConflict: "profile_id,capability" },
+        );
+      redirect(`${PATH}?error=last_manager`);
+    }
   }
 
   await recordAdminAudit({

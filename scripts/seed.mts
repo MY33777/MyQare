@@ -173,7 +173,22 @@ async function seed() {
     org_id: null,
     full_name: PEOPLE.staff.name,
   });
-  console.log(`  staff ${PEOPLE.staff.email}`);
+  /*
+   * Capabilities, or the account is an admin who can do nothing.
+   *
+   * Migration 014's backfill grants to everyone who is role='staff' AT THE TIME
+   * IT RUNS. The seed creates this account afterwards, so it arrives with an
+   * empty permission set and /beheer shows it the "you have no rights yet"
+   * notice — which is correct behaviour and a confusing first demo.
+   */
+  await db.from("staff_permissions").upsert(
+    ["verify_organisations", "verify_big", "review_documents", "manage_admins"].map(
+      (capability) => ({ profile_id: staffId, capability }),
+    ),
+    { onConflict: "profile_id,capability" },
+  );
+
+  console.log(`  staff ${PEOPLE.staff.email} (alle rechten)`);
 
   // ---- freelancers, in the pool, with balance ----
   const freelancerIds: string[] = [];

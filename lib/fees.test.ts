@@ -113,3 +113,29 @@ describe("the percentages a customer reads", () => {
     expect(allIn).toBe(FEE_INCL_VAT_PERCENT_LABEL);
   });
 });
+
+describe("settling at the rate that was agreed", () => {
+  /*
+   * The fee dropped from 5% to 1,5% mid-flight. approveTimesheet recomputed what
+   * was owed with whatever PLATFORM_FEE_BP happened to be at approval time, so
+   * every assignment accepted before the change and approved after it re-priced
+   * downwards — and settle_timesheet, which derives its movement from the ledger,
+   * dutifully refunded the difference. Money somebody had agreed to pay, handed
+   * back because a constant moved.
+   *
+   * It runs the other way on an increase, which is worse: a charge nobody agreed
+   * to, against a prepaid balance, after the work is done.
+   */
+  it("prices an old assignment at its own rate, not today's", () => {
+    const atFivePercent = calculateFee(480, 5000, 500);
+    expect(atFivePercent.feeExVatCents).toBe(2_000);
+    expect(atFivePercent.feeTotalCents).toBe(2_420);
+
+    // The same work under the current rate, for contrast.
+    expect(calculateFee(480, 5000).feeTotalCents).toBe(726);
+  });
+
+  it("defaults to the current rate when none is given", () => {
+    expect(calculateFee(480, 5000, PLATFORM_FEE_BP)).toEqual(calculateFee(480, 5000));
+  });
+});

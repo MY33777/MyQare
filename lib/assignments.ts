@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
-import { calculateFee } from "@/lib/fees";
+import { calculateFee, PLATFORM_FEE_BP } from "@/lib/fees";
 import { billableMinutes } from "@/lib/hours";
 
 /**
@@ -140,6 +140,18 @@ export async function acceptShift(shiftId: string, freelancerId: string): Promis
       vat_exempt: freelancer?.vat_exempt ?? null,
     },
     fee: {
+      /*
+       * The RATE, not just the amounts.
+       *
+       * settle_timesheet works out what is owed for the hours actually worked,
+       * and recomputed it with whatever PLATFORM_FEE_BP happened to be at
+       * approval time. When the fee dropped from 5% to 1,5%, every assignment
+       * accepted before the change and approved after it re-priced downwards and
+       * refunded the difference — money the freelancer had agreed to pay, handed
+       * back because a constant moved. It would work the other way on an
+       * increase, which is worse: a bill nobody agreed to.
+       */
+      platform_fee_bp: PLATFORM_FEE_BP,
       assignment_value_cents: fee.assignmentValueCents,
       fee_ex_vat_cents: fee.feeExVatCents,
       fee_vat_cents: fee.feeVatCents,
@@ -266,7 +278,7 @@ export async function approveTimesheet(
   const { data: assignment } = await admin
     .from("assignments")
     .select(
-      "id, agreed_rate_cents, agreed_break_minutes, shifts(starts_at, ends_at), timesheets(minutes_claimed, break_minutes)",
+      "id, agreed_rate_cents, agreed_break_minutes, shifts(starts_at, ends_at), timesheets(minutes_claimed, break_minutes), compliance_records(snapshot)",
     )
     .eq("id", assignmentId)
     .maybeSingle<{
@@ -275,6 +287,8 @@ export async function approveTimesheet(
       agreed_break_minutes: number;
       shifts: { starts_at: string; ends_at: string } | null;
       timesheets: { minutes_claimed: number; break_minutes: number } | null;
+      /** Holds the fee rate that applied when this assignment was accepted. */
+      compliance_records: { snapshot: unknown } | null;
     }>();
 
   if (!assignment) return { ok: false, reason: "unknown" };
@@ -296,7 +310,26 @@ export async function approveTimesheet(
    * again, and the guard that stopped the replay turned out to depend on a column
    * an attacker could clear. See migration 005.
    */
-  const owedTotalCents = calculateFee(actualMinutes, assignment.agreed_rate_cents).feeTotalCents;
+  /*
+   * Priced at the rate that applied when the work was accepted, not today's.
+   *
+   * The freelancer agreed to a percentage at the moment they took the shift. A
+   * later change to PLATFORM_FEE_BP must not reach backwards into work already
+   * done — downwards it refunds money nobody asked to have back, upwards it
+   * invoices a fee nobody agreed to.
+   *
+   * Falls back to the current rate for assignments accepted before the snapshot
+   * carried it, which is the same rate those were charged at anyway.
+   */
+  const snapshotFeeBp = (
+    assignment.compliance_records?.snapshot as { fee?: { platform_fee_bp?: number } } | null
+  )?.fee?.platform_fee_bp;
+
+  const owedTotalCents = calculateFee(
+    actualMinutes,
+    assignment.agreed_rate_cents,
+    typeof snapshotFeeBp === "number" ? snapshotFeeBp : undefined,
+  ).feeTotalCents;
 
   const { error } = await admin.rpc("settle_timesheet", {
     p_assignment_id: assignmentId,

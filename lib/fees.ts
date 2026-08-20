@@ -63,9 +63,20 @@ export function assignmentValueCents(minutes: number, rateCents: number): number
  * the balance. The 2021 plan assumed 5% and therefore €24.20; the rate is 1,5%
  * now. Both the fee and the all-in percentage are pinned by the test suite.
  */
-export function calculateFee(minutes: number, rateCents: number): FeeBreakdown {
+export function calculateFee(
+  minutes: number,
+  rateCents: number,
+  /**
+   * The fee rate to apply, in basis points. Defaults to the current one.
+   *
+   * Passed explicitly when settling an assignment accepted under a different
+   * rate: the percentage somebody agreed to when they took the shift is the one
+   * the work is priced at, whatever the constant says today.
+   */
+  feeBp: BasisPoints = PLATFORM_FEE_BP,
+): FeeBreakdown {
   const value = assignmentValueCents(minutes, rateCents);
-  const feeExVat = applyRate(value, PLATFORM_FEE_BP);
+  const feeExVat = applyRate(value, feeBp);
   const feeVat = applyRate(feeExVat, VAT_STANDARD_BP);
   return {
     assignmentValueCents: value,

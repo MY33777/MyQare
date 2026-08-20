@@ -57,8 +57,12 @@ create table if not exists organisations (
   postcode text,
   city text,
   -- Set by an admin after checking the KvK extract. Until then the facility
-  -- can look around but cannot post shifts (enforced in the server action, and
-  -- again by the shifts insert policy below).
+  -- can look around but cannot post shifts.
+  --
+  -- Enforced in the server action ONLY. This used to say "and again by the shifts
+  -- insert policy below"; migration 005 removed every write policy in the schema,
+  -- so that second line of defence has not existed since. Saying it did is the
+  -- exact pattern five audits kept finding — a protection asserted in a comment.
   verified_at timestamptz,
   created_at timestamptz not null default now()
 );
@@ -745,13 +749,6 @@ create policy freelancers_select on freelancers for select
       select 1 from assignments a
       where a.freelancer_id = freelancers.profile_id and a.org_id = current_org_id()
     )
-    -- Region-wide open shifts: a facility that has offered a shift to the
-    -- region needs to see who responded.
-    or exists (
-      select 1 from shifts s
-      join shift_offers o on o.shift_id = s.id
-      where o.freelancer_id = freelancers.profile_id and s.org_id = current_org_id()
-    )
   );
 
 drop policy if exists freelancers_write on freelancers;
@@ -774,7 +771,10 @@ create policy documents_select on documents for select
       and (
         exists (
           select 1 from assignments a
-          where a.freelancer_id = documents.freelancer_id and a.org_id = current_org_id()
+          where a.freelancer_id = documents.freelancer_id
+            and a.org_id = current_org_id()
+            -- Cancelled work creates no duty to have checked anything.
+            and a.status <> 'cancelled'
         )
         -- Pool membership counts too. Wkkgz obliges a facility to check
         -- qualifications BEFORE engaging someone, and requiring an assignment

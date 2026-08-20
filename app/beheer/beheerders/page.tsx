@@ -26,6 +26,8 @@ const ERRORS: Record<string, string> = {
   cannot_demote_self:
     "Je kunt je eigen recht om beheerders te benoemen niet intrekken. Laat een andere beheerder dat doen.",
   cannot_remove_self: "Je kunt jezelf niet verwijderen als beheerder.",
+  nothing_changed:
+    "Er is niets gewijzigd — een andere beheerder was je net voor. Ververs de pagina.",
   last_manager:
     "Dit is de laatste beheerder die andere beheerders kan benoemen. Zou je dit doorzetten, dan kan niemand nog rechten uitdelen — ook jij niet.",
   unknown: "Er ging iets mis. Probeer het opnieuw.",

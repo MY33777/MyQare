@@ -59,7 +59,7 @@ export default async function MyAssignmentsPage() {
           body="Diensten die je aanneemt verschijnen hier, met de uren die je invult."
         />
       ) : (
-        <div className="card table-scroll">
+        <div className="card table-scroll" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
           <table className="table">
             <thead>
               <tr>

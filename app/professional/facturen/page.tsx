@@ -336,7 +336,7 @@ export default async function FreelancerInvoicesPage({
             Belaste omzet gaat in rubriek 1a van je aangifte. Vrijgestelde zorg (art. 11-1-g)
             hoort daar niet bij.
           </p>
-          <div className="table-scroll">
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
             <table className="table">
               <thead>
                 <tr>
@@ -393,7 +393,7 @@ export default async function FreelancerInvoicesPage({
           body="Zodra een instelling je gewerkte uren goedkeurt, maken we de factuur op en sturen we die naar hun administratie."
         />
       ) : (
-        <div className="card table-scroll">
+        <div className="card table-scroll" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
           <table className="table">
             <thead>
               <tr>

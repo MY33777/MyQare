@@ -288,7 +288,7 @@ export default async function FacilityShiftDetailPage({
 
       <h2 className="text-lg font-bold mb-3">Reacties ({offers.length} aangeboden)</h2>
 
-      <div className="card table-scroll">
+      <div className="card table-scroll" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
         <table className="table">
           <thead>
             <tr>

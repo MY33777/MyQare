@@ -122,7 +122,7 @@ export default async function DossierPage() {
           body="Zodra een zorgprofessional een dienst aanneemt, wordt hier automatisch een record vastgelegd."
         />
       ) : (
-        <div className="card table-scroll">
+        <div className="card table-scroll" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
           <table className="table">
             <thead>
               <tr>

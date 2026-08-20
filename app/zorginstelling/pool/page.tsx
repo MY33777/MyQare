@@ -84,7 +84,7 @@ export default async function PoolPage({
           body="Voeg de zorgprofessionals toe waar je nu al mee werkt. Zonder pool wordt een dienst aan niemand aangeboden."
         />
       ) : (
-        <div className="card table-scroll mb-8">
+        <div className="card table-scroll mb-8" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
           <table className="table">
             <thead>
               <tr>
@@ -154,7 +154,7 @@ export default async function PoolPage({
             Deze zorgprofessionals krijgen jouw diensten niet meer te zien. Dit geldt alleen voor{" "}
             {org.name} — andere instellingen merken hier niets van en hun werk elders verandert niet.
           </p>
-          <div className="card table-scroll">
+          <div className="card table-scroll" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
             <table className="table">
               <tbody>
                 {hidden.map((row) => (

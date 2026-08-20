@@ -239,7 +239,7 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
           </p>
         </div>
       ) : (
-        <div className="card table-scroll mb-6">
+        <div className="card table-scroll mb-6" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
           <table className="table">
             <thead>
               <tr>
@@ -298,7 +298,7 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
           </p>
         </div>
       ) : (
-        <div className="card table-scroll mb-6">
+        <div className="card table-scroll mb-6" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
           <table className="table">
             <tbody>
               {assignments.map((assignment) => (

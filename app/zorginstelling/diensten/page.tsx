@@ -105,7 +105,7 @@ export default async function ShiftsPage({
           body="Zodra je een dienst plaatst verschijnt die hier, met wie erop heeft gereageerd."
         />
       ) : (
-        <div className="card table-scroll">
+        <div className="card table-scroll" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
           <table className="table">
             <thead>
               <tr>

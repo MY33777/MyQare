@@ -18,12 +18,59 @@ export function AppHeader({
       className="border-b sticky top-0 z-10"
       style={{ borderColor: "var(--border)", background: "var(--surface)" }}
     >
-      <div className="mx-auto max-w-6xl px-4 h-16 flex items-center gap-6">
-        <BrandLink className="text-lg font-bold" />
+      {/*
+        Two rows on a phone, one on a tablet and up.
 
-        {/* Horizontal scroll rather than a hamburger: there are only a handful of
-            destinations, and a coordinator on a tablet gets to them in one tap. */}
-        <nav className="flex-1 flex items-center gap-1 overflow-x-auto">
+        All of it used to share a single 64px row: the wordmark, up to nine
+        destinations, a balance and a sign-out button. At 375px that left the nav
+        about eighty pixels of horizontally-scrolling strip, so a freelancer could
+        see "Overzicht" and a sliver of the next word, and the balance she needs
+        before accepting a shift was off the edge entirely.
+
+        Giving the nav its own full-width row below costs 44 pixels of height and
+        makes every destination reachable. No hamburger: a menu behind a tap is
+        worse for six links than six links.
+      */}
+      <a className="skip-link" href="#inhoud">
+        Naar de inhoud
+      </a>
+
+      <div className="mx-auto max-w-6xl px-4">
+        <div className="h-16 flex items-center gap-4 sm:gap-6">
+          <BrandLink className="text-lg font-bold" />
+
+          <nav className="hidden sm:flex flex-1 items-center gap-1 overflow-x-auto">
+            {nav.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap no-underline"
+                style={{ color: "var(--text)" }}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+
+          <div className="flex items-center gap-3 flex-none ml-auto sm:ml-0">
+            {right}
+            {/*
+              A real hit target. This was a bare 14px text button in a 64px row —
+              well under the 44px anybody's guidance asks for, and sitting right
+              beside the balance, so a mistap signs you out instead of opening it.
+            */}
+            <form action={signOutAction}>
+              <SubmitButton
+                className="text-sm font-medium px-3 py-2 rounded-lg"
+                style={{ color: "var(--text-muted)" }}
+              >
+                Uitloggen
+              </SubmitButton>
+            </form>
+          </div>
+        </div>
+
+        <nav className="sm:hidden flex items-center gap-1 overflow-x-auto pb-2 -mx-1 px-1">
           {nav.map((item) => (
             <Link
               key={item.href}
@@ -35,15 +82,6 @@ export function AppHeader({
             </Link>
           ))}
         </nav>
-
-        <div className="flex items-center gap-3 flex-none">
-          {right}
-          <form action={signOutAction}>
-            <SubmitButton className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>
-              Uitloggen
-            </SubmitButton>
-          </form>
-        </div>
       </div>
     </header>
   );

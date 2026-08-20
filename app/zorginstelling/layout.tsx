@@ -33,7 +33,8 @@ export default async function FacilityLayout({ children }: { children: React.Rea
           )
         }
       />
-      <main className="flex-1 mx-auto w-full max-w-6xl px-4 py-8">{children}</main>
+      {/* id, so the skip link in AppHeader has somewhere to land. */}
+      <main id="inhoud" className="flex-1 mx-auto w-full max-w-6xl px-4 py-8">{children}</main>
     </>
   );
 }

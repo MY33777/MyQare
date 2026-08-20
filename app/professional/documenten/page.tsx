@@ -176,7 +176,7 @@ export default async function DocumentsPage({
           body="Upload in elk geval je VOG en je diploma. Zonder die twee nemen de meeste instellingen je niet op in hun pool."
         />
       ) : (
-        <div className="card table-scroll">
+        <div className="card table-scroll" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
           <table className="table">
             <thead>
               <tr>

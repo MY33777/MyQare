@@ -94,7 +94,7 @@ export default async function StaffDashboard({
       {pendingOrgs.length === 0 ? (
         <EmptyState title="Niets te verifiëren" body="Alle zorginstellingen zijn beoordeeld." />
       ) : (
-        <div className="card table-scroll mb-8">
+        <div className="card table-scroll mb-8" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
           <table className="table">
             <thead>
               <tr>
@@ -136,7 +136,7 @@ export default async function StaffDashboard({
       {!freelancers || freelancers.length === 0 ? (
         <EmptyState title="Niets te controleren" body="Er staan geen ongecontroleerde BIG-nummers open." />
       ) : (
-        <div className="card table-scroll mb-8">
+        <div className="card table-scroll mb-8" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
           <table className="table">
             <thead>
               <tr>
@@ -173,7 +173,7 @@ export default async function StaffDashboard({
           <summary className="cursor-pointer font-bold mb-3">
             Geverifieerde zorginstellingen ({verifiedOrgs.length})
           </summary>
-          <div className="card table-scroll mt-3">
+          <div className="card table-scroll mt-3" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
             <table className="table">
               <tbody>
                 {verifiedOrgs.map((org) => (

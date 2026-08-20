@@ -38,7 +38,8 @@ export default async function FreelancerLayout({ children }: { children: React.R
           </span>
         }
       />
-      <main className="flex-1 mx-auto w-full max-w-6xl px-4 py-8">{children}</main>
+      {/* id, so the skip link in AppHeader has somewhere to land. */}
+      <main id="inhoud" className="flex-1 mx-auto w-full max-w-6xl px-4 py-8">{children}</main>
     </>
   );
 }

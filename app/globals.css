@@ -280,9 +280,58 @@ body {
 }
 
 /* Wide tables must scroll inside their own box. Letting the page body
-   scroll sideways breaks every layout on a phone. */
+   scroll sideways breaks every layout on a phone.
+
+   AND IT HAS TO LOOK SCROLLABLE. A table clipped at 375px with no edge
+   treatment reads as a table that ends there — the "Versturen" button on the
+   invoice list sat six hundred pixels past the right edge with nothing on
+   screen suggesting anything was over there, so on a phone the action simply
+   did not exist. Desktop shows a scrollbar; touch does not.
+
+   The four gradients are the standard pure-CSS scroll shadow. The two that
+   scroll WITH the content (background-attachment: local) are painted over the
+   two fixed ones, so a shadow appears only on a side that actually has more
+   content — no JavaScript, no measuring, and it stays correct as the table
+   reflows. */
 .table-scroll {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background:
+    linear-gradient(to right, var(--surface) 30%, rgba(255, 255, 255, 0)) left center / 28px 100%
+      no-repeat local,
+    linear-gradient(to left, var(--surface) 30%, rgba(255, 255, 255, 0)) right center / 28px 100%
+      no-repeat local,
+    radial-gradient(farthest-side at 0 50%, rgba(15, 23, 42, 0.14), rgba(15, 23, 42, 0)) left
+      center / 14px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, rgba(15, 23, 42, 0.14), rgba(15, 23, 42, 0)) right
+      center / 14px 100% no-repeat scroll;
+}
+
+/* Reachable by keyboard. An overflow container with no focusable child cannot
+   be scrolled from the keyboard at all, so a sighted keyboard user could not
+   get to the columns a mouse user can drag to. tabindex is set on the element
+   in the markup; this is what makes the focus visible when they land on it. */
+.table-scroll:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* Skips the navigation, which is the difference between reaching the page
+   content on the first tab and on the tenth, on every single page. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 50;
+  padding: 0.75rem 1rem;
+  background: var(--brand);
+  color: #fff;
+  border-radius: 0 0 0.5rem 0;
+  font-weight: 600;
+}
+
+.skip-link:focus {
+  left: 0;
 }
 
 .table {

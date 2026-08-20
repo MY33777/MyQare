@@ -142,7 +142,7 @@ export default async function BalancePage({
           body="Elke opwaardering, vergoeding en terugbetaling verschijnt hier — niets wordt achteraf aangepast."
         />
       ) : (
-        <div className="card table-scroll">
+        <div className="card table-scroll" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
           <table className="table">
             <thead>
               <tr>

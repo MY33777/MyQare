@@ -112,7 +112,7 @@ export default async function FacilityInvoicesPage() {
           body="Zodra je gewerkte uren goedkeurt, verschijnt hier de bijbehorende factuur."
         />
       ) : (
-        <div className="card table-scroll">
+        <div className="card table-scroll" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
           <table className="table">
             <thead>
               <tr>

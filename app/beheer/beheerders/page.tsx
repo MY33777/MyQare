@@ -234,7 +234,7 @@ export default async function AdminsPage({
       {!audit || audit.length === 0 ? (
         <EmptyState title="Nog niets" body="Wijzigingen aan beheerders verschijnen hier." />
       ) : (
-        <div className="card table-scroll">
+        <div className="card table-scroll" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
           <table className="table">
             <thead>
               <tr>

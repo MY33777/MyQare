@@ -27,10 +27,16 @@ editor, and create a **private** Storage bucket named `documents`. Do not run an
 `supabase/migrations/` on a fresh database — those two files are the current state and already
 contain everything the migrations do.
 
-> **Nothing in `supabase/` has ever been executed.** `npm run check:sql` parses every file with
-> PostgreSQL's own grammar, which catches the class of defect that dominated audit rounds four and
-> five — but it catches syntax, not a column that does not exist or a policy that permits too much.
-> Expect the first run to fail somewhere, and run one file at a time so it is visible.
+> **The schema now installs, and that is checked rather than hoped.** `npm run check:install`
+> creates an empty PostgreSQL 18 (PGlite, in-process), runs `schema.sql` and `functions.sql`, and
+> then replays all eighteen migrations over the result to confirm they change nothing — so a
+> database built fresh and one brought forward are the same database. Three separate audit rounds
+> found a defect that meant a fresh install created *nothing*; this is what would have caught each
+> of them in the second it takes to run.
+>
+> It is still not Supabase: the `auth` and `storage` schemas are stubbed to the minimum our SQL
+> touches, and RLS is created but not exercised against real sessions. Run it against the real
+> project once too.
 
 Every variable in `.env.local` must **also** be added by hand in the Vercel dashboard.
 `.env.local` is never uploaded, so a secret that works locally will fail in production until it
@@ -44,6 +50,7 @@ is set there too.
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint directly (`next lint` was removed in Next 16) |
 | `npm run check:sql` | Parses every file in `supabase/` with PostgreSQL's own grammar |
+| `npm run check:install` | **Runs** the schema against a real PostgreSQL (PGlite) and checks the migrations agree with it |
 
 ## Status
 

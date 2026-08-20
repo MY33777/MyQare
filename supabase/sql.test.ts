@@ -246,3 +246,81 @@ describe("schema.sql is executable top to bottom", () => {
     expect(problems).toEqual([]);
   });
 });
+
+describe("the schema actually installs", () => {
+  /*
+   * Not read — RUN. Against PostgreSQL 18 compiled to WASM, in process.
+   *
+   * Seven audits read this SQL and three found a defect that meant a fresh
+   * install created nothing: a column that does not exist, a file corrupted into
+   * an unterminated literal, and helper functions declared before the tables
+   * their bodies read. Every one was committed, and every one was invisible to
+   * typecheck, this suite and the production build.
+   *
+   * scripts/check-sql.mjs closed the syntactic subset and could not have caught
+   * any of the three. This can: it is the server, so the only opinion that
+   * matters is its own.
+   *
+   * Out of process for the same reason as the parser — the WASM module does not
+   * survive vitest's transform, and a failure there is indistinguishable from a
+   * real one.
+   */
+  it("creates every table, policy and function on an empty database", () => {
+    let output: string;
+
+    try {
+      output = execFileSync("node", ["scripts/install-check.mjs", "--json"], {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        maxBuffer: 32 * 1024 * 1024,
+      });
+    } catch (error) {
+      output = (error as { stdout?: string }).stdout ?? "";
+    }
+
+    const report = JSON.parse(output) as {
+      broken: number;
+      drift: string[];
+      inventory: { tables: string[]; withoutRls?: string[] };
+      results: { file: string; problems: { line: number; message: string }[] }[];
+    };
+
+    const failures = report.results.flatMap((r) =>
+      r.problems.map((p) => `${r.file}:${p.line} — ${p.message}`),
+    );
+
+    // Only unexpected ones: two historical migrations refer to state a later
+    // migration removed, which is why SETUP.md says not to run that directory on
+    // a fresh database. install-check.mjs names them.
+    expect(report.broken, failures.join("\n")).toBe(0);
+
+    // A schema that installed nothing would otherwise pass everything above.
+    expect(report.inventory.tables.length).toBeGreaterThanOrEqual(19);
+    expect(report.inventory.withoutRls ?? []).toEqual([]);
+  });
+
+  it("ends up the same whether installed fresh or migrated", () => {
+    /*
+     * The drift question, answered by observation instead of by comparing files.
+     *
+     * schema.sql claims to be the current state. Replaying all eighteen
+     * migrations over a fresh install must therefore change nothing: not a
+     * table, not a policy's USING clause, not a function signature, not an index.
+     * If it does, which database you have depends on when you set it up.
+     */
+    const output = (() => {
+      try {
+        return execFileSync("node", ["scripts/install-check.mjs", "--json"], {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          maxBuffer: 32 * 1024 * 1024,
+        });
+      } catch (error) {
+        return (error as { stdout?: string }).stdout ?? "";
+      }
+    })();
+
+    const report = JSON.parse(output) as { drift: string[] };
+    expect(report.drift).toEqual([]);
+  });
+});

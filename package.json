@@ -12,7 +12,8 @@
     "seed": "tsx scripts/seed.mts",
     "seed:reset": "tsx scripts/seed.mts --reset",
     "preview:invoice": "tsx scripts/preview-invoice.mts",
-    "check:sql": "node scripts/check-sql.mjs"
+    "check:sql": "node scripts/check-sql.mjs",
+    "check:install": "node scripts/install-check.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^6.8.0",
@@ -27,6 +28,7 @@
     "stripe": "^22.3.2"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.5",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/pdfkit": "^0.17.4",

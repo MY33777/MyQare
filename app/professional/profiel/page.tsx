@@ -6,6 +6,7 @@ import { authErrorMessage } from "@/lib/authErrors";
 import { requireFreelancer } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { updateProfileAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Profiel" };
 
@@ -207,9 +208,9 @@ export default async function ProfilePage({
           <textarea className="textarea" id="bio" name="bio" rows={3} defaultValue={freelancer?.bio ?? ""} />
         </div>
 
-        <button className="btn btn-primary" type="submit">
+        <SubmitButton className="btn btn-primary">
           Opslaan
-        </button>
+        </SubmitButton>
       </form>
     </div>
   );

@@ -10,6 +10,7 @@ import { formatEuros } from "@/lib/money";
 import { formatDate } from "@/lib/hours";
 import { byQuarter, summariseEarnings, summariseReceivables } from "@/lib/earnings";
 import { amsterdamDateKey } from "@/lib/timezone";
+import { SubmitButton } from "@/components/SubmitButton";
 import {
   issueInvoiceAction,
   regenerateInvoicePdfAction,
@@ -321,24 +322,39 @@ export default async function FreelancerInvoicesPage({
 
       {quarters.length > 0 ? (
         <div className="card p-4 mb-6">
-          <h2 className="font-bold mb-3">Per kwartaal</h2>
-          {/* Quarters rather than months: that is the btw-aangifte cycle, and a
-              month view would make someone add it up themselves four times a year. */}
+          <h2 className="font-bold mb-1">Per kwartaal</h2>
+          {/*
+            Quarters rather than months: that is the btw-aangifte cycle, and a
+            month view would make someone add it up themselves four times a year.
+
+            Belast and vrijgesteld are separate columns because the aangifte has
+            separate boxes for them. One combined turnover figure — which is what
+            this showed — belongs in neither, so anybody filing from this table had
+            to go back through the invoices by hand.
+          */}
+          <p className="text-sm mb-3" style={{ color: "var(--text-muted)" }}>
+            Belaste omzet gaat in rubriek 1a van je aangifte. Vrijgestelde zorg (art. 11-1-g)
+            hoort daar niet bij.
+          </p>
           <div className="table-scroll">
             <table className="table">
               <thead>
                 <tr>
                   <th>Kwartaal</th>
-                  <th>Omzet excl. btw</th>
+                  <th>Belast excl. btw</th>
                   <th>Btw</th>
+                  <th>Vrijgesteld</th>
+                  <th>Totaal excl. btw</th>
                 </tr>
               </thead>
               <tbody>
                 {quarters.map((quarter) => (
                   <tr key={quarter.label}>
                     <td className="font-medium tnum">{quarter.label}</td>
-                    <td className="tnum">{formatEuros(quarter.exVatCents)}</td>
+                    <td className="tnum">{formatEuros(quarter.taxedExVatCents)}</td>
                     <td className="tnum">{formatEuros(quarter.vatCents)}</td>
+                    <td className="tnum">{formatEuros(quarter.exemptExVatCents)}</td>
+                    <td className="tnum font-semibold">{formatEuros(quarter.exVatCents)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -448,17 +464,17 @@ export default async function FreelancerInvoicesPage({
                           */
                           <form action={regenerateInvoicePdfAction}>
                             <input type="hidden" name="invoice_id" value={invoice.id} />
-                            <button className="btn btn-secondary" type="submit">
+                            <SubmitButton className="btn btn-secondary">
                               Pdf maken
-                            </button>
+                            </SubmitButton>
                           </form>
                         )}
                         {!invoice.sent_at ? (
                           <form action={sendInvoiceAction}>
                             <input type="hidden" name="invoice_id" value={invoice.id} />
-                            <button className="btn btn-primary" type="submit">
+                            <SubmitButton className="btn btn-primary">
                               Versturen
-                            </button>
+                            </SubmitButton>
                           </form>
                         ) : null}
                       </div>

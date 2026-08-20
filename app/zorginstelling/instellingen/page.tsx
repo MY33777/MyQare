@@ -6,6 +6,7 @@ import { requireFacilityAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/hours";
 import { updateOrganisationAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Instellingen" };
 
@@ -107,9 +108,9 @@ export default async function OrganisationSettingsPage({
           </div>
         </div>
 
-        <button className="btn btn-primary" type="submit">
+        <SubmitButton className="btn btn-primary">
           Opslaan
-        </button>
+        </SubmitButton>
       </form>
 
       <div className="card p-6 mt-6">

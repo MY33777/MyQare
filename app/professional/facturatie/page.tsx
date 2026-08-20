@@ -13,6 +13,7 @@ import {
 import { formatInvoiceNumber } from "@/lib/invoiceNumber";
 import { amsterdamYear } from "@/lib/timezone";
 import { saveInvoiceSettingsAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Facturatie" };
 
@@ -335,9 +336,9 @@ export default async function FacturatiePage({
         </section>
 
         <div>
-          <button className="btn btn-primary" type="submit">
+          <SubmitButton className="btn btn-primary">
             Opslaan
-          </button>
+          </SubmitButton>
         </div>
       </form>
     </div>

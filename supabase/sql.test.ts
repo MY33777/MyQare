@@ -30,7 +30,17 @@ const DIR = join(process.cwd(), "supabase");
 const read = (name: string) => readFileSync(join(DIR, name), "utf8");
 
 describe("every SQL file parses", () => {
-  it("passes PostgreSQL's own grammar", () => {
+  /*
+   * 120s, not the 5s default.
+   *
+   * These three spawn a node subprocess — the SQL grammar in one case, a whole
+   * PostgreSQL compiled to WASM in the other two. On an unloaded machine they
+   * finish in two seconds; with anything else running they do not, and the test
+   * then fails on the clock rather than on the SQL. A suite that goes red at
+   * random teaches people to re-run it until it is green, which is how a real
+   * failure gets waved through.
+   */
+  it("passes PostgreSQL's own grammar", { timeout: 120_000 }, () => {
     let output: string;
 
     try {
@@ -266,7 +276,7 @@ describe("the schema actually installs", () => {
    * survive vitest's transform, and a failure there is indistinguishable from a
    * real one.
    */
-  it("creates every table, policy and function on an empty database", () => {
+  it("creates every table, policy and function on an empty database", { timeout: 120_000 }, () => {
     let output: string;
 
     try {
@@ -300,7 +310,7 @@ describe("the schema actually installs", () => {
     expect(report.inventory.withoutRls ?? []).toEqual([]);
   });
 
-  it("ends up the same whether installed fresh or migrated", () => {
+  it("ends up the same whether installed fresh or migrated", { timeout: 120_000 }, () => {
     /*
      * The drift question, answered by observation instead of by comparing files.
      *

@@ -11,6 +11,7 @@ import { formatEuros } from "@/lib/money";
 import { qualificationLabel } from "@/lib/qualifications";
 import { SHIFT_STATUS_LABELS, VISIBILITY_LABELS, type ShiftVisibility } from "@/lib/shifts";
 import { cancelAssignmentAction } from "@/lib/cancelActions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Dienst" };
 
@@ -276,9 +277,9 @@ export default async function FacilityShiftDetailPage({
                   placeholder="bijv. dienst vervalt, bezetting rond"
                 />
               </div>
-              <button className="btn btn-danger" type="submit">
+              <SubmitButton className="btn btn-danger">
                 Annuleren
-              </button>
+              </SubmitButton>
             </form>
           </details>
           )}

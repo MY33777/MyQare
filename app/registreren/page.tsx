@@ -4,6 +4,7 @@ import { AuthShell, FormMessage } from "@/components/AuthShell";
 import { authErrorMessage } from "@/lib/authErrors";
 import { RoleFields } from "./RoleFields";
 import { signUpAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Account aanmaken" };
 
@@ -90,9 +91,9 @@ export default async function RegisterPage({
           />
         </div>
 
-        <button className="btn btn-primary w-full" type="submit">
+        <SubmitButton className="btn btn-primary w-full">
           Account aanmaken
-        </button>
+        </SubmitButton>
       </form>
     </AuthShell>
   );

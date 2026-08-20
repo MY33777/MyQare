@@ -4,6 +4,7 @@ import { AuthShell, FormMessage } from "@/components/AuthShell";
 import { authErrorMessage } from "@/lib/authErrors";
 import { getRecoveryUser } from "@/lib/auth";
 import { setNewPasswordAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Nieuw wachtwoord" };
 
@@ -76,9 +77,9 @@ export default async function ResetPasswordPage({
             />
           </div>
 
-          <button className="btn btn-primary w-full" type="submit">
+          <SubmitButton className="btn btn-primary w-full">
             Wachtwoord opslaan
-          </button>
+          </SubmitButton>
         </form>
       )}
     </AuthShell>

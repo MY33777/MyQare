@@ -3,10 +3,17 @@ import type { Metadata } from "next";
 import { EmptyState, PageHeader } from "@/components/AppHeader";
 import { FormMessage } from "@/components/AuthShell";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
-import { DOCUMENT_KIND_LABELS, documentUrl, type DocumentKind } from "@/lib/documents";
+import {
+  DOCUMENT_KIND_LABELS,
+  KINDS_NEEDING_EXPIRY,
+  documentUrl,
+  expiryState,
+  type DocumentKind,
+} from "@/lib/documents";
 import { formatDate } from "@/lib/hours";
 import { qualificationLabel } from "@/lib/qualifications";
 import { reviewDocumentAction } from "../actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Documenten beoordelen" };
 
@@ -103,10 +110,50 @@ export default async function ReviewDocumentsPage({
                   <p className="font-semibold">
                     {DOCUMENT_KIND_LABELS[document.kind as DocumentKind] ?? document.kind}
                   </p>
+                  {/*
+                    The dates the reviewer is being asked to judge, said out loud.
+
+                    issued_on was selected, typed, and rendered nowhere — while the
+                    header above tells the reviewer to check "of het document nog
+                    geldig is". A VOG that lapsed last month and one valid for two
+                    more years rendered as identical grey text, so the one decision
+                    this screen exists for had to be made by opening the file.
+                  */}
                   <p className="text-sm tnum" style={{ color: "var(--text-muted)" }}>
                     geüpload {formatDate(document.created_at)}
-                    {document.expires_on ? ` · geldig tot ${formatDate(document.expires_on)}` : ""}
+                    {document.issued_on ? ` · afgegeven ${formatDate(document.issued_on)}` : ""}
                   </p>
+                  {document.expires_on ? (
+                    <p className="text-sm tnum mt-1">
+                      <span
+                        className={
+                          expiryState(document.expires_on) === "verlopen"
+                            ? "badge badge-danger"
+                            : expiryState(document.expires_on) === "verloopt_binnenkort"
+                              ? "badge badge-warn"
+                              : "badge badge-ok"
+                        }
+                      >
+                        {expiryState(document.expires_on) === "verlopen"
+                          ? `verlopen op ${formatDate(document.expires_on)}`
+                          : `geldig tot ${formatDate(document.expires_on)}`}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-sm mt-1">
+                      {/*
+                        A kind that must carry one and does not. Uploads have been
+                        refused without a date since the expiry rule was enforced,
+                        so this can only be an older row — and it is exactly the
+                        row a reviewer should not wave through.
+                      */}
+                      {KINDS_NEEDING_EXPIRY.includes(document.kind as DocumentKind) ? (
+                        <span className="badge badge-danger">vervaldatum ontbreekt</span>
+                      ) : (
+                        <span style={{ color: "var(--text-muted)" }}>verloopt niet</span>
+                      )}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -134,9 +181,9 @@ export default async function ReviewDocumentsPage({
                 <form action={reviewDocumentAction}>
                   <input type="hidden" name="document_id" value={document.id} />
                   <input type="hidden" name="status" value="approved" />
-                  <button className="btn btn-primary" type="submit">
+                  <SubmitButton className="btn btn-primary">
                     Goedkeuren
-                  </button>
+                  </SubmitButton>
                 </form>
 
                 <form
@@ -163,9 +210,9 @@ export default async function ReviewDocumentsPage({
                       required
                     />
                   </div>
-                  <button className="btn btn-danger" type="submit">
+                  <SubmitButton className="btn btn-danger">
                     Afkeuren
-                  </button>
+                  </SubmitButton>
                 </form>
               </div>
             </div>

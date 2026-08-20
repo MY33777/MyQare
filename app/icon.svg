@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!--
+    The favicon. Next picks app/icon.svg up automatically; there was none at all,
+    so every tab showed the browser's blank-document glyph and a bookmarked
+    dashboard was unfindable among a dozen others.
+
+    A Q, because the name is the mark: royal blue on white, the palette the whole
+    product uses. Drawn rather than set in the webfont so it does not depend on
+    Inter having loaded, and so it stays legible at 16px where a letterform with
+    a thin tail would not.
+  -->
+  <rect width="32" height="32" rx="7" fill="#2a4bd8"/>
+  <circle cx="16" cy="15" r="7.5" fill="none" stroke="#ffffff" stroke-width="3.2"/>
+  <path d="M19.5 19.5 L24 24.5" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round"/>
+</svg>

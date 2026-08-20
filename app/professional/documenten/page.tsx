@@ -14,6 +14,7 @@ import {
 } from "@/lib/documents";
 import { formatDate } from "@/lib/hours";
 import { deleteDocumentAction, uploadDocumentAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Documenten" };
 
@@ -151,9 +152,9 @@ export default async function DocumentsPage({
           </div>
         </div>
 
-        <button className="btn btn-primary" type="submit">
+        <SubmitButton className="btn btn-primary">
           Uploaden
-        </button>
+        </SubmitButton>
       </form>
 
       <h2 className="text-lg font-bold mb-3">Mijn documenten</h2>
@@ -208,9 +209,9 @@ export default async function DocumentsPage({
                     {document.status === "approved" ? null : (
                       <form action={deleteDocumentAction}>
                         <input type="hidden" name="document_id" value={document.id} />
-                        <button className="btn btn-danger" type="submit">
+                        <SubmitButton className="btn btn-danger">
                           Verwijderen
-                        </button>
+                        </SubmitButton>
                       </form>
                     )}
                   </td>

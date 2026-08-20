@@ -16,6 +16,7 @@ import {
   documentAccessStatuses,
 } from "@/lib/documents";
 import { setPoolStatusAction } from "../actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Zorgprofessional" };
 
@@ -331,25 +332,25 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
           <form action={setPoolStatusAction}>
             <input type="hidden" name="freelancer_id" value={id} />
             <input type="hidden" name="status" value={membership.status === "star" ? "member" : "star"} />
-            <button className="btn btn-secondary" type="submit">
+            <SubmitButton className="btn btn-secondary">
               {membership.status === "star" ? "Geen favoriet meer" : "Als favoriet markeren"}
-            </button>
+            </SubmitButton>
           </form>
           {membership.status === "hidden" ? (
             <form action={setPoolStatusAction}>
               <input type="hidden" name="freelancer_id" value={id} />
               <input type="hidden" name="status" value="member" />
-              <button className="btn btn-secondary" type="submit">
+              <SubmitButton className="btn btn-secondary">
                 Weer tonen
-              </button>
+              </SubmitButton>
             </form>
           ) : (
             <form action={setPoolStatusAction}>
               <input type="hidden" name="freelancer_id" value={id} />
               <input type="hidden" name="status" value="hidden" />
-              <button className="btn btn-danger" type="submit">
+              <SubmitButton className="btn btn-danger">
                 Verbergen
-              </button>
+              </SubmitButton>
             </form>
           )}
         </div>

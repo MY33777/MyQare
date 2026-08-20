@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { AuthShell, FormMessage } from "@/components/AuthShell";
 import { authErrorMessage } from "@/lib/authErrors";
 import { requestPasswordResetAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Wachtwoord vergeten" };
 
@@ -43,9 +44,9 @@ export default async function ForgotPasswordPage({
             />
           </div>
 
-          <button className="btn btn-primary w-full" type="submit">
+          <SubmitButton className="btn btn-primary w-full">
             Stuur de link
-          </button>
+          </SubmitButton>
         </form>
       )}
     </AuthShell>

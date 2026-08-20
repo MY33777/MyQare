@@ -8,6 +8,7 @@ import { requireFacilityAdmin } from "@/lib/auth";
 import { VISIBILITY_LABELS } from "@/lib/shifts";
 import { MAX_OCCURRENCES, RECURRENCE_LABELS } from "@/lib/recurrence";
 import { createShiftAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Dienst plaatsen" };
 
@@ -199,9 +200,9 @@ export default async function NewShiftPage({
         </div>
 
         <div className="flex gap-3 pt-2">
-          <button className="btn btn-primary" type="submit">
+          <SubmitButton className="btn btn-primary">
             Dienst plaatsen
-          </button>
+          </SubmitButton>
         </div>
       </form>
     </div>

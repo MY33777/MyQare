@@ -4,6 +4,7 @@ import { AuthShell, FormMessage } from "@/components/AuthShell";
 import { authErrorMessage } from "@/lib/authErrors";
 import { safeNextPath } from "@/lib/nextPath";
 import { signInAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Inloggen" };
 
@@ -67,9 +68,9 @@ export default async function LoginPage({
           </p>
         </div>
 
-        <button className="btn btn-primary w-full" type="submit">
+        <SubmitButton className="btn btn-primary w-full">
           Inloggen
-        </button>
+        </SubmitButton>
       </form>
     </AuthShell>
   );

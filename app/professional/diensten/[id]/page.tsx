@@ -13,6 +13,7 @@ import { RatingForm } from "@/components/RatingForm";
 import { submitRatingAction } from "@/lib/ratingActions";
 import { cancelAssignmentAction } from "@/lib/cancelActions";
 import { submitTimesheetAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Dienst" };
 
@@ -288,9 +289,9 @@ export default async function AssignmentDetailPage({
             />
           </div>
 
-          <button className="btn btn-primary" type="submit" disabled={!hasEnded}>
+          <SubmitButton className="btn btn-primary" disabled={!hasEnded}>
             {sheet ? "Uren opnieuw indienen" : "Uren indienen"}
-          </button>
+          </SubmitButton>
         </form>
       )}
 
@@ -328,9 +329,9 @@ export default async function AssignmentDetailPage({
                 placeholder="bijv. ziek, dubbele boeking"
               />
             </div>
-            <button className="btn btn-danger" type="submit">
+            <SubmitButton className="btn btn-danger">
               Annuleren
-            </button>
+            </SubmitButton>
           </form>
         </details>
       ) : null}

@@ -14,6 +14,7 @@ import {
   type Capability,
 } from "@/lib/permissions";
 import { appointAdminAction, removeAdminAction, setCapabilityAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Beheerders" };
 
@@ -132,9 +133,9 @@ export default async function AdminsPage({
             </label>
             <input className="input" id="email" name="email" type="email" required />
           </div>
-          <button className="btn btn-primary" type="submit">
+          <SubmitButton className="btn btn-primary">
             Benoemen
-          </button>
+          </SubmitButton>
         </form>
       </div>
 
@@ -172,9 +173,9 @@ export default async function AdminsPage({
                   {!isMe ? (
                     <form action={removeAdminAction}>
                       <input type="hidden" name="profile_id" value={person.id} />
-                      <button className="btn btn-danger" type="submit">
+                      <SubmitButton className="btn btn-danger">
                         Verwijderen als beheerder
-                      </button>
+                      </SubmitButton>
                     </form>
                   ) : null}
                 </div>
@@ -209,12 +210,9 @@ export default async function AdminsPage({
                           <input type="hidden" name="profile_id" value={person.id} />
                           <input type="hidden" name="capability" value={capability} />
                           <input type="hidden" name="grant" value={has ? "false" : "true"} />
-                          <button
-                            className={has ? "btn btn-secondary" : "btn btn-primary"}
-                            type="submit"
-                          >
+                          <SubmitButton className={has ? "btn btn-secondary" : "btn btn-primary"}>
                             {has ? "Intrekken" : "Geven"}
-                          </button>
+                          </SubmitButton>
                         </form>
                       </div>
                     );

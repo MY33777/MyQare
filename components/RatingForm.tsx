@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SubmitButton } from "@/components/SubmitButton";
 
 /*
  * Post-assignment rating.
@@ -95,9 +96,9 @@ export function RatingForm({
         <textarea className="textarea" id="comment" name="comment" rows={2} />
       </div>
 
-      <button className="btn btn-primary" type="submit">
+      <SubmitButton className="btn btn-primary">
         Beoordeling opslaan
-      </button>
+      </SubmitButton>
     </form>
   );
 }

@@ -67,7 +67,27 @@ export default function HomePage() {
           opdracht legt MyQare vast wat er feitelijk gebeurde — zodat je bij een vraag van de
           Belastingdienst iets kunt laten zien in plaats van iets moet uitleggen.
         </p>
-        <div className="mt-8 flex flex-wrap gap-3">
+        {/*
+          Said BEFORE the button, not eight screens below it.
+
+          "Er zijn nog geen instellingen live" sat at the bottom of the page, past
+          four feature sections. So the honest disclosure was there, and the person
+          it was written for — a nurse deciding whether to hand over a VOG and a
+          diploma — had already tapped "Account aanmaken" and gone. Putting it
+          here costs some signups. It is the difference between an early user and
+          somebody who feels they were let find out for themselves.
+        */}
+        <div
+          className="mt-8 rounded-lg px-4 py-3 text-sm"
+          style={{ background: "var(--warn-subtle)", color: "var(--warn)" }}
+          role="status"
+        >
+          <strong className="font-semibold">MyQare is nog in aanbouw.</strong> Er zijn nog geen
+          zorginstellingen live, dus je vindt hier op dit moment geen diensten. Aanmelden kan wel —
+          je bent er dan als eerste bij, en je bepaalt mee wat er gebouwd wordt.
+        </div>
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
           <Link className="btn btn-primary" href="/registreren">
             Account aanmaken
           </Link>
@@ -162,7 +182,7 @@ export default function HomePage() {
           className="rounded-xl p-8 sm:p-10"
           style={{ background: "var(--brand-subtle)" }}
         >
-          <h2 className="text-2xl font-bold mb-2">Nog niet in gebruik voor echte opdrachten</h2>
+          <h2 className="text-2xl font-bold mb-2">Denk mee over wat er gebouwd wordt</h2>
           <p className="max-w-2xl mb-6" style={{ color: "var(--text)" }}>
             MyQare is in aanbouw. De planning, urenregistratie, facturatie en dossieropbouw werken,
             maar er zijn nog geen instellingen live en de juridische documenten zijn concept. Laat

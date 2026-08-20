@@ -3,6 +3,7 @@ import { lookupMessage } from "@/lib/authErrors";
 import Link from "next/link";
 import { submitContactAction } from "./actions";
 import { contactInbox } from "@/lib/email";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = {
   title: "Contact",
@@ -122,9 +123,9 @@ export default async function ContactPage({
         />
 
         <div className="flex items-center gap-4 flex-wrap">
-          <button className="btn btn-primary" type="submit">
+          <SubmitButton className="btn btn-primary">
             Versturen
-          </button>
+          </SubmitButton>
           <span className="text-sm" style={{ color: "var(--text-muted)" }}>
             We gebruiken je gegevens alleen om te antwoorden. Zie de{" "}
             <Link href="/privacy">privacyverklaring</Link>.

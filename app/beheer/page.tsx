@@ -7,6 +7,7 @@ import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { formatDate } from "@/lib/hours";
 import { qualificationLabel } from "@/lib/qualifications";
 import { verifyBigAction, verifyOrganisationAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Beheer" };
 
@@ -115,9 +116,9 @@ export default async function StaffDashboard({
                     <form action={verifyOrganisationAction}>
                       <input type="hidden" name="org_id" value={org.id} />
                       <input type="hidden" name="approve" value="true" />
-                      <button className="btn btn-primary" type="submit">
+                      <SubmitButton className="btn btn-primary">
                         Verifiëren
-                      </button>
+                      </SubmitButton>
                     </form>
                   </td>
                 </tr>
@@ -155,9 +156,9 @@ export default async function StaffDashboard({
                     <form action={verifyBigAction}>
                       <input type="hidden" name="freelancer_id" value={row.profile_id} />
                       <input type="hidden" name="approve" value="true" />
-                      <button className="btn btn-primary" type="submit">
+                      <SubmitButton className="btn btn-primary">
                         Gecontroleerd
-                      </button>
+                      </SubmitButton>
                     </form>
                   </td>
                 </tr>
@@ -184,9 +185,9 @@ export default async function StaffDashboard({
                       <form action={verifyOrganisationAction}>
                         <input type="hidden" name="org_id" value={org.id} />
                         <input type="hidden" name="approve" value="false" />
-                        <button className="btn btn-danger" type="submit">
+                        <SubmitButton className="btn btn-danger">
                           Intrekken
-                        </button>
+                        </SubmitButton>
                       </form>
                     </td>
                   </tr>

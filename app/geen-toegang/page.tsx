@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { AuthShell } from "@/components/AuthShell";
 import { signOutAction } from "@/app/login/actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Geen toegang" };
 
@@ -22,9 +23,9 @@ export default function NoAccessPage() {
           Naar de homepage
         </Link>
         <form action={signOutAction}>
-          <button className="btn btn-danger" type="submit">
+          <SubmitButton className="btn btn-danger">
             Uitloggen
-          </button>
+          </SubmitButton>
         </form>
       </div>
     </AuthShell>

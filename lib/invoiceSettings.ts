@@ -149,7 +149,18 @@ export function missingInvoiceFields(
 ): MissingField[] {
   const missing: MissingField[] = [];
 
-  if (!settings.businessName?.trim()) missing.push("business_name");
+  /*
+   * NOT required, deliberately.
+   *
+   * This demanded a bedrijfsnaam before an invoice could go out, while the field's
+   * own hint says "laat je dit leeg, dan gebruiken we je eigen naam" and the PDF
+   * renderer does exactly that fallback. So a freelancer who followed the hint had
+   * her invoicing blocked by a rule nothing on screen mentioned, and the message
+   * naming the missing field pointed at one she had been told was optional.
+   *
+   * The law is on the hint's side: art. 35a Wet OB requires the supplier's name.
+   * A person's own name is their name. A trading name is a preference.
+   */
   if (!settings.addressLine?.trim()) missing.push("address_line");
   if (!settings.postcode?.trim()) missing.push("postcode");
   if (!settings.city?.trim()) missing.push("city");

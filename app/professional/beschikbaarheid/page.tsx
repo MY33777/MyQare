@@ -6,6 +6,7 @@ import { requireFreelancer } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/hours";
 import { addBlockAction, removeBlockAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Beschikbaarheid" };
 
@@ -87,9 +88,9 @@ export default async function AvailabilityPage({
           />
         </div>
 
-        <button className="btn btn-primary" type="submit">
+        <SubmitButton className="btn btn-primary">
           Toevoegen
-        </button>
+        </SubmitButton>
       </form>
 
       <h2 className="text-lg font-bold mb-3">Afgeschermd</h2>
@@ -121,9 +122,9 @@ export default async function AvailabilityPage({
                   <td>
                     <form action={removeBlockAction}>
                       <input type="hidden" name="block_id" value={block.id} />
-                      <button className="btn btn-secondary" type="submit">
+                      <SubmitButton className="btn btn-secondary">
                         Weghalen
-                      </button>
+                      </SubmitButton>
                     </form>
                   </td>
                 </tr>

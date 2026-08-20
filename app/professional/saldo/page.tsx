@@ -11,6 +11,7 @@ import { formatEuros } from "@/lib/money";
 import { formatDateTime } from "@/lib/hours";
 import { stripeConfigured } from "@/lib/stripe";
 import { startTopupAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Saldo" };
 
@@ -109,9 +110,9 @@ export default async function BalancePage({
                 Betalen kan met iDEAL.
               </p>
             </div>
-            <button className="btn btn-primary" type="submit">
+            <SubmitButton className="btn btn-primary">
               Opwaarderen
-            </button>
+            </SubmitButton>
           </form>
         ) : (
           <p className="mt-4 text-sm" style={{ color: "var(--text-muted)" }}>

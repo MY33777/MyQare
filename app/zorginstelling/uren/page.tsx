@@ -10,6 +10,7 @@ import { qualificationLabel } from "@/lib/qualifications";
 import { RatingForm } from "@/components/RatingForm";
 import { submitRatingAction } from "@/lib/ratingActions";
 import { approveTimesheetAction, disputeTimesheetAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Uren goedkeuren" };
 
@@ -202,9 +203,9 @@ export default async function TimesheetsPage({
                 <div className="flex flex-wrap gap-3 items-end">
                   <form action={approveTimesheetAction}>
                     <input type="hidden" name="assignment_id" value={row.id} />
-                    <button className="btn btn-primary" type="submit">
+                    <SubmitButton className="btn btn-primary">
                       Goedkeuren
-                    </button>
+                    </SubmitButton>
                   </form>
                   <form action={disputeTimesheetAction} className="flex gap-2 items-end flex-1 min-w-64">
                     <input type="hidden" name="assignment_id" value={row.id} />
@@ -220,9 +221,9 @@ export default async function TimesheetsPage({
                         placeholder="Wat klopt er niet?"
                       />
                     </div>
-                    <button className="btn btn-secondary" type="submit">
+                    <SubmitButton className="btn btn-secondary">
                       Versturen
-                    </button>
+                    </SubmitButton>
                   </form>
                 </div>
               </div>

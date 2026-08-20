@@ -5,6 +5,7 @@ import { authErrorMessage } from "@/lib/authErrors";
 import { createClient } from "@/lib/supabase/server";
 import { QualificationSelect } from "@/components/QualificationSelect";
 import { completeOnboardingAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Gegevens aanvullen" };
 
@@ -150,9 +151,9 @@ export default async function OnboardingPage({
           </div>
         )}
 
-        <button className="btn btn-primary w-full" type="submit">
+        <SubmitButton className="btn btn-primary w-full">
           Afronden
-        </button>
+        </SubmitButton>
       </form>
     </AuthShell>
   );

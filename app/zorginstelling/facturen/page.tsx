@@ -6,6 +6,7 @@ import { formatEuros } from "@/lib/money";
 import { formatDate } from "@/lib/hours";
 import { amsterdamDateKey } from "@/lib/timezone";
 import { markInvoicePaidAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Facturen" };
 
@@ -150,9 +151,9 @@ export default async function FacilityInvoicesPage() {
                       ) : (
                         <form action={markInvoicePaidAction}>
                           <input type="hidden" name="invoice_id" value={invoice.id} />
-                          <button className="btn btn-secondary" type="submit">
+                          <SubmitButton className="btn btn-secondary">
                             Markeer betaald
-                          </button>
+                          </SubmitButton>
                         </form>
                       )}
                     </td>

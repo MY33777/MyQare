@@ -164,10 +164,43 @@ export function summariseReceivables(
  * zzp'ers, and a month view would make them do the addition themselves four times
  * a year.
  */
-export function byQuarter(
-  invoices: InvoiceLike[],
-): { label: string; year: number; quarter: number; exVatCents: number; vatCents: number }[] {
-  const buckets = new Map<string, { year: number; quarter: number; exVat: number; vat: number }>();
+export type QuarterRow = {
+  label: string;
+  year: number;
+  quarter: number;
+  exVatCents: number;
+  vatCents: number;
+  /** Turnover that carried 21% — rubriek 1a of the aangifte. */
+  taxedExVatCents: number;
+  /** Turnover exempt under art. 11-1-g — a different box entirely. */
+  exemptExVatCents: number;
+};
+
+/**
+ * Splits invoices into calendar quarters, newest first.
+ *
+ * Quarters rather than months because that is the btw-aangifte cycle for most
+ * zzp'ers, and a month view would make them do the addition themselves four times
+ * a year.
+ *
+ * TAXED AND EXEMPT TURNOVER ARE KEPT APART
+ * ----------------------------------------
+ * They were added together into one exVat figure. For a nurse who does both — an
+ * agency shift on a ward is exempt care under art. 11-1-g, a training day for the
+ * same client usually is not — that single number is exactly the one thing the
+ * aangifte never asks for. Rubriek 1a wants taxed turnover; exempt turnover goes
+ * somewhere else. A total of the two belongs in neither box, so anyone filing
+ * from this table had to go back through the invoices by hand, which is the work
+ * the table exists to save.
+ *
+ * The combined figure stays as `exVatCents` because the year total is still a
+ * real number a person wants; it is simply no longer the only one on offer.
+ */
+export function byQuarter(invoices: InvoiceLike[]): QuarterRow[] {
+  const buckets = new Map<
+    string,
+    { year: number; quarter: number; exVat: number; vat: number; taxed: number; exempt: number }
+  >();
 
   for (const invoice of invoices) {
     const year = Number(invoice.issued_on.slice(0, 4));
@@ -175,9 +208,21 @@ export function byQuarter(
     const quarter = Math.floor((month - 1) / 3) + 1;
     const key = `${year}-Q${quarter}`;
 
-    const bucket = buckets.get(key) ?? { year, quarter, exVat: 0, vat: 0 };
+    const bucket =
+      buckets.get(key) ?? { year, quarter, exVat: 0, vat: 0, taxed: 0, exempt: 0 };
+
     bucket.exVat += invoice.amount_ex_vat_cents;
     bucket.vat += invoice.vat_amount_cents;
+
+    /*
+     * Keyed on the treatment RECORDED ON THE INVOICE, never recomputed from the
+     * freelancer's current profile. An invoice must be able to explain itself
+     * years later, and somebody who registered for VAT in March must not see last
+     * year's exempt work silently move into the taxed column.
+     */
+    if (invoice.vat_treatment === "exempt_medical") bucket.exempt += invoice.amount_ex_vat_cents;
+    else bucket.taxed += invoice.amount_ex_vat_cents;
+
     buckets.set(key, bucket);
   }
 
@@ -188,6 +233,8 @@ export function byQuarter(
       quarter: bucket.quarter,
       exVatCents: bucket.exVat,
       vatCents: bucket.vat,
+      taxedExVatCents: bucket.taxed,
+      exemptExVatCents: bucket.exempt,
     }))
     .sort((a, b) => b.year - a.year || b.quarter - a.quarter);
 }

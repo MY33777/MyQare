@@ -223,3 +223,58 @@ describe("byQuarter", () => {
     expect(byQuarter([])).toEqual([]);
   });
 });
+
+describe("byQuarter keeps taxed and exempt turnover apart", () => {
+  /*
+   * They were summed into one figure. For a nurse who does both — ward shifts are
+   * exempt care under art. 11-1-g, a training day for the same client usually is
+   * not — that combined number is the one thing the aangifte never asks for.
+   * Rubriek 1a wants taxed turnover; exempt goes in a different box.
+   */
+  it("splits one quarter by the treatment recorded on each invoice", () => {
+    const rows = byQuarter([
+      invoice({ issued_on: "2026-02-10", amount_ex_vat_cents: 40_000, vat_amount_cents: 8_400 }),
+      invoice({
+        issued_on: "2026-03-01",
+        amount_ex_vat_cents: 30_000,
+        vat_amount_cents: 0,
+        vat_treatment: "exempt_medical",
+      }),
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].taxedExVatCents).toBe(40_000);
+    expect(rows[0].exemptExVatCents).toBe(30_000);
+    expect(rows[0].vatCents).toBe(8_400);
+    // The combined figure survives, because a year total is still a real number.
+    expect(rows[0].exVatCents).toBe(70_000);
+  });
+
+  it("uses the invoice's own treatment, not a recomputation", () => {
+    // Somebody who registered for VAT in March must not see last year's exempt
+    // work quietly move into the taxed column.
+    const rows = byQuarter([
+      invoice({
+        issued_on: "2025-11-01",
+        amount_ex_vat_cents: 10_000,
+        vat_amount_cents: 0,
+        vat_treatment: "exempt_medical",
+      }),
+      invoice({ issued_on: "2026-04-01", amount_ex_vat_cents: 10_000, vat_amount_cents: 2_100 }),
+    ]);
+
+    const older = rows.find((row) => row.label === "2025-Q4");
+    expect(older?.exemptExVatCents).toBe(10_000);
+    expect(older?.taxedExVatCents).toBe(0);
+  });
+
+  it("treats an undetermined treatment as taxed rather than exempt", () => {
+    // The safe direction: claiming an exemption that was never established is a
+    // statement to the Belastingdienst; over-reporting taxed turnover is not.
+    const rows = byQuarter([
+      invoice({ issued_on: "2026-01-05", amount_ex_vat_cents: 5_000, vat_treatment: "undetermined" }),
+    ]);
+    expect(rows[0].taxedExVatCents).toBe(5_000);
+    expect(rows[0].exemptExVatCents).toBe(0);
+  });
+});

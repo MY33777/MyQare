@@ -7,6 +7,7 @@ import { requireFacilityAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { qualificationLabel } from "@/lib/qualifications";
 import { addToPoolAction, setPoolStatusAction } from "./actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Mijn pool" };
 
@@ -72,9 +73,9 @@ export default async function PoolPage({
             melden.
           </p>
         </div>
-        <button className="btn btn-primary" type="submit">
+        <SubmitButton className="btn btn-primary">
           Toevoegen
-        </button>
+        </SubmitButton>
       </form>
 
       {active.length === 0 ? (
@@ -126,16 +127,16 @@ export default async function PoolPage({
                           name="status"
                           value={row.status === "star" ? "member" : "star"}
                         />
-                        <button className="btn btn-secondary" type="submit">
+                        <SubmitButton className="btn btn-secondary">
                           {row.status === "star" ? "Geen favoriet" : "Favoriet"}
-                        </button>
+                        </SubmitButton>
                       </form>
                       <form action={setPoolStatusAction}>
                         <input type="hidden" name="freelancer_id" value={row.freelancer_id} />
                         <input type="hidden" name="status" value="hidden" />
-                        <button className="btn btn-danger" type="submit">
+                        <SubmitButton className="btn btn-danger">
                           Verbergen
-                        </button>
+                        </SubmitButton>
                       </form>
                     </div>
                   </td>
@@ -164,9 +165,9 @@ export default async function PoolPage({
                       <form action={setPoolStatusAction}>
                         <input type="hidden" name="freelancer_id" value={row.freelancer_id} />
                         <input type="hidden" name="status" value="member" />
-                        <button className="btn btn-secondary" type="submit">
+                        <SubmitButton className="btn btn-secondary">
                           Weer tonen
-                        </button>
+                        </SubmitButton>
                       </form>
                     </td>
                   </tr>

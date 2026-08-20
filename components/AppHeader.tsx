@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BrandLink } from "@/components/Brand";
 import { signOutAction } from "@/app/login/actions";
+import { SubmitButton } from "@/components/SubmitButton";
 
 export type NavItem = { href: string; label: string };
 
@@ -38,13 +39,9 @@ export function AppHeader({
         <div className="flex items-center gap-3 flex-none">
           {right}
           <form action={signOutAction}>
-            <button
-              className="text-sm font-medium"
-              type="submit"
-              style={{ color: "var(--text-muted)" }}
-            >
+            <SubmitButton className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>
               Uitloggen
-            </button>
+            </SubmitButton>
           </form>
         </div>
       </div>

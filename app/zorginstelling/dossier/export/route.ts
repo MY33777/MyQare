@@ -1,4 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
+
+/** How many assignments one dossier will carry. Stated in the PDF when reached. */
+const DOSSIER_CAP = 1000;
 import { getFacilityAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { renderDossierPdf, type DossierEntry } from "@/lib/dossierPdf";
@@ -53,7 +56,15 @@ export async function GET(request: NextRequest) {
     )
     .eq("assignments.org_id", admin.org.id)
     .order("accepted_at", { ascending: true })
-    .limit(1000);
+    /*
+     * Reported, not silent.
+     *
+     * Ordered ascending and capped, so a facility past the cap got a PDF headed
+     * "Periode: begin tot heden — 1000 opdracht(en)" with its MOST RECENT
+     * assignments missing and nothing saying so. On the one document that exists
+     * to be complete, that is the worst possible failure: it looks whole.
+     */
+    .limit(DOSSIER_CAP);
 
   /*
    * Amsterdam day boundaries, not UTC ones.
@@ -83,27 +94,62 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+/**
+ * What accept_shift wrote into compliance_records.snapshot.
+ *
+ * Partial on every field: a row written before a field was added to the snapshot
+ * has to keep exporting, so every read below falls back to the live join.
+ */
+type Snapshot = {
+  shift?: {
+    qualification?: string | null;
+    starts_at?: string | null;
+    ends_at?: string | null;
+    billable_minutes?: number | null;
+    hourly_rate_cents?: number | null;
+  } | null;
+  freelancer?: { full_name?: string | null } | null;
+};
+
+  /*
+   * READ FROM THE SNAPSHOT.
+   *
+   * schema.sql says the snapshot exists because "a dossier that reassembles
+   * itself from live tables would silently rewrite its own history when a
+   * freelancer edits their profile two years later — which is exactly when
+   * somebody is likely to be looking at it."
+   *
+   * This export was that dossier. Every printed field came from a live join to
+   * assignments, shifts and profiles; the snapshot column was written by
+   * accept_shift and read by nothing, anywhere in the codebase. Editing a
+   * qualification, a name or a shift's times changed what the historical
+   * evidence said.
+   *
+   * Live values remain as a fallback, for rows written before a given field was
+   * captured — and only as a fallback.
+   */
   const entries: DossierEntry[] = (data ?? [])
     .filter((row) => row.assignments?.shifts)
     .map((row) => {
       const assignment = row.assignments!;
       const shift = assignment.shifts!;
+      const snap = (row.snapshot ?? null) as Snapshot | null;
+
+      const startsAt = snap?.shift?.starts_at ?? shift.starts_at;
+      const endsAt = snap?.shift?.ends_at ?? shift.ends_at;
+
       return {
-        /*
-         * From the snapshot taken at acceptance, falling back to the live profile
-         * only for rows written before the snapshot carried it. Reading it live
-         * meant the document changed when the person edited their profile.
-         */
         freelancerName:
-          (row.snapshot as { freelancer?: { full_name?: string | null } } | null)?.freelancer
-            ?.full_name ??
-          assignment.profiles?.full_name ??
-          "Onbekend",
-        qualification: qualificationLabel(shift.profession),
-        startsAt: shift.starts_at,
-        endsAt: shift.ends_at,
-        minutes: billableMinutes(shift.starts_at, shift.ends_at, assignment.agreed_break_minutes),
-        rateCents: assignment.agreed_rate_cents,
+          snap?.freelancer?.full_name ?? assignment.profiles?.full_name ?? "Onbekend",
+        qualification: qualificationLabel(snap?.shift?.qualification ?? shift.profession),
+        startsAt,
+        endsAt,
+        minutes:
+          snap?.shift?.billable_minutes ??
+          billableMinutes(startsAt, endsAt, assignment.agreed_break_minutes),
+        // agreed_rate_cents is itself a snapshot on the assignment, so either is
+        // historical — the snapshot's copy is preferred for consistency.
+        rateCents: snap?.shift?.hourly_rate_cents ?? assignment.agreed_rate_cents,
         offeredAt: row.offered_at,
         acceptedAt: row.accepted_at,
         couldDecline: row.could_decline,
@@ -120,6 +166,9 @@ export async function GET(request: NextRequest) {
     generatedAt: new Date(),
     periodFrom: from,
     periodTo: to,
+    // Says so when the cap bit, rather than letting a partial document pass as
+    // a complete one.
+    truncatedAt: entries.length >= DOSSIER_CAP ? DOSSIER_CAP : null,
     entries,
   });
 

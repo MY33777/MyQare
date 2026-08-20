@@ -144,3 +144,26 @@ describe("the dossier does not claim more than it knows", () => {
     expect(pdfContains(text, "Geen")).toBe(true);
   });
 });
+
+describe("the dossier says where it stops", () => {
+  /*
+   * The export orders ascending and caps at 1000. A facility past that got a
+   * document headed "1000 opdracht(en)" with its MOST RECENT assignments missing
+   * and nothing saying so.
+   *
+   * On the one artefact that exists to be complete, silent truncation is the
+   * worst failure available: it looks whole. An inspector who later finds the
+   * missing period has reason to doubt everything else in it.
+   */
+  it("warns in the document when the cap was reached", async () => {
+    const input = { ...dossier([entry(), entry()]), truncatedAt: 1000 };
+    const text = extractPdfText(await renderDossierPdf(input));
+    expect(pdfContains(text, "afgekapt")).toBe(true);
+    expect(pdfContains(text, "1000")).toBe(true);
+  });
+
+  it("says nothing when it is complete", async () => {
+    const text = extractPdfText(await renderDossierPdf(dossier([entry()])));
+    expect(pdfContains(text, "afgekapt")).toBe(false);
+  });
+});

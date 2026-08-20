@@ -48,6 +48,14 @@ export type DossierEntry = {
 };
 
 export type DossierInput = {
+  /**
+   * Set when more assignments exist than this document carries.
+   *
+   * A dossier's whole value is being complete. One that quietly stops at a cap
+   * looks complete and is not, which is worse than one that says where it stops —
+   * an inspector who later finds the missing period has reason to doubt the rest.
+   */
+  truncatedAt?: number | null;
   facilityName: string;
   facilityKvk: string | null;
   generatedAt: Date;
@@ -89,6 +97,15 @@ export function renderDossierPdf(input: DossierInput): Promise<Buffer> {
       );
     }
     doc.text(`${input.entries.length} opdracht(en)`);
+
+    if (input.truncatedAt) {
+      doc.fillColor("#a3201c");
+      doc.text(
+        `LET OP: dit overzicht is afgekapt op ${input.truncatedAt} opdrachten. ` +
+          "Er zijn er meer in deze periode. Verklein de periode om een volledig overzicht te krijgen.",
+      );
+      doc.fillColor("#444444");
+    }
 
     /*
      * States what the document is and is not, in the document itself. A dossier

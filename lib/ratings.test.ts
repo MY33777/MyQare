@@ -3,7 +3,6 @@ import {
   BASELINE_SCORE,
   RATING_WINDOW,
   clampScore,
-  rankingScore,
   summariseRatings,
 } from "@/lib/ratings";
 
@@ -57,30 +56,6 @@ describe("summariseRatings", () => {
   it("stops being provisional once there is enough data", () => {
     expect(summariseRatings([7, 7, 7, 7]).provisional).toBe(true);
     expect(summariseRatings([7, 7, 7, 7, 7]).provisional).toBe(false);
-  });
-});
-
-describe("rankingScore", () => {
-  it("puts a proven performer above a newcomer", () => {
-    const proven = rankingScore(Array(20).fill(9));
-    const newcomer = rankingScore([]);
-    expect(proven).toBeGreaterThan(newcomer);
-  });
-
-  it("puts a newcomer above someone with a long poor record", () => {
-    const newcomer = rankingScore([]);
-    const poor = rankingScore(Array(20).fill(4));
-    expect(newcomer).toBeGreaterThan(poor);
-  });
-
-  /*
-   * Unrounded on purpose: rounding before comparison turns a 7.44 and a 7.35
-   * into a tie, and ties in an ordering mean work gets handed out arbitrarily.
-   */
-  it("does not round, so near-neighbours stay distinguishable", () => {
-    const a = rankingScore([8, 7, 8, 7, 8, 7]);
-    const b = rankingScore([8, 7, 8, 7, 8, 8]);
-    expect(a).not.toBe(b);
   });
 });
 

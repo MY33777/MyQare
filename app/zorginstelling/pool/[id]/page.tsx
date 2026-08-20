@@ -13,6 +13,7 @@ import {
   documentUrl,
   expiryState,
   type DocumentKind,
+  documentAccessStatuses,
 } from "@/lib/documents";
 import { setPoolStatusAction } from "../actions";
 
@@ -91,7 +92,26 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
   if (!freelancer) notFound();
 
   const rating = summaryFromRpc(ratingRows);
-  const hasWorkedHere = (assignments ?? []).length > 0;
+  /*
+   * A CANCELLED assignment is not a working relationship.
+   *
+   * Migration 017 added exactly that filter to documents_select, and its own
+   * comment says "server code only mints those where a real working relationship
+   * exists". This was that server code, and it counted every assignment row
+   * including cancelled ones — so a facility that booked somebody and cancelled
+   * before the shift ran still got signed links to their VOG and diplomas. The
+   * links come from documentUrl, which uses the service role and bypasses storage
+   * RLS entirely, so the policy could not catch it on the way past.
+   *
+   * That made 017 inert for the thing that actually matters: reading the row only
+   * yields a file_path, and a file_path in a private bucket is inert without one
+   * of these links.
+   *
+   * Same predicate as the policy, deliberately — see documentAccessStatuses.
+   */
+  const hasWorkedHere = (assignments ?? []).some((row) =>
+    documentAccessStatuses.has(row.status),
+  );
 
   /*
    * Signed links only once there has been an actual working relationship.

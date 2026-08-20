@@ -122,12 +122,21 @@ export async function requireProfile(next?: string): Promise<{ userId: string; p
 }
 
 /**
- * Requires a facility admin whose organisation is verified.
+ * Requires a facility admin with an organisation. Does NOT require verification.
  *
- * Verification is a real gate, not a badge: an unverified facility can look
- * around but cannot post work, because posting work creates a financial
- * obligation on a freelancer. Enforced here, and again by the shifts insert
- * policy in supabase/schema.sql so a direct API call cannot skip it.
+ * The docstring used to say "whose organisation is verified" and claim the check
+ * happened here. It never did, and it must not: every facility screen calls this,
+ * including the onboarding pages somebody uses while WAITING to be verified.
+ * Enforcing it here would lock a new facility out of the product it just signed
+ * up for. A docstring describing a gate that does not exist is worse than no
+ * docstring — it is the kind of thing a reviewer reads instead of the code.
+ *
+ * Verification IS a real gate, on the one thing it should gate: posting work,
+ * which creates a financial obligation on a freelancer. That is checked in
+ * app/zorginstelling/diensten/nieuw/actions.ts and again by the shifts insert
+ * policy in supabase/schema.sql, so a direct API call cannot skip it either.
+ *
+ * Callers that need it read `org.verified_at`, which is returned below.
  */
 export async function requireFacilityAdmin(
   next?: string,

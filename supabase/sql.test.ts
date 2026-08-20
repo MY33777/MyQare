@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { documentAccessStatuses } from "@/lib/documents";
 
 /*
  * Two things nothing else in this project checks: that the SQL is executable at
@@ -322,5 +323,55 @@ describe("the schema actually installs", () => {
 
     const report = JSON.parse(output) as { drift: string[] };
     expect(report.drift).toEqual([]);
+  });
+});
+
+/*
+ * One rule split across SQL and TypeScript, checked against each other.
+ *
+ * documents_select decides which facility may READ a document row; the pages
+ * decide who gets a signed URL to the file itself. Those must agree, and they did
+ * not: the policy filtered cancelled assignments out and the page counted every
+ * assignment row, so a facility that booked somebody and cancelled still got
+ * links to their VOG. documentUrl uses the service role, so the policy never got
+ * a chance to catch the difference on the way past.
+ */
+describe("document access agrees between the policy and the code", () => {
+  const policyOf = (name: string) => {
+    const schema = read("schema.sql");
+    const start = schema.indexOf(`create policy ${name} on`);
+    expect(start, `${name} is missing from schema.sql`).toBeGreaterThan(-1);
+    // Bounded to its own statement so a greedy match cannot blame the next policy.
+    const end = schema.indexOf(";", start);
+    return schema.slice(start, end);
+  };
+
+  it("documents_select still excludes cancelled assignments", () => {
+    const policy = policyOf("documents_select");
+    expect(policy).toContain("from assignments a");
+    expect(policy).toMatch(/a\.status\s*<>\s*'cancelled'/);
+  });
+
+  it("the TypeScript predicate excludes the same status", () => {
+    expect([...documentAccessStatuses]).not.toContain("cancelled");
+    // And is not empty, which would pass the line above while granting nobody
+    // anything — a green test over a broken screen.
+    expect(documentAccessStatuses.size).toBeGreaterThan(0);
+  });
+
+  it("names only statuses the assignments table can actually hold", () => {
+    const schema = read("schema.sql");
+    const check = /status text not null default 'confirmed'\s*check \(status in \(([^)]*)\)\)/.exec(
+      schema,
+    );
+    expect(check, "the assignments status constraint moved").not.toBeNull();
+
+    const allowed = (check?.[1] ?? "")
+      .split(",")
+      .map((value) => value.trim().replace(/'/g, ""));
+
+    for (const status of documentAccessStatuses) {
+      expect(allowed, `${status} is not a real assignment status`).toContain(status);
+    }
   });
 });

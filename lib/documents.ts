@@ -170,6 +170,20 @@ export async function uploadDocument(input: {
 }
 
 /**
+ * Assignment statuses that count as a working relationship for document access.
+ *
+ * This is the application-side half of documents_select (migration 017): a
+ * cancelled assignment is work that never happened, so no Wkkgz duty to have
+ * checked anything arises from it, and it must not keep granting a facility a
+ * read of somebody's certificate of conduct forever.
+ *
+ * Written down once because the policy and the page had it differently — the
+ * policy filtered cancelled out, the page counted every row, and documentUrl uses
+ * the service role, so the policy never got a chance to catch the difference.
+ */
+export const documentAccessStatuses = new Set(["confirmed", "completed", "disputed"]);
+
+/**
  * Short-lived signed URL.
  *
  * Five minutes: long enough to open, short enough that a link pasted into a chat

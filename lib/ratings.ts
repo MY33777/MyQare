@@ -58,24 +58,27 @@ export function summariseRatings(scores: number[]): RatingSummary {
   };
 }
 
-/**
- * Ordering key for who gets offered a shift first.
+/*
+ * NO RANKING FUNCTION HERE, DELIBERATELY.
  *
- * Returns the unrounded shrunk score. The shrinkage is doing real work here
- * beyond presentation: it means a newcomer starts mid-pack and climbs, rather
- * than either leaping to the front on one glowing review or being buried by one
- * bad one.
+ * There was one — rankingScore, an ordering key for "who gets offered a shift
+ * first", written, documented and covered by three tests. Nothing called it, and
+ * calling it would not have done anything: the fan-out in lib/shifts.ts inserts
+ * every offer in a single statement and notifies everyone at once, so the order
+ * of that list is not observable by anybody. Wiring it up would have been the
+ * appearance of a feature.
  *
- * This orders a list. It does not exclude anyone: nobody is filtered out of work
- * by their score in v1. Automatically cutting someone off from earning based on
- * an unaudited average is the kind of decision that needs a human, a written
- * reason and a right of reply — see the strike handling in the spec.
+ * It is removed rather than left waiting for a caller, because a tested function
+ * with a confident docstring reads as a shipped mechanism — and this codebase has
+ * now produced that shape often enough to have a name for it. Ordering by score
+ * only becomes real alongside something that consumes an order: a cap on how many
+ * people an offer reaches, or a staggered fan-out. When one of those exists, the
+ * arithmetic is four lines away from summariseRatings below.
+ *
+ * If it comes back, it comes back through rating_summary() — since migration 019
+ * the raw scores do not leave the database, and a second implementation of the
+ * shrinkage is the exact drift lib/ratings.sql.test.ts exists to catch.
  */
-export function rankingScore(scores: number[]): number {
-  const window = scores.slice(0, RATING_WINDOW);
-  const sum = window.reduce((a, b) => a + b, 0);
-  return (sum + BASELINE_SCORE * PRIOR_WEIGHT) / (window.length + PRIOR_WEIGHT);
-}
 
 /**
  * Clamps a rating to the range a human is allowed to give.

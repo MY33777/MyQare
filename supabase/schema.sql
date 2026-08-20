@@ -994,6 +994,116 @@ revoke select on ratings from authenticated, anon;
 grant select (id, assignment_id, direction, score, dimensions, created_at)
   on ratings to authenticated, anon;
 
+/*
+ * What an admin may do. profiles.role = 'staff' answers "is this an admin at
+ * all" and gates seventeen RLS read policies through is_staff(); this answers
+ * which admin may do which thing. See migration 014, which also carries the SQL
+ * for creating the first admin — that one cannot be made through the panel.
+ */
+create table if not exists staff_permissions (
+  profile_id uuid not null references profiles(id) on delete cascade,
+
+  /*
+   * Deliberately a small, closed set that maps one-to-one onto actions that
+   * exist. A capability gating nothing is the "protection asserted in a comment"
+   * pattern this codebase has been bitten by five times — it reads as a control
+   * and enforces nothing.
+   *
+   *   verify_organisations  approve or withdraw a facility's ability to post work
+   *   verify_big            record that a BIG number was checked against the register
+   *   review_documents      read and approve/reject VOG, diplomas, insurance, KvK
+   *   manage_admins         appoint admins and set what they may do
+   */
+  capability text not null check (capability in (
+    'verify_organisations',
+    'verify_big',
+    'review_documents',
+    'manage_admins'
+  )),
+
+  -- Who granted it. Kept even if that person is later removed, which is why it
+  -- is `set null` rather than cascade: losing the grantee should not quietly
+  -- rewrite the history of who handed out the rights.
+  granted_by uuid references profiles(id) on delete set null,
+  granted_at timestamptz not null default now(),
+
+  primary key (profile_id, capability)
+);
+
+create index if not exists staff_permissions_profile_idx on staff_permissions(profile_id);
+
+alter table staff_permissions enable row level security;
+
+/*
+ * An admin sees their own capabilities — the panel needs to know what to render —
+ * and anyone holding manage_admins sees everybody's, because that is the screen
+ * they work from.
+ */
+drop policy if exists staff_permissions_select on staff_permissions;
+create policy staff_permissions_select on staff_permissions for select
+  using (
+    profile_id = auth.uid()
+    or exists (
+      select 1 from staff_permissions mine
+      where mine.profile_id = auth.uid() and mine.capability = 'manage_admins'
+    )
+  );
+
+revoke insert, update, delete on staff_permissions from authenticated, anon;
+
+-- ============================================================================
+-- Every change to who can do what, recorded
+-- ============================================================================
+-- This product's whole argument is that a decision is worth more when you can
+-- show what was true at the moment it was made. Admin rights are the one thing
+-- that lets somebody change every other record, so a grant that leaves no trace
+-- is the gap that makes the rest arguable.
+--
+-- Append-only in the same sense as credit_ledger: no update, no delete, and the
+-- rows outlive the accounts they refer to.
+
+create table if not exists admin_audit_log (
+  id uuid primary key default gen_random_uuid(),
+
+  -- `set null` on both: an entry saying "somebody, since deleted, granted
+  -- manage_admins to somebody else, since deleted" is still worth having.
+  actor_id uuid references profiles(id) on delete set null,
+  subject_id uuid references profiles(id) on delete set null,
+
+  -- Names captured at the time, so the log stays readable after an account is
+  -- anonymised or removed. Same reason the compliance dossier snapshots.
+  actor_name text,
+  subject_name text,
+
+  action text not null check (action in (
+    'admin_appointed',
+    'admin_removed',
+    'capability_granted',
+    'capability_revoked'
+  )),
+  capability text,
+  note text,
+
+  created_at timestamptz not null default now()
+);
+
+create index if not exists admin_audit_log_created_idx on admin_audit_log(created_at desc);
+
+alter table admin_audit_log enable row level security;
+
+-- Readable only by someone who can manage admins. It names people and what they
+-- were trusted with.
+drop policy if exists admin_audit_log_select on admin_audit_log;
+create policy admin_audit_log_select on admin_audit_log for select
+  using (
+    exists (
+      select 1 from staff_permissions mine
+      where mine.profile_id = auth.uid() and mine.capability = 'manage_admins'
+    )
+  );
+
+revoke insert, update, delete on admin_audit_log from authenticated, anon;
+
 -- ============================================================================
 -- NO CLIENT WRITES AT ALL (migration 005)
 -- ============================================================================

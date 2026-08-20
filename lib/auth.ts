@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { capabilitiesFor, type Capability } from "@/lib/permissions";
 
 /*
  * The real authorization gate.
@@ -67,6 +68,22 @@ export async function getSessionUser() {
     } = await supabase.auth.getUser();
     return user;
   } catch (error) {
+    /*
+     * Next's own control-flow exceptions pass straight through.
+     *
+     * Reading cookies() during a static render throws DynamicServerError, and
+     * that throw is how Next LEARNS the route must be dynamic. Swallowing it —
+     * which the first version of this catch did — takes away the signal and
+     * turns a build-time decision into whatever the caught branch returns. The
+     * same applies to redirect() and notFound(), which are also implemented as
+     * throws and are used by callers further up.
+     *
+     * Recognised by digest rather than by class: the error types live behind
+     * unstable internal paths, and the digests are the documented contract.
+     */
+    const digest = (error as { digest?: string })?.digest;
+    if (typeof digest === "string") throw error;
+
     console.error(`[auth] could not read the session: ${String(error)}`);
     return null;
   }
@@ -152,10 +169,27 @@ export async function requireFacilityAdmin(
  */
 export async function requireStaff(
   next?: string,
-): Promise<{ userId: string; profile: Profile }> {
+  capability?: Capability,
+): Promise<{ userId: string; profile: Profile; capabilities: Capability[] }> {
   const { userId, profile } = await requireProfile(next ?? "/beheer");
   if (profile.role !== "staff") redirect("/geen-toegang");
-  return { userId, profile };
+
+  /*
+   * Being staff gets you through the door. What you may do once inside is a
+   * separate question, answered per capability — see migration 014.
+   *
+   * The capability is optional so a screen that only lists things can ask for
+   * none, but every ACTION passes one. An action that forgets is an action any
+   * admin can run, and "every admin can do everything" is the thing this
+   * replaced.
+   */
+  const capabilities = await capabilitiesFor(userId);
+
+  if (capability && !capabilities.includes(capability)) {
+    redirect("/geen-toegang");
+  }
+
+  return { userId, profile, capabilities };
 }
 
 /** Requires a freelancer with a freelancer row. */

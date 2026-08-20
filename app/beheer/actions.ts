@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth";
+import type { Capability } from "@/lib/permissions";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 /**
@@ -17,8 +18,8 @@ import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
  * and leaned on the layout instead. A layout does not re-run for a page-segment
  * render, so the read path was unguarded while the write path here was fine.
  */
-async function requireStaffUserId(): Promise<string> {
-  const { userId } = await requireStaff();
+async function requireStaffUserId(capability: Capability): Promise<string> {
+  const { userId } = await requireStaff("/beheer", capability);
   return userId;
 }
 
@@ -32,7 +33,7 @@ async function requireStaffUserId(): Promise<string> {
  * freelancer.
  */
 export async function verifyOrganisationAction(formData: FormData) {
-  await requireStaffUserId();
+  await requireStaffUserId("verify_organisations");
 
   const orgId = String(formData.get("org_id") ?? "");
   const approve = String(formData.get("approve") ?? "") === "true";
@@ -63,7 +64,7 @@ export async function verifyOrganisationAction(formData: FormData) {
  * than having none — a facility relies on this to satisfy its own Wkkgz duty.
  */
 export async function verifyBigAction(formData: FormData) {
-  await requireStaffUserId();
+  await requireStaffUserId("verify_big");
 
   const freelancerId = String(formData.get("freelancer_id") ?? "");
   const approve = String(formData.get("approve") ?? "") === "true";
@@ -85,7 +86,7 @@ export async function verifyBigAction(formData: FormData) {
 
 /** Approves or rejects an uploaded document, recording who decided and why. */
 export async function reviewDocumentAction(formData: FormData) {
-  const staffId = await requireStaffUserId();
+  const staffId = await requireStaffUserId("review_documents");
 
   const documentId = String(formData.get("document_id") ?? "");
   const status = String(formData.get("status") ?? "");

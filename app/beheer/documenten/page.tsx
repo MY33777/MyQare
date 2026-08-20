@@ -41,7 +41,7 @@ export default async function ReviewDocumentsPage({
    * below runs with the service role and mints signed URLs for other people's
    * VOGs and diplomas, so the read path needed its own gate.
    */
-  await requireStaff("/beheer/documenten");
+  await requireStaff("/beheer/documenten", "review_documents");
 
   // Service role: reviewing means seeing across every freelancer, which is exactly
   // what RLS prevents.

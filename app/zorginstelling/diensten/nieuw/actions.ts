@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getFacilityAdmin } from "@/lib/auth";
-import { checkRateLimit } from "@/lib/rateLimit";
+import { bucketKey, checkRateLimit } from "@/lib/rateLimit";
 import { parseEurosToCents } from "@/lib/money";
 import { localInputToIso } from "@/lib/timezone";
 import { createShiftSeries, type ShiftVisibility } from "@/lib/shifts";
@@ -23,7 +23,7 @@ export async function createShiftAction(formData: FormData) {
    */
   if (!admin.org.verified_at) redirect(`${NEW_SHIFT_PATH}?error=not_verified`);
 
-  const allowed = await checkRateLimit(`shift_create:${admin.org.id}`, 40, 3600);
+  const allowed = await checkRateLimit(bucketKey("shift_create", admin.org.id), 40, 3600);
   if (!allowed) redirect(`${NEW_SHIFT_PATH}?error=rate_limited`);
 
   const qualification = String(formData.get("qualification") ?? "").trim();
@@ -82,6 +82,20 @@ export async function createShiftAction(formData: FormData) {
    */
   if (explicitRespondBy && new Date(explicitRespondBy) >= new Date(startsAt)) {
     redirect(`${NEW_SHIFT_PATH}?error=respond_by_after_start`);
+  }
+
+  /*
+   * And it has to be in the future too.
+   *
+   * Only "before the shift starts" was checked, so a deadline dated last week
+   * passed validation on a shift next month: accept_shift refuses a lapsed
+   * respond_by, so the whole series posted, emailed the pool, and could be
+   * accepted by nobody. Same defect as the start-date guard above, one field
+   * along — which is what happens when a rule is added to one field and not to
+   * the one beside it.
+   */
+  if (explicitRespondBy && new Date(explicitRespondBy) <= new Date()) {
+    redirect(`${NEW_SHIFT_PATH}?error=respond_by_in_past`);
   }
 
   /*

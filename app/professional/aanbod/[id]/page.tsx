@@ -7,7 +7,7 @@ import { authErrorMessage } from "@/lib/authErrors";
 import { requireFreelancer } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { creditBalanceCents } from "@/lib/credits";
-import { calculateFee } from "@/lib/fees";
+import { FEE_PERCENT_LABEL, VAT_PERCENT_LABEL, calculateFee } from "@/lib/fees";
 import { billableMinutes, formatDateTime, formatMinutes, formatTime } from "@/lib/hours";
 import { formatEuros } from "@/lib/money";
 import { qualificationLabel } from "@/lib/qualifications";
@@ -171,7 +171,9 @@ export default async function OfferDetailPage({
               nobody has to work that out — and the number shown is the one actually
               deducted.
             */}
-            <span>Bemiddelingsvergoeding 1,5% + 21% btw</span>
+            <span>
+              Bemiddelingsvergoeding {FEE_PERCENT_LABEL} + {VAT_PERCENT_LABEL} btw
+            </span>
             <span className="tnum">− {formatEuros(fee.feeTotalCents)}</span>
           </div>
           <div className="flex justify-between text-sm mt-1" style={{ color: "var(--text-muted)" }}>

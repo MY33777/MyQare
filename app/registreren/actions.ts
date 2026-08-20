@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { mapAuthError } from "@/lib/authErrors";
-import { checkRateLimit } from "@/lib/rateLimit";
+import { bucketKey, checkRateLimit } from "@/lib/rateLimit";
 import { absoluteUrl } from "@/lib/site";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -24,7 +24,7 @@ export async function signUpAction(formData: FormData) {
   if (password.length < MIN_PASSWORD_LENGTH) redirect(backTo("weak_password"));
   if (role === "facility_admin" && !orgName) redirect(backTo("org_name_required"));
 
-  const allowed = await checkRateLimit(`signup:${email.toLowerCase()}`, 5, 3600);
+  const allowed = await checkRateLimit(bucketKey("signup", email.toLowerCase()), 5, 3600);
   if (!allowed) redirect(backTo("rate_limited"));
 
   const supabase = await createClient();

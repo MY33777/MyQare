@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { purgeRateLimitHits } from "@/lib/rateLimit";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { cronAuthorised } from "@/lib/cron";
 import { sendDocumentExpiryEmail, sendFacilityDocumentExpiryEmail } from "@/lib/email";
@@ -115,17 +116,45 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // ---- every facility that has them in its pool ----
-    const { data: pools } = await admin
+    /*
+     * ---- every VERIFIED facility that has them in its pool ----
+     *
+     * verified_at is selected and checked below, which it was not. Verification
+     * is revocable — /beheer can withdraw it from a facility that turns out not
+     * to be what it claimed — and withdrawing it stopped them posting work while
+     * leaving this cron mailing them named people's document expiry dates every
+     * day. Being struck off has to close the door it opened.
+     *
+     * The error is read too. It was discarded, so a failed read became `?? []`,
+     * notified zero facilities, incremented nothing, and the run still finished
+     * ok:true with HTTP 200 — the exact "green while doing nothing" shape the
+     * comment at the bottom of this file says it exists to prevent.
+     */
+    const { data: pools, error: poolsError } = await admin
       .from("pools")
-      .select("organisations(name, billing_email)")
+      .select("organisations(name, billing_email, verified_at)")
       .eq("freelancer_id", document.freelancer_id)
       .neq("status", "hidden")
-      .returns<{ organisations: { name: string; billing_email: string | null } | null }[]>();
+      .returns<
+        {
+          organisations: {
+            name: string;
+            billing_email: string | null;
+            verified_at: string | null;
+          } | null;
+        }[]
+      >();
+
+    if (poolsError) {
+      failed++;
+      problems.push(`${document.id}: could not read pools — ${poolsError.message}`);
+      continue;
+    }
 
     for (const pool of pools ?? []) {
       const to = pool.organisations?.billing_email;
       if (!to) continue;
+      if (!pool.organisations?.verified_at) continue;
 
       const ok = await sendFacilityDocumentExpiryEmail({
         to,
@@ -151,10 +180,25 @@ export async function GET(request: NextRequest) {
    * that a month of VOG warnings went nowhere. The problems list is capped so one
    * bad day cannot produce a megabyte of JSON.
    */
+  /*
+   * Housekeeping, on the one job that already runs daily.
+   *
+   * rate_limit_hits had no retention at all: every counter ever written stayed,
+   * and before the keys were hashed those counters were addresses joined to typed
+   * email addresses. Two days is well past the longest window that reads them
+   * (document uploads, 24 hours), so anything older can answer no question.
+   */
+  const purged = await purgeRateLimitHits();
+  if (purged === null) {
+    failed++;
+    problems.push("rate_limit_hits: purge failed");
+  }
+
   return NextResponse.json(
     {
       ok: failed === 0,
       considered: documents?.length ?? 0,
+      rateLimitRowsPurged: purged,
       sent,
       facilitiesNotified,
       failed,

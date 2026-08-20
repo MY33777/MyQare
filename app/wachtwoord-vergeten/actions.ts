@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { clientIp, isRateLimited, recordRateLimitHit } from "@/lib/rateLimit";
+import { bucketKey, clientIp, isRateLimited, recordRateLimitHit } from "@/lib/rateLimit";
 import { absoluteUrl } from "@/lib/site";
 
 /*
@@ -28,8 +28,11 @@ export async function requestPasswordResetAction(formData: FormData) {
   if (!email) redirect("/wachtwoord-vergeten?error=missing_fields");
 
   const ip = await clientIp();
-  const addressBucket = `reset:${email}`;
-  const clientBucket = ip ? `reset_ip:${ip}` : null;
+  // Hashed: this table kept every address anybody ever typed into the reset
+  // form, which is a list of who has an account here — the exact thing the form
+  // itself refuses to confirm.
+  const addressBucket = bucketKey("reset", email);
+  const clientBucket = ip ? bucketKey("reset_ip", ip) : null;
 
   const blocked =
     (await isRateLimited(addressBucket, RESETS_PER_ADDRESS, RESET_WINDOW_SECONDS)) ||

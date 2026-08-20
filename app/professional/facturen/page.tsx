@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { lookupMessage } from "@/lib/authErrors";
 import Link from "next/link";
 import { EmptyState, PageHeader } from "@/components/AppHeader";
 import { FormMessage } from "@/components/AuthShell";
@@ -218,7 +219,7 @@ export default async function FreelancerInvoicesPage({
         </FormMessage>
       ) : null}
       {params.error ? (
-        <FormMessage kind="error">{MESSAGES[params.error] ?? MESSAGES.unknown}</FormMessage>
+        <FormMessage kind="error">{lookupMessage(MESSAGES, params.error, MESSAGES.unknown)}</FormMessage>
       ) : null}
 
       {/*

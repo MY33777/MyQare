@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getFreelancer } from "@/lib/auth";
-import { checkRateLimit } from "@/lib/rateLimit";
+import { bucketKey, checkRateLimit } from "@/lib/rateLimit";
 import { acceptShift, declineOffer } from "@/lib/assignments";
 
 export async function acceptShiftAction(formData: FormData) {
@@ -20,7 +20,7 @@ export async function acceptShiftAction(formData: FormData) {
    * by the row lock in accept_shift(), not by this — the limiter only stops a
    * broken client hammering the endpoint.
    */
-  const allowed = await checkRateLimit(`accept:${freelancer.userId}`, 30, 300);
+  const allowed = await checkRateLimit(bucketKey("accept", freelancer.userId), 30, 300);
   if (!allowed) redirect(`/professional/aanbod/${shiftId}?error=rate_limited`);
 
   const result = await acceptShift(shiftId, freelancer.userId);

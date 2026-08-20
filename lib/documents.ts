@@ -125,7 +125,14 @@ export async function uploadDocument(input: {
      * reviewer's attention to reach the same answer the form could have given
      * instantly.
      */
-    if (input.expiresOn <= amsterdamDateKey()) return { ok: false, reason: "expiry_past" };
+    /*
+     * Strictly BEFORE today. Three places disagreed about a document expiring
+     * today: this check called it past, the form's date picker offered it as the
+     * earliest selectable day (min={todayKey}), and expiryState() calls it still
+     * valid. A VOG is valid through its last day — that is what the date on it
+     * means — so the other two were right and this was the odd one out.
+     */
+    if (input.expiresOn < amsterdamDateKey()) return { ok: false, reason: "expiry_past" };
   }
 
   const admin = getSupabaseAdmin();

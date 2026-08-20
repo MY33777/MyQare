@@ -77,11 +77,30 @@ export async function POST(request: NextRequest) {
      * page, is money that is gone from Stripe and present nowhere — and the
      * append-only ledger has no clean way to move it afterwards.
      */
-    const { data: recipient } = await getSupabaseAdmin()
+    const { data: recipient, error: recipientError } = await getSupabaseAdmin()
       .from("freelancers")
       .select("profile_id")
       .eq("profile_id", profileId)
       .maybeSingle<{ profile_id: string }>();
+
+    /*
+     * "Could not ask" is not "no such person".
+     *
+     * The error was discarded, so a database blip during this lookup produced
+     * data: null, took the branch below, and told Stripe 200/handled — for a
+     * payment that had already been taken. Stripe does not redeliver a webhook it
+     * was told was handled, so the money was gone from the customer's bank and
+     * present nowhere, permanently, on an append-only ledger.
+     *
+     * 500 here so Stripe retries, which is exactly what a transient failure needs.
+     */
+    if (recipientError) {
+      console.error(
+        `[stripe] could not verify freelancer ${profileId} for session ${session.id}: ` +
+          `${recipientError.message}. Returning 500 so Stripe retries.`,
+      );
+      return NextResponse.json({ error: "lookup_failed" }, { status: 500 });
+    }
 
     if (!recipient) {
       // 200, not 500: retrying will not make the profile exist, and a webhook

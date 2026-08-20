@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { lookupMessage } from "@/lib/authErrors";
 import Link from "next/link";
 import { PageHeader } from "@/components/AppHeader";
 import { FormMessage } from "@/components/AuthShell";
@@ -58,7 +59,7 @@ export default async function FacturatiePage({
 
       {params.saved ? <FormMessage kind="ok">Opgeslagen.</FormMessage> : null}
       {params.error ? (
-        <FormMessage kind="error">{ERRORS[params.error] ?? ERRORS.unknown}</FormMessage>
+        <FormMessage kind="error">{lookupMessage(ERRORS, params.error, ERRORS.unknown)}</FormMessage>
       ) : null}
 
       {/*

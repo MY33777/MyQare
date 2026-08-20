@@ -1,18 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import {
-  FEE_PERCENT_LABEL,
-  FEE_INCL_VAT_PERCENT_LABEL,
-  VAT_PERCENT_LABEL,
-  calculateFee,
-} from "@/lib/fees";
+import { FEE_INCL_VAT_PERCENT_LABEL, FEE_PERCENT_LABEL, VAT_PERCENT_LABEL, calculateFee } from "@/lib/fees";
 import { formatEuros } from "@/lib/money";
 import { formatMinutes } from "@/lib/hours";
 
 export const metadata: Metadata = {
   title: "Tarieven",
   description:
-    "Gratis voor zorginstellingen. Zorgprofessionals betalen 1,5% van de opdrachtwaarde plus btw per aangenomen dienst. Met rekenvoorbeeld.",
+    `Gratis voor zorginstellingen. Zorgprofessionals betalen ${FEE_PERCENT_LABEL} van de opdrachtwaarde plus btw per aangenomen dienst. Met rekenvoorbeeld.`,
 };
 
 

@@ -1,4 +1,5 @@
 import { AppHeader } from "@/components/AppHeader";
+import { FEE_PERCENT_LABEL } from "@/lib/fees";
 import { requireFreelancer } from "@/lib/auth";
 import { creditBalanceCents } from "@/lib/credits";
 import { createClient } from "@/lib/supabase/server";
@@ -31,7 +32,7 @@ export default async function FreelancerLayout({ children }: { children: React.R
         right={
           <span
             className={balance <= 0 ? "badge badge-warn tnum" : "badge badge-brand tnum"}
-            title="Saldo voor de bemiddelingsvergoeding van 1,5% plus btw"
+            title={`Saldo voor de bemiddelingsvergoeding van ${FEE_PERCENT_LABEL} plus btw`}
           >
             {formatEuros(balance)}
           </span>

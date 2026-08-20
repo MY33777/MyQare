@@ -35,14 +35,20 @@ export async function setNewPasswordAction(formData: FormData) {
   if (error) redirect(`/wachtwoord-herstellen?error=${mapAuthError(error.message)}`);
 
   /*
-   * Everything else signed out.
+   * EVERY session signed out, including this one.
    *
    * Somebody resetting a password may be doing it because a session is in hands
-   * that should not have it. Leaving those sessions alive means the new password
-   * changes nothing for the next hour of refresh-token life. "others" keeps this
-   * request's own session so the redirect below lands somewhere sane.
+   * that should not have it. Leaving those alive means the new password changes
+   * nothing for the next hour of refresh-token life.
+   *
+   * This used to sign out "others" and keep the current session, which quietly
+   * broke the last step: proxy.ts redirects a signed-in visitor away from /login,
+   * so /login?reset=1 bounced straight to the marketing homepage and the person
+   * who had just reset their password never saw a word of confirmation. Signing
+   * out fully fixes that and is the better answer anyway — proving the new
+   * password works by using it beats being told it was saved.
    */
-  await supabase.auth.signOut({ scope: "others" });
+  await supabase.auth.signOut();
 
   redirect("/login?reset=1");
 }

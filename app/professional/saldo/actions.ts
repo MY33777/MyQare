@@ -5,6 +5,7 @@ import { getFreelancer } from "@/lib/auth";
 import { getStripe } from "@/lib/stripe";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { clampTopupCents } from "@/lib/credits";
+import { FEE_PERCENT_LABEL } from "@/lib/fees";
 import { parseEurosToCents } from "@/lib/money";
 import { absoluteUrl } from "@/lib/site";
 
@@ -55,7 +56,8 @@ export async function startTopupAction(formData: FormData) {
           unit_amount: amountCents,
           product_data: {
             name: "MyQare saldo",
-            description: "Saldo voor de bemiddelingsvergoeding van 1,5% plus btw per aangenomen dienst.",
+            description:
+              `Saldo voor de bemiddelingsvergoeding van ${FEE_PERCENT_LABEL} plus btw per aangenomen dienst.`,
           },
         },
       },

@@ -22,6 +22,21 @@ type InvoiceRow = {
   profiles: { full_name: string } | null;
 };
 
+/**
+ * How many invoices this page loads.
+ *
+ * It was 100 — a display limit applied to a screen that is not only a display.
+ * "Openstaand" is summed from these rows, so a facility past its hundredth
+ * invoice was shown a payables figure missing everything older, with nothing
+ * saying so; and because the list is also the only route to marking an invoice
+ * paid, an older unpaid one could never be settled from the product at all. A
+ * facility running two wards reaches a hundred invoices in a quarter.
+ *
+ * Matched to the freelancer's page so the two sides of the same invoice agree
+ * about which invoices exist. Reaching it is reported rather than silent.
+ */
+const INVOICE_CAP = 2000;
+
 export default async function FacilityInvoicesPage() {
   const { org } = await requireFacilityAdmin("/zorginstelling/facturen");
   const supabase = await createClient();
@@ -40,8 +55,15 @@ export default async function FacilityInvoicesPage() {
      */
     .not("sent_at", "is", null)
     .order("issued_on", { ascending: false })
-    .limit(100)
+    .limit(INVOICE_CAP)
     .returns<InvoiceRow[]>();
+
+  if ((invoices ?? []).length >= INVOICE_CAP) {
+    console.error(
+      `[facturen] org ${org.id} has at least ${INVOICE_CAP} sent invoices; the ` +
+        "payables total on this page is understated. Paginate this screen.",
+    );
+  }
 
   // Compared as calendar dates in Amsterdam. new Date(due_on) parses the date as
   // UTC midnight, which is still "yesterday" locally and flagged invoices a day

@@ -77,16 +77,22 @@ The same bucket holds invoice PDFs under `invoices/`.
 Test mode first. `STRIPE_SECRET_KEY` from **Developers → API keys**.
 
 Create a webhook endpoint pointing at `https://<your-domain>/api/stripe/webhook`
-and subscribe to exactly these four:
+and subscribe to exactly these five:
 
 | Event | What it does |
 |---|---|
 | `checkout.session.completed` | Credits a top-up |
 | `charge.refunded` | Claws back the refunded portion |
 | `charge.dispute.created` | Reverses when a dispute opens |
+| `charge.dispute.updated` | Reverses when an **inquiry escalates** into a real dispute |
 | `charge.dispute.closed` | Restores it if the dispute is **won** |
 
-The last two are a pair. Subscribing to `created` without `closed` takes money
+`updated` is not optional. A dispute that begins as an inquiry withdraws no
+money, so `created` is deliberately skipped for it — and the moment it escalates
+Stripe fires `updated`, not a second `created`. Without it, an escalated inquiry
+takes money out of our account and reverses nothing.
+
+The two dispute-lifecycle events are a pair. Subscribing to `created` without `closed` takes money
 off somebody who then wins their dispute and leaves them with a negative balance
 and no way back — the ledger is append-only and there is no manual credit path.
 
@@ -263,7 +269,7 @@ stay invisible to the facility, and go out only when released.
 
 ## The open question
 
-The freelancer pays the 5%, the facility pays nothing. That keeps supply intact
+The freelancer pays the 1,5% (ex btw), the facility pays nothing. That keeps supply intact
 and stops facilities working around the platform — but the freelancer is the
 more price-sensitive party, and putting the cost on them makes it harder to
 argue the facility is not engaging an intermediary. It is written up on

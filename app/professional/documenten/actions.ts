@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getFreelancer } from "@/lib/auth";
-import { checkRateLimit } from "@/lib/rateLimit";
+import { bucketKey, checkRateLimit } from "@/lib/rateLimit";
 import {
   DOCUMENT_KIND_LABELS,
   deleteDocument,
@@ -22,7 +22,7 @@ export async function uploadDocumentAction(formData: FormData) {
 
   // Storage costs money and review costs attention. Twenty a day is far more than
   // anyone legitimately needs and still stops a script filling the bucket.
-  const allowed = await checkRateLimit(`upload:${freelancer.userId}`, 20, 86_400);
+  const allowed = await checkRateLimit(bucketKey("upload", freelancer.userId), 20, 86_400);
   if (!allowed) redirect(`${DOCS_PATH}?error=rate_limited`);
 
   const file = formData.get("file");

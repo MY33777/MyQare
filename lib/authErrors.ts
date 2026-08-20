@@ -51,6 +51,8 @@ const MESSAGES: Record<string, string> = {
   cannot_delete: "Dit document kan niet worden verwijderd. Goedgekeurde documenten blijven staan.",
   already_approved: "De uren zijn al goedgekeurd. Annuleren kan niet meer.",
   starts_in_past: "Deze dienst ligt in het verleden. Controleer de datum en tijd.",
+  respond_by_in_past:
+    "De reactietermijn ligt in het verleden. Kies een moment dat nog moet komen.",
   respond_by_after_start:
     "De reactietermijn ligt na het begin van de dienst. Kies een moment daarvóór.",
   region_required: "Vul in welke regio je in werkt, anders zie je geen diensten van nieuwe instellingen.",
@@ -115,4 +117,25 @@ export function mapAuthError(message: string | undefined): string {
   }
   if (text.includes("rate limit") || text.includes("too many requests")) return "rate_limited";
   return "unknown";
+}
+
+/**
+ * Own-property lookup against any local message table.
+ *
+ * Four pages keep their own small table of `?error=` codes and looked the code up
+ * with plain indexing — `ERRORS[params.error] ?? ERRORS.unknown`. That resolves
+ * through the prototype chain, so `?error=toString` returns a FUNCTION, `??`
+ * never fires because a function is not nullish, and React throws rendering it as
+ * a child. A blank 500 on a URL anyone can type, one of them unauthenticated.
+ *
+ * lib/authErrors.ts fixed this for itself and left the four local copies, which
+ * is the "one rule in two places" shape. There is now one implementation.
+ */
+export function lookupMessage(
+  table: Record<string, string>,
+  code: string | undefined | null,
+  fallback: string,
+): string {
+  if (!code) return fallback;
+  return Object.hasOwn(table, code) ? table[code] : fallback;
 }

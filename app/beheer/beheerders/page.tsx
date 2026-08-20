@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { lookupMessage } from "@/lib/authErrors";
 import { EmptyState, PageHeader } from "@/components/AppHeader";
 import { FormMessage } from "@/components/AuthShell";
 import { requireStaff } from "@/lib/auth";
@@ -115,7 +116,7 @@ export default async function AdminsPage({
       ) : null}
       {params.removed ? <FormMessage kind="ok">Beheerder verwijderd.</FormMessage> : null}
       {params.error ? (
-        <FormMessage kind="error">{ERRORS[params.error] ?? ERRORS.unknown}</FormMessage>
+        <FormMessage kind="error">{lookupMessage(ERRORS, params.error, ERRORS.unknown)}</FormMessage>
       ) : null}
 
       <div className="card p-6 mb-8">

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { FEE_PERCENT_LABEL, VAT_PERCENT_LABEL } from "@/lib/fees";
 import { EmptyState, PageHeader } from "@/components/AppHeader";
 import { FormMessage } from "@/components/AuthShell";
 import { authErrorMessage } from "@/lib/authErrors";
@@ -58,7 +59,10 @@ export default async function BalancePage({
     <div className="max-w-3xl">
       <PageHeader
         title="Saldo"
-        description="Hiervan wordt de bemiddelingsvergoeding afgeschreven zodra je een dienst aanneemt: 1,5% van de opdrachtwaarde plus 21% btw."
+        description={
+          `Hiervan wordt de bemiddelingsvergoeding afgeschreven zodra je een dienst aanneemt: ` +
+          `${FEE_PERCENT_LABEL} van de opdrachtwaarde plus ${VAT_PERCENT_LABEL} btw.`
+        }
       />
 
       {params.error ? <FormMessage kind="error">{authErrorMessage(params.error)}</FormMessage> : null}

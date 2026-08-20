@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { lookupMessage } from "@/lib/authErrors";
 import Link from "next/link";
 import { submitContactAction } from "./actions";
 import { contactInbox } from "@/lib/email";
@@ -24,7 +25,7 @@ export default async function ContactPage({
   searchParams: Promise<{ sent?: string; error?: string }>;
 }) {
   const params = await searchParams;
-  const error = params.error ? ERRORS[params.error] ?? ERRORS.send_failed : null;
+  const error = params.error ? lookupMessage(ERRORS, params.error, ERRORS.send_failed) : null;
   const configured = Boolean(contactInbox());
 
   return (

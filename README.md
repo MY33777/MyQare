@@ -19,6 +19,10 @@ npm run dev
 
 ### Database setup
 
+**First time? Follow [SETUP.md](SETUP.md).** It has the full order, the four
+Stripe events, the cron constraint and what to verify after each step.
+
+
 In the Supabase SQL editor, **in this order**:
 
 1. `supabase/schema.sql` — tables, RLS policies, grants

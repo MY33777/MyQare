@@ -59,8 +59,9 @@ export function assignmentValueCents(minutes: number, rateCents: number): number
 /**
  * The full fee breakdown for a given duration and rate.
  *
- * Worked example from the original plan, which this reproduces exactly: a €400
- * assignment yields a €20 fee plus €4.20 VAT — €24.20 off the balance.
+ * Worked example: a €400 assignment yields a €6 fee plus €1.26 VAT — €7.26 off
+ * the balance. The 2021 plan assumed 5% and therefore €24.20; the rate is 1,5%
+ * now. Both the fee and the all-in percentage are pinned by the test suite.
  */
 export function calculateFee(minutes: number, rateCents: number): FeeBreakdown {
   const value = assignmentValueCents(minutes, rateCents);

@@ -132,14 +132,23 @@ export default async function FreelancerInvoicesPage({
           status: string;
           shifts: { starts_at: string; profession: string } | null;
           timesheets: { approved_at: string | null } | null;
-          invoices: { id: string }[];
+          /*
+           * An OBJECT, not an array. invoices.assignment_id is UNIQUE, so
+           * PostgREST infers one-to-one. Typed as an array, `.length` was
+           * undefined, `?? 0` made it 0, and every approved assignment — invoiced
+           * or not — matched the "no invoice yet" filter forever.
+           *
+           * The exact mirror of migration 008, where DROPPING a unique constraint
+           * flipped an embed the other way. Same trap, opposite direction.
+           */
+          invoices: { id: string } | null;
         }[]
       >(),
   ]);
 
   // Approved, and nothing issued for it.
   const uninvoiced = (blocked ?? []).filter(
-    (row) => row.timesheets?.approved_at && (row.invoices?.length ?? 0) === 0,
+    (row) => row.timesheets?.approved_at && !row.invoices,
   );
 
   const booked = (upcoming ?? [])
@@ -173,8 +182,14 @@ export default async function FreelancerInvoicesPage({
         retry that would send it twice.
       */}
       {params.sent ? <FormMessage kind="ok">Factuur verstuurd.</FormMessage> : null}
-      {params.issued ? (
+      {params.issued === "sent" ? (
         <FormMessage kind="ok">Factuur opgemaakt en verstuurd.</FormMessage>
+      ) : null}
+      {params.issued === "held" ? (
+        <FormMessage kind="ok">
+          Factuur opgemaakt. Hij staat klaar met nummer en al — verstuur hem hieronder wanneer je
+          hem hebt nagekeken.
+        </FormMessage>
       ) : null}
       {params.error ? (
         <FormMessage kind="error">{MESSAGES[params.error] ?? MESSAGES.unknown}</FormMessage>

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getFacilityAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { csvEuros, csvFilename, csvHours, toCsv } from "@/lib/csv";
+import { amsterdamDateKey } from "@/lib/timezone";
 
 /*
  * A facility's incoming invoices as a spreadsheet, for reconciliation against the
@@ -76,7 +77,13 @@ export async function GET(request: NextRequest) {
       invoice.number,
       invoice.issued_on,
       invoice.due_on,
-      invoice.paid_at ? invoice.paid_at.slice(0, 10) : "",
+      /*
+       * The Amsterdam day, not the UTC one. paid_at is a timestamptz and slicing
+       * the ISO string gives UTC — a payment recorded at 00:30 local is 22:30 the
+       * previous day in summer, so this booked it into the wrong day and, on the
+       * first of a month, the wrong period.
+       */
+      invoice.paid_at ? amsterdamDateKey(new Date(invoice.paid_at)) : "",
       invoice.profiles?.full_name ?? "",
       invoice.freelancers?.kvk ?? "",
       invoice.freelancers?.big_number ?? "",

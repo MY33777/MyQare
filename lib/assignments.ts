@@ -89,6 +89,22 @@ export async function acceptShift(shiftId: string, freelancerId: string): Promis
     .maybeSingle();
 
   /*
+   * The name, captured now.
+   *
+   * The dossier used to read it live from profiles at export time, which defeats
+   * the point of a snapshot twice over: it silently rewrites itself when somebody
+   * edits their profile two years later, and the account-deletion process
+   * migration 006 requires — anonymise the profile, keep the financial rows —
+   * would turn every historical entry into "Onbekend". Evidence about a named
+   * person that no longer names them is not evidence.
+   */
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("full_name")
+    .eq("id", freelancerId)
+    .maybeSingle<{ full_name: string }>();
+
+  /*
    * The snapshot is denormalised on purpose. A dossier that reassembled itself
    * from live tables would silently rewrite its own history when a freelancer
    * edits their profile two years later — which is exactly when someone is
@@ -115,6 +131,8 @@ export async function acceptShift(shiftId: string, freelancerId: string): Promis
     },
     freelancer: {
       id: freelancerId,
+      // Captured, not joined. See above.
+      full_name: profile?.full_name ?? null,
       profession: freelancer?.profession ?? null,
       kvk: freelancer?.kvk ?? null,
       big_number: freelancer?.big_number ?? null,

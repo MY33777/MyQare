@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
 import type { Metadata } from "next";
 import { EmptyState, PageHeader } from "@/components/AppHeader";
@@ -38,7 +39,22 @@ export default async function StaffDashboard({
    * same omission, same reason. This page returns every organisation's KvK number
    * and billing address and every unverified BIG number, with RLS bypassed.
    */
-  await requireStaff("/beheer");
+  /*
+   * Named capabilities, not merely "is staff".
+   *
+   * Everything below is read with the service role: every organisation's KvK
+   * number and billing address, and every unverified BIG number. An admin hired
+   * only to review documents could reach all of it — which is precisely what
+   * migration 014 exists to stop, and this page had not been updated to use it.
+   *
+   * Either capability is enough, because the page shows two queues and the
+   * sections below hide the one you cannot act on.
+   */
+  const me = await requireStaff("/beheer");
+  const canVerifyOrgs = me.capabilities.includes("verify_organisations");
+  const canVerifyBig = me.capabilities.includes("verify_big");
+
+  if (!canVerifyOrgs && !canVerifyBig) redirect("/geen-toegang");
 
   // Service role: this page's entire purpose is to see across every tenant, which
   // is exactly what RLS is built to prevent.

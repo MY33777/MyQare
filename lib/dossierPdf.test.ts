@@ -105,7 +105,7 @@ describe("renderDossierPdf", () => {
         dossier([entry({ substitutionAllowed: true, rateSetBy: "negotiated" })]),
       ),
     );
-    expect(pdfContains(text, "Vervanging toegestaan: Ja")).toBe(true);
+    expect(pdfContains(text, "Vervanging via het platform: Mogelijk")).toBe(true);
     expect(pdfContains(text, "Onderhandeld")).toBe(true);
   });
 
@@ -114,5 +114,33 @@ describe("renderDossierPdf", () => {
       await renderDossierPdf(dossier([entry({ freelancerName: "Onbekend" })])),
     );
     expect(text).not.toMatch(/undefined|null/i);
+  });
+});
+
+describe("the dossier does not claim more than it knows", () => {
+  /*
+   * substitution_allowed is hardcoded false in accept_shift: true about the
+   * platform, which lets exactly one named person work a shift, and NOT a term
+   * the two parties agreed. They may have arranged otherwise offline.
+   *
+   * Printing a flat "Nee" turned a fact about our software into a claim about
+   * their contract, on the criterion the Belastingdienst cares most about. A
+   * document that overstates what it knows is worth less than one that says less.
+   */
+  it("says substitution is unsupported, not that it was forbidden", async () => {
+    const text = extractPdfText(
+      await renderDossierPdf(dossier([entry({ substitutionAllowed: false })])),
+    );
+    expect(pdfContains(text, "Niet ondersteund")).toBe(true);
+    expect(pdfContains(text, "Vervanging toegestaan: Nee")).toBe(false);
+  });
+
+  it("still states plainly that no model agreement applied", async () => {
+    const text = extractPdfText(
+      await renderDossierPdf(
+        dossier([entry({ modelAgreementVersion: "geen-modelovereenkomst" })]),
+      ),
+    );
+    expect(pdfContains(text, "Geen")).toBe(true);
   });
 });

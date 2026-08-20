@@ -23,6 +23,8 @@ type Row = {
   substitution_allowed: boolean;
   rate_set_by: string;
   declined_other_offers: number;
+  /** Everything as it was at acceptance, including the freelancer's name. */
+  snapshot: unknown;
   assignments: {
     agreed_rate_cents: number;
     agreed_break_minutes: number;
@@ -47,7 +49,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from("compliance_records")
     .select(
-      "assignment_id, model_agreement_version, offered_at, accepted_at, could_decline, substitution_allowed, rate_set_by, declined_other_offers, assignments!inner(agreed_rate_cents, agreed_break_minutes, org_id, profiles!assignments_freelancer_id_fkey(full_name), shifts(profession, starts_at, ends_at))",
+      "assignment_id, model_agreement_version, offered_at, accepted_at, could_decline, substitution_allowed, rate_set_by, declined_other_offers, snapshot, assignments!inner(agreed_rate_cents, agreed_break_minutes, org_id, profiles!assignments_freelancer_id_fkey(full_name), shifts(profession, starts_at, ends_at))",
     )
     .eq("assignments.org_id", admin.org.id)
     .order("accepted_at", { ascending: true })
@@ -87,7 +89,16 @@ export async function GET(request: NextRequest) {
       const assignment = row.assignments!;
       const shift = assignment.shifts!;
       return {
-        freelancerName: assignment.profiles?.full_name ?? "Onbekend",
+        /*
+         * From the snapshot taken at acceptance, falling back to the live profile
+         * only for rows written before the snapshot carried it. Reading it live
+         * meant the document changed when the person edited their profile.
+         */
+        freelancerName:
+          (row.snapshot as { freelancer?: { full_name?: string | null } } | null)?.freelancer
+            ?.full_name ??
+          assignment.profiles?.full_name ??
+          "Onbekend",
         qualification: qualificationLabel(shift.profession),
         startsAt: shift.starts_at,
         endsAt: shift.ends_at,

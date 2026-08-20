@@ -84,7 +84,7 @@ it is the part that was always the actual business.
 Everything in v1 exists to make one sentence true:
 
 > A facility posts a shift, a freelancer accepts it, the work happens, an invoice goes out
-> automatically, and we take 5%.
+> automatically, and we take 1,5%.
 
 ### 4.1 In scope
 
@@ -124,7 +124,7 @@ Everything in v1 exists to make one sentence true:
 
 **Credits & fee**
 - Freelancer buys credits with Stripe (€1 = 1 credit)
-- 5% + 21% VAT of the assignment value deducted on acceptance
+- 1,5% + 21% VAT of the assignment value deducted on acceptance
 - Refunded to balance if the assignment is cancelled or shortened
 
 **Ratings**
@@ -305,10 +305,11 @@ qualified to score clinical performance. Fix: separate the two.
 
 | | |
 |---|---|
-| Fee | 5% of assignment value, + 21% VAT on our fee |
-| Example | €400 shift → €20 fee → **€24.20** deducted from credits |
+| Fee | 1,5% of assignment value, + 21% VAT on our fee — 1,815% all-in |
+| | *Was 5% in the 2021 plan. Lowered August 2026: 5% of a €340 shift is €20,57, which is a lot to take off a day rate for software that does not negotiate or assign.* |
+| Example | €400 shift → €6 fee → **€7.26** deducted from credits |
 | Facility pays us | €0 |
-| Break-even | ~€100/month running cost ÷ €20 average fee = **5 assignments/month** |
+| Break-even | ~€100/month running cost ÷ €6 average fee = **~17 assignments/month** |
 
 ### 8.2 VAT — verify with WEA before launch
 
@@ -318,7 +319,7 @@ generally a taxed service, which is why the agency route triggers 21%. Direct co
 preserve the exemption — but it depends on the profession and the work.
 
 Build for this: store a VAT treatment per freelancer per assignment with a recorded reason,
-rather than hardcoding "exempt." **Our own 5% fee is always taxed at 21%.**
+rather than hardcoding "exempt." **Our own 1,5% fee is always taxed at 21%.**
 
 ### 8.3 What it costs to run
 
@@ -380,6 +381,6 @@ real, and you already have the Anthropic SDK in your stack.
 3. **Are Joop Vriezen (CTO) and Dr. Tegelberg still involved?**
 4. **Dutch or English UI?** Dutch for real users; English is faster for me to build. Recommend:
    build in Dutch from the start, since the first users are Dutch care facilities.
-5. **Should the freelancer or the facility pay the 5%?** The plan says freelancer. Worth
+5. **Should the freelancer or the facility pay the 1,5%?** The plan says freelancer. Worth
    reconsidering — facilities have more money and less price sensitivity, and charging the
    freelancer strengthens the argument that we're *their* agency, which is the DBA risk.

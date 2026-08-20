@@ -139,7 +139,27 @@ export function renderDossierPdf(input: DossierInput): Promise<Buffer> {
       line("Aangeboden op", formatDate(entry.offeredAt));
       line("Geaccepteerd op", formatDate(entry.acceptedAt));
       line("Kon weigeren", entry.couldDecline ? "Ja" : "Nee");
-      line("Vervanging toegestaan", entry.substitutionAllowed ? "Ja" : "Nee");
+
+      /*
+       * Says what is actually known, which is narrower than "Nee".
+       *
+       * substitution_allowed is hardcoded false in accept_shift. That is true
+       * about the PLATFORM — a shift is accepted by one named person and only
+       * they can submit hours — and it is not a term the two parties agreed. They
+       * may well have arranged otherwise between themselves, and this document
+       * has no way to know.
+       *
+       * Printing a flat "Nee" turned a fact about our software into a claim about
+       * their contract, on the one criterion where the Belastingdienst is most
+       * interested in the answer. A dossier that overstates what it knows is
+       * worth less than one that says less.
+       */
+      line(
+        "Vervanging via het platform",
+        entry.substitutionAllowed
+          ? "Mogelijk"
+          : "Niet ondersteund — wat partijen onderling afspraken staat hier niet vast",
+      );
       line("Tarief bepaald door", RATE_SET_BY_LABELS[entry.rateSetBy] ?? entry.rateSetBy);
       // The number that turns one acceptance into evidence of a market.
       line(

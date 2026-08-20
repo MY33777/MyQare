@@ -333,7 +333,20 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
     return { ok: true, invoiceId: invoice.id, number: invoice.number, held: true };
   }
 
-  await deliverInvoice(invoice.id);
+  const delivery = await deliverInvoice(invoice.id);
+
+  /*
+   * The invoice exists and is numbered either way — that is why this is not a
+   * failure of createInvoiceForAssignment. But the result was discarded, so a
+   * facility with no billing address, or a mail outage, produced "factuur
+   * opgemaakt en verstuurd" for a document nobody received. It now comes back as
+   * held, which is the truthful description: created, numbered, not delivered,
+   * and releasable from /professional/facturen.
+   */
+  if (!delivery.ok) {
+    console.error(`[invoice] ${invoice.number} created but not delivered: ${delivery.reason}`);
+    return { ok: true, invoiceId: invoice.id, number: invoice.number, held: true };
+  }
 
   return { ok: true, invoiceId: invoice.id, number: invoice.number };
 }

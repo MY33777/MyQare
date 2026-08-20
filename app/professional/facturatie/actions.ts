@@ -167,5 +167,12 @@ export async function issueInvoiceAction(formData: FormData) {
 
   revalidatePath("/professional/facturen");
   revalidatePath("/zorginstelling/facturen");
-  redirect("/professional/facturen?issued=1");
+
+  /*
+   * "Opgemaakt" and "opgemaakt en verstuurd" are different outcomes, and this
+   * reported the second for both. Somebody with auto_send off would be told their
+   * invoice had gone to the facility when it was sitting on this very page
+   * waiting for them to release it.
+   */
+  redirect(`/professional/facturen?issued=${result.held ? "held" : "sent"}`);
 }

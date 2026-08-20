@@ -8,9 +8,27 @@ import { qualificationLabel } from "@/lib/qualifications";
 
 export const metadata: Metadata = { title: "Dossier" };
 
+/**
+ * How many records this SCREEN lists. The pdf export has its own, higher cap.
+ *
+ * Printed in the footer when reached: the line used to read "N opdrachten
+ * vastgelegd", which stated a page limit as the total number of assignments on
+ * record.
+ */
+const DOSSIER_PAGE_CAP = 100;
+
 type DossierRow = {
   assignment_id: string;
   model_agreement_version: string;
+  /*
+   * Everything as it was at acceptance.
+   *
+   * The EXPORT was moved onto this in round 6; this page was not, and its own
+   * footer says a snapshot is kept. So the screen went on rebuilding every
+   * column from live joins — the thing the snapshot exists to prevent — while
+   * telling the reader otherwise.
+   */
+  snapshot: unknown;
   offered_at: string;
   accepted_at: string;
   could_decline: boolean;
@@ -40,11 +58,11 @@ export default async function DossierPage() {
   const { data: records } = await supabase
     .from("compliance_records")
     .select(
-      "assignment_id, model_agreement_version, offered_at, accepted_at, could_decline, substitution_allowed, rate_set_by, declined_other_offers, assignments!inner(id, agreed_rate_cents, status, org_id, profiles!assignments_freelancer_id_fkey(full_name), shifts(profession, starts_at, ends_at), timesheets(minutes_claimed, break_minutes))",
+      "assignment_id, model_agreement_version, offered_at, accepted_at, could_decline, substitution_allowed, rate_set_by, declined_other_offers, snapshot, assignments!inner(id, agreed_rate_cents, status, org_id, profiles!assignments_freelancer_id_fkey(full_name), shifts(profession, starts_at, ends_at), timesheets(minutes_claimed, break_minutes))",
     )
     .eq("assignments.org_id", org.id)
     .order("accepted_at", { ascending: false })
-    .limit(100)
+    .limit(DOSSIER_PAGE_CAP)
     .returns<DossierRow[]>();
 
   return (
@@ -121,15 +139,37 @@ export default async function DossierPage() {
             <tbody>
               {records.map((record) => {
                 const assignment = record.assignments;
+
+                /*
+                 * The snapshot first, the live join only as a fallback.
+                 *
+                 * Same rule as the export. Reading these live meant the screen
+                 * rewrote its own history when somebody edited a profile, which
+                 * is what the footer promises it does not do.
+                 */
+                const snap = (record.snapshot ?? null) as {
+                  shift?: {
+                    qualification?: string | null;
+                    starts_at?: string | null;
+                    ends_at?: string | null;
+                  } | null;
+                  freelancer?: { full_name?: string | null } | null;
+                } | null;
+
+                const startsAt = snap?.shift?.starts_at ?? assignment?.shifts?.starts_at ?? null;
+                const endsAt = snap?.shift?.ends_at ?? assignment?.shifts?.ends_at ?? null;
+
                 return (
                   <tr key={record.assignment_id}>
-                    <td className="font-medium">{assignment?.profiles?.full_name ?? "—"}</td>
+                    <td className="font-medium">
+                      {snap?.freelancer?.full_name ?? assignment?.profiles?.full_name ?? "—"}
+                    </td>
                     <td>
-                      {qualificationLabel(assignment?.shifts?.profession)}
+                      {qualificationLabel(
+                        snap?.shift?.qualification ?? assignment?.shifts?.profession,
+                      )}
                       <span className="block text-xs tnum" style={{ color: "var(--text-muted)" }}>
-                        {assignment?.shifts
-                          ? formatShiftWindow(assignment.shifts.starts_at, assignment.shifts.ends_at)
-                          : "—"}
+                        {startsAt && endsAt ? formatShiftWindow(startsAt, endsAt) : "—"}
                       </span>
                     </td>
                     <td className="tnum">{formatDate(record.offered_at)}</td>
@@ -155,7 +195,18 @@ export default async function DossierPage() {
                       */}
                       {record.declined_other_offers}
                     </td>
-                    <td style={{ color: "var(--text-muted)" }}>{record.model_agreement_version}</td>
+                    <td style={{ color: "var(--text-muted)" }}>
+                      {/*
+                        The same words the PDF uses. This printed the raw slug, so
+                        the screen said "geen-modelovereenkomst" where the document
+                        beside it said "Geen — niet vastgelegd voor deze opdracht".
+                        One rule, two places, drifted apart the moment the PDF was
+                        fixed. See lib/dossierPdf.ts.
+                      */}
+                      {record.model_agreement_version === "geen-modelovereenkomst"
+                        ? "Geen — niet vastgelegd"
+                        : record.model_agreement_version}
+                    </td>
                   </tr>
                 );
               })}
@@ -166,9 +217,12 @@ export default async function DossierPage() {
 
       {records && records.length > 0 ? (
         <p className="text-sm mt-4" style={{ color: "var(--text-muted)" }}>
-          {records.length} opdracht{records.length === 1 ? "" : "en"} vastgelegd. Van elke opdracht is
-          ook een volledige momentopname bewaard: tarief, functie, tijden en de gegevens van beide
-          partijen zoals ze op dat moment waren.
+          {records.length} opdracht{records.length === 1 ? "" : "en"}
+          {records.length >= DOSSIER_PAGE_CAP ? ` (meer dan ${DOSSIER_PAGE_CAP} — deze lijst is afgekapt, de pdf-export bevat er meer)` : ""}.
+          Van elke opdracht is ook een volledige momentopname bewaard: tarief, functie, tijden en de
+          gegevens van beide partijen zoals ze op dat moment waren. Die momentopname is wat de
+          pdf-export afdrukt, zodat het document niet verandert als iemand later zijn profiel
+          aanpast.
         </p>
       ) : null}
     </>

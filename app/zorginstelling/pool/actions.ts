@@ -19,6 +19,21 @@ export async function addToPoolAction(formData: FormData) {
   const admin = await getFacilityAdmin();
   if (!admin) redirect("/login?next=%2Fzorginstelling%2Fpool");
 
+  /*
+   * An unverified organisation may not build a pool.
+   *
+   * Verification gated posting a shift and nothing else, so the whole sequence
+   * "register as a facility, confirm the email, type in a freelancer's address"
+   * bought a stranger their full profile and every approved document they hold —
+   * VOG, diploma, insurance — because both read policies grant on pool
+   * membership, and the pool row was the one thing an unverified account could
+   * create at will. The freelancer is neither asked nor told.
+   *
+   * Migration 018 enforces it in the policies as well, which is what makes it
+   * true regardless of which action forgets.
+   */
+  if (!admin.org.verified_at) redirect(`${POOL_PATH}?error=not_verified`);
+
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   if (!email) redirect(`${POOL_PATH}?error=missing_fields`);
 

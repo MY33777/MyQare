@@ -58,7 +58,15 @@ export async function GET(request: NextRequest) {
 
   const { data: documents, error } = await admin
     .from("documents")
-    .select("id, kind, expires_on, freelancer_id, profiles:freelancer_id(full_name)")
+    /*
+     * Through freelancers, because that is where the foreign key goes.
+     *
+     * documents.freelancer_id references freelancers(profile_id), NOT profiles —
+     * so `profiles:freelancer_id(full_name)` is a relationship PostgREST cannot
+     * resolve, and every run of this job returned an error before sending
+     * anything. No expiry warning has ever gone out.
+     */
+    .select("id, kind, expires_on, freelancer_id, freelancers(profiles(full_name))")
     .eq("status", "approved")
     .in("expires_on", targetDates)
     .returns<
@@ -67,7 +75,7 @@ export async function GET(request: NextRequest) {
         kind: string;
         expires_on: string;
         freelancer_id: string;
-        profiles: { full_name: string } | null;
+        freelancers: { profiles: { full_name: string } | null } | null;
       }[]
     >();
 
@@ -83,7 +91,7 @@ export async function GET(request: NextRequest) {
     if (days === null || !WARN_AT_DAYS.includes(days)) continue;
 
     const label = DOCUMENT_KIND_LABELS[document.kind as DocumentKind] ?? document.kind;
-    const name = document.profiles?.full_name ?? "";
+    const name = document.freelancers?.profiles?.full_name ?? "";
 
     // ---- the freelancer ----
     const { data: user } = await admin.auth.admin.getUserById(document.freelancer_id);

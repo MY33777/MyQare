@@ -65,6 +65,15 @@ function Stat({
   );
 }
 
+/**
+ * How many invoices the page loads.
+ *
+ * Every figure on this page — turnover, the VAT table, outstanding — is summed
+ * from the rows below, so a cap is not a display limit, it is a wrong number.
+ * 2000 is far past a plausible year of shift work, and reaching it says so.
+ */
+const INVOICE_CAP = 2000;
+
 const MESSAGES: Record<string, string> = {
   already_sent: "Deze factuur was al verstuurd.",
   no_billing_email: "De instelling heeft geen factuuradres ingesteld. Neem contact met hen op.",
@@ -95,7 +104,10 @@ export default async function FreelancerInvoicesPage({
       )
       .eq("freelancer_id", userId)
       .order("issued_on", { ascending: false })
-      .limit(200)
+      // Turnover, the per-quarter VAT table and the receivables are all summed
+      // from this list, so a cap here silently understates every one of them.
+      // Raised well past a plausible year and reported below when reached.
+      .limit(INVOICE_CAP)
       .returns<InvoiceRow[]>(),
     // Accepted but not yet invoiced — an expectation, not a receivable.
     supabase
@@ -181,6 +193,12 @@ export default async function FreelancerInvoicesPage({
         successful one, and the Versturen button was still there, inviting a
         retry that would send it twice.
       */}
+      {(invoices?.length ?? 0) >= INVOICE_CAP ? (
+        <FormMessage kind="error">
+          Er zijn meer facturen dan deze pagina laadt ({INVOICE_CAP}). De bedragen hieronder tellen
+          alleen die op — gebruik de export voor een volledig overzicht.
+        </FormMessage>
+      ) : null}
       {params.sent ? <FormMessage kind="ok">Factuur verstuurd.</FormMessage> : null}
       {params.issued === "sent" ? (
         <FormMessage kind="ok">Factuur opgemaakt en verstuurd.</FormMessage>

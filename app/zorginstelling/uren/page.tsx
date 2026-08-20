@@ -56,8 +56,19 @@ export default async function TimesheetsPage({
     )
     .eq("org_id", org.id)
     .neq("status", "cancelled")
-    .order("accepted_at", { ascending: false })
-    .limit(60)
+    /*
+     * Oldest first, and a cap far above what the filter needs.
+     *
+     * The limit ran BEFORE the "needs approval" filter — this page loads
+     * assignments and then keeps the ones with an unapproved timesheet — so past
+     * sixty assignments the queue silently stopped showing work that was waiting.
+     * A timesheet nobody approves is work nobody invoices and nobody is paid for.
+     *
+     * Ascending so that if the cap ever bites it drops the newest, not the ones
+     * that have been waiting longest.
+     */
+    .order("accepted_at", { ascending: true })
+    .limit(400)
     .returns<PendingRow[]>();
 
   // Only rows where the freelancer has actually submitted something and it is

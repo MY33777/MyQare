@@ -19,30 +19,18 @@ npm run dev
 
 ### Database setup
 
-**First time? Follow [SETUP.md](SETUP.md).** It has the full order, the four
-Stripe events, the cron constraint and what to verify after each step.
+**Follow [SETUP.md](SETUP.md).** It has the order, the four Stripe events, the cron constraint,
+what to verify after each step, and what the checks cannot catch.
 
+The short version: run `supabase/schema.sql` then `supabase/functions.sql` in the Supabase SQL
+editor, and create a **private** Storage bucket named `documents`. Do not run anything in
+`supabase/migrations/` on a fresh database — those two files are the current state and already
+contain everything the migrations do.
 
-In the Supabase SQL editor, **in this order**:
-
-1. `supabase/schema.sql` — tables, RLS policies, grants
-2. `supabase/functions.sql` — `accept_shift`, `settle_timesheet`, `cancel_assignment`,
-   `lookup_account_by_email`
-
-This step used to list only `schema.sql`, which left a fresh database without any of the four
-RPCs the app calls. Nothing would have worked past the first shift acceptance, with a Postgres
-"function does not exist" surfacing as a generic error.
-
-`schema.sql` and `functions.sql` already contain everything the migrations do — they are the
-current state, not the original. `supabase/migrations/` exists for a database that has already
-been set up and needs bringing forward; on a fresh one, skip it.
-
-Then create a **private** Storage bucket named `documents`.
-
-> **Nothing here has ever been run.** There is no Supabase project yet, so every file in
-> `supabase/` is untested against a real database. Migration 007 shipped selecting a column that
-> does not exist and would have aborted in full — found by an audit, not by running it. Expect to
-> fix things on first execution, and run them one file at a time so a failure is visible.
+> **Nothing in `supabase/` has ever been executed.** `npm run check:sql` parses every file with
+> PostgreSQL's own grammar, which catches the class of defect that dominated audit rounds four and
+> five — but it catches syntax, not a column that does not exist or a policy that permits too much.
+> Expect the first run to fail somewhere, and run one file at a time so it is visible.
 
 Every variable in `.env.local` must **also** be added by hand in the Vercel dashboard.
 `.env.local` is never uploaded, so a secret that works locally will fail in production until it
@@ -55,17 +43,21 @@ is set there too.
 | `npm test` | Vitest — the domain logic suite |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint directly (`next lint` was removed in Next 16) |
+| `npm run check:sql` | Parses every file in `supabase/` with PostgreSQL's own grammar |
 
 ## Status
 
 **Working:** the whole loop — posting shifts (single and recurring), fan-out to matching
 freelancers, accepting, timesheets, approval and fee settlement, invoice PDFs with the Dutch
 medical VAT exemption, Stripe top-ups, document upload and review, the compliance dossier export,
-and a public site. 16 tables with RLS, 165 Dutch healthcare qualifications, 239 passing tests.
+a configurable invoicing setup in the freelancer's own account, and a public site. 17 tables
+with RLS, 165 Dutch healthcare qualifications, 261 passing tests.
 
 **Not yet:** no Supabase project is provisioned, so nothing has run against a live database. The
-legal documents (privacy statement, terms, model agreement) are drafts and say so on the page.
-There is no account-deletion process, which migration 006 made a prerequisite. See
+legal documents (privacy statement, terms, model agreement) are drafts and say so on the page —
+the model agreement does not exist at all, and every dossier record states plainly that none
+applied. There is no account-deletion process, which migration 006 made a prerequisite. See
+[SETUP.md](SETUP.md) for the full list of what has to happen before a real user, and
 [BUILD-SPEC.md](BUILD-SPEC.md) §9.
 
 ## Architecture notes worth knowing before you change anything

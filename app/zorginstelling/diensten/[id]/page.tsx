@@ -53,6 +53,9 @@ type ShiftDetail = {
     id: string;
     status: string;
     accepted_at: string;
+    cancelled_at: string | null;
+    cancelled_by: string | null;
+    cancel_reason: string | null;
     // Present once the freelancer submitted hours, which is the point after which
     // cancelling would strand their pay. See lib/cancelActions.ts.
     timesheets: { claimed_at: string | null } | null;
@@ -63,6 +66,16 @@ type ShiftDetail = {
      */
     profiles: { full_name: string; profile_contact: { phone: string | null } | null } | null;
   }[];
+};
+
+/*
+ * Said from the coordinator's side, which is a different sentence from the one
+ * the freelancer sees for the same row.
+ */
+const CANCELLED_BY_LABEL: Record<string, string> = {
+  facility: "Jullie hebben deze opdracht geannuleerd",
+  freelancer: "De zorgprofessional heeft deze opdracht geannuleerd",
+  staff: "MyQare heeft deze opdracht geannuleerd",
 };
 
 export default async function FacilityShiftDetailPage({
@@ -80,7 +93,7 @@ export default async function FacilityShiftDetailPage({
   const { data: shift } = await supabase
     .from("shifts")
     .select(
-      "id, profession, department, location, region, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, visibility, respond_by, shift_offers(id, response, responded_at, viewed_at, profiles(full_name)), assignments(id, status, accepted_at, timesheets(claimed_at), profiles!assignments_freelancer_id_fkey(full_name, profile_contact(phone)))",
+      "id, profession, department, location, region, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, visibility, respond_by, shift_offers(id, response, responded_at, viewed_at, profiles(full_name)), assignments(id, status, accepted_at, cancelled_at, cancelled_by, cancel_reason, timesheets(claimed_at), profiles!assignments_freelancer_id_fkey(full_name, profile_contact(phone)))",
     )
     .eq("id", id)
     .eq("org_id", org.id)
@@ -95,6 +108,22 @@ export default async function FacilityShiftDetailPage({
    * [0] would show last week's no-show as the person turning up tomorrow.
    */
   const assignment = (shift.assignments ?? []).find((row) => row.status !== "cancelled") ?? null;
+
+  /*
+   * The most recent cancellation, if the shift carries one.
+   *
+   * cancelled_by and cancel_reason were written by cancel_assignment() from the
+   * start and read by no screen at all. For a coordinator this is the operational
+   * question, not a footnote: a shift that has quietly gone back to "open" the
+   * evening before it runs means something different depending on whether the
+   * freelancer withdrew, whether the ward itself pulled it earlier, or whether
+   * MyQare intervened — and the reason is often the thing that decides who to
+   * call next.
+   */
+  const cancellation =
+    (shift.assignments ?? [])
+      .filter((row) => row.status === "cancelled" && row.cancelled_at)
+      .sort((a, b) => (a.cancelled_at! < b.cancelled_at! ? 1 : -1))[0] ?? null;
   const offers = shift.shift_offers ?? [];
 
   const accepted = offers.filter((offer) => offer.response === "accept");
@@ -115,6 +144,21 @@ export default async function FacilityShiftDetailPage({
         </FormMessage>
       ) : null}
       {query.error ? <FormMessage kind="error">{authErrorMessage(query.error)}</FormMessage> : null}
+
+      {cancellation && !assignment ? (
+        <FormMessage kind="warn">
+          <span className="font-semibold">
+            {CANCELLED_BY_LABEL[cancellation.cancelled_by ?? ""] ??
+              "Deze opdracht is geannuleerd"}
+            {cancellation.cancelled_at
+              ? " op " + formatDateTime(cancellation.cancelled_at)
+              : ""}
+            . De dienst staat weer open.
+          </span>
+          {cancellation.cancel_reason ? <> Reden: {cancellation.cancel_reason}</> : null}
+        </FormMessage>
+      ) : null}
+
 
       <div className="card p-6 mb-6">
         <dl className="grid gap-4 sm:grid-cols-3">

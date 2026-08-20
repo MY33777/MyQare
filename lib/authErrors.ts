@@ -56,6 +56,20 @@ const MESSAGES: Record<string, string> = {
     "De uren voor deze opdracht zijn al ingediend, dus de dienst is gewerkt. Annuleren kan niet meer — keur de uren goed of stuur ze terug met een reden.",
   assignment_cancelled: "Deze opdracht is geannuleerd. Er valt niets meer goed te keuren.",
   link_expired: "Deze link is verlopen of al gebruikt. Vraag een nieuwe aan.",
+
+  /*
+   * Not "verlopen". The PKCE verifier is a cookie on the browser that ASKED for
+   * the reset, so requesting it on a laptop and opening the mail on a phone
+   * fails while the link is perfectly good. Told as "expired", people request a
+   * second link and it fails identically — the message has to name the cause.
+   */
+  link_wrong_device:
+    "Open deze link in dezelfde browser waarin je het herstel hebt aangevraagd, " +
+    "of vraag hieronder een nieuwe link aan en open die direct op dit apparaat.",
+
+  needs_recovery_link:
+    "Een nieuw wachtwoord instellen kan alleen via de link uit de herstelmail. " +
+    "Vraag er hieronder een aan.",
   hours_locked: "Deze uren zijn al goedgekeurd en kunnen niet meer worden aangepast. Neem contact op met de instelling.",
   unknown: "Er ging iets mis. Probeer het opnieuw.",
 };

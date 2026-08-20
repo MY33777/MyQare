@@ -16,6 +16,7 @@ export const CAPABILITIES = [
   "verify_organisations",
   "verify_big",
   "review_documents",
+  "cancel_assignments",
   "manage_admins",
 ] as const;
 
@@ -25,6 +26,7 @@ export const CAPABILITY_LABELS: Record<Capability, string> = {
   verify_organisations: "Zorginstellingen verifiëren",
   verify_big: "BIG-nummers controleren",
   review_documents: "Documenten beoordelen",
+  cancel_assignments: "Diensten annuleren",
   manage_admins: "Beheerders benoemen",
 };
 
@@ -35,6 +37,10 @@ export const CAPABILITY_DESCRIPTIONS: Record<Capability, string> = {
     "Legt vast dat een BIG-nummer is opgezocht in het register. Instellingen leunen hierop voor hun eigen Wkkgz-plicht.",
   review_documents:
     "Inzien en goed- of afkeuren van VOG's, diploma's, verzekeringen en KvK-uittreksels van alle zorgprofessionals.",
+  cancel_assignments:
+    "Een aangenomen dienst namens een van beide partijen annuleren. Dit stort de " +
+    "bemiddelingsvergoeding terug op het saldo van de zorgprofessional en zet de dienst " +
+    "weer open. Elke annulering wordt vastgelegd in het logboek.",
   manage_admins:
     "Beheerders benoemen, hun rechten aanpassen en ze verwijderen — inclusief dit recht zelf. Wie dit heeft, kan zichzelf alles geven.",
 };
@@ -97,7 +103,16 @@ export type AuditAction =
   | "admin_appointed"
   | "admin_removed"
   | "capability_granted"
-  | "capability_revoked";
+  | "capability_revoked"
+  /*
+   * The odd one out, and deliberately in the same log.
+   *
+   * It is not a permission change, but it is the only thing an admin can do that
+   * moves money between two other people's accounts — the refund lands on the
+   * freelancer's ledger and the facility loses its cover. When one of them asks
+   * who decided that, the answer has to exist. See migration 020.
+   */
+  | "assignment_cancelled";
 
 /**
  * Records a change to who may do what.

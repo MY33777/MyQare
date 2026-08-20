@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { AuthShell, FormMessage } from "@/components/AuthShell";
 import { authErrorMessage } from "@/lib/authErrors";
-import { getSessionUser } from "@/lib/auth";
+import { getRecoveryUser } from "@/lib/auth";
 import { setNewPasswordAction } from "./actions";
 
 export const metadata: Metadata = { title: "Nieuw wachtwoord" };
@@ -15,11 +15,15 @@ export default async function ResetPasswordPage({
   const params = await searchParams;
 
   /*
-   * Supabase exchanges the recovery link for a session before this page renders,
-   * so a visitor with no session followed an expired link or typed the URL. Told
-   * plainly here rather than after they have picked and typed a password twice.
+   * A recovery session specifically — not just any session. /auth/callback has
+   * exchanged the emailed code by the time this renders, and the token it
+   * produced says so. Somebody who is merely signed in gets the same "this link
+   * is not valid" answer as a stranger, because for this form they are one.
+   *
+   * Checked here as well as in the action so nobody types a password twice to be
+   * told afterwards that it was never going to be accepted.
    */
-  const user = await getSessionUser();
+  const user = await getRecoveryUser();
 
   return (
     <AuthShell

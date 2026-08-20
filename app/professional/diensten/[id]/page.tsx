@@ -22,6 +22,9 @@ type AssignmentDetail = {
   agreed_break_minutes: number;
   status: string;
   accepted_at: string;
+  cancelled_at: string | null;
+  cancelled_by: string | null;
+  cancel_reason: string | null;
   shifts: {
     profession: string;
     department: string | null;
@@ -40,6 +43,16 @@ type AssignmentDetail = {
   } | null;
 };
 
+/*
+ * Said from the reader's side. The column stores the party, not a sentence, and
+ * "facility" on its own tells a freelancer nothing about what happened to them.
+ */
+const CANCELLED_BY_LABEL: Record<string, string> = {
+  facility: "De zorginstelling heeft deze dienst geannuleerd",
+  freelancer: "Je hebt deze dienst zelf geannuleerd",
+  staff: "MyQare heeft deze dienst geannuleerd",
+};
+
 export default async function AssignmentDetailPage({
   params,
   searchParams,
@@ -55,7 +68,7 @@ export default async function AssignmentDetailPage({
   const { data: assignment } = await supabase
     .from("assignments")
     .select(
-      "id, agreed_rate_cents, agreed_break_minutes, status, accepted_at, shifts(profession, department, location, starts_at, ends_at, organisations(name)), timesheets(minutes_claimed, break_minutes, note, approved_at, disputed_at, dispute_reason)",
+      "id, agreed_rate_cents, agreed_break_minutes, status, accepted_at, cancelled_by, cancel_reason, cancelled_at, shifts(profession, department, location, starts_at, ends_at, organisations(name)), timesheets(minutes_claimed, break_minutes, note, approved_at, disputed_at, dispute_reason)",
     )
     .eq("id", id)
     .eq("freelancer_id", userId)
@@ -105,6 +118,27 @@ export default async function AssignmentDetailPage({
         </FormMessage>
       ) : null}
       {query.error ? <FormMessage kind="error">{authErrorMessage(query.error)}</FormMessage> : null}
+
+      {/*
+        Who cancelled it, and the reason they gave.
+
+        cancel_assignment() has written cancelled_by and cancel_reason since the
+        day it was added, and no screen has ever read either. The shift simply
+        turned into "Geannuleerd" — a freelancer whose Saturday night had just
+        evaporated could not tell whether the ward pulled it, whether an admin
+        stepped in, or why, and there was nowhere to go and look. Writing a
+        reason into a column nobody displays is not recording a reason.
+      */}
+      {assignment.status === "cancelled" ? (
+        <FormMessage kind="warn">
+          <span className="font-semibold">
+            {CANCELLED_BY_LABEL[assignment.cancelled_by ?? ""] ?? "Deze dienst is geannuleerd"}
+            {assignment.cancelled_at ? " op " + formatDateTime(assignment.cancelled_at) : ""}.
+          </span>
+          {assignment.cancel_reason ? <> Reden: {assignment.cancel_reason}</> : null}
+        </FormMessage>
+      ) : null}
+
 
       <div className="card p-6 space-y-4 mb-6">
         <dl className="grid gap-4 sm:grid-cols-2">

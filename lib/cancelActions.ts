@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getSessionUser } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { cancelAssignment } from "@/lib/assignments";
+import { capabilitiesFor, recordAdminAudit } from "@/lib/permissions";
 
 /**
  * Cancels an assignment from either side.
@@ -51,19 +52,33 @@ export async function cancelAssignmentAction(formData: FormData) {
 
   const { data: profile } = await admin
     .from("profiles")
-    .select("role, org_id")
+    .select("role, org_id, full_name")
     .eq("id", user.id)
-    .maybeSingle<{ role: string; org_id: string | null }>();
+    .maybeSingle<{ role: string; org_id: string | null; full_name: string | null }>();
 
   const isFreelancer = assignment.freelancer_id === user.id;
   const isFacility =
     profile?.role === "facility_admin" && profile.org_id === assignment.org_id;
 
   /*
-   * The admin client bypasses RLS, so this is the only thing standing between a
-   * signed-in stranger and cancelling somebody else's shift.
+   * Staff need the capability, not merely the role — and the admin client
+   * bypasses RLS, so what follows is the only thing standing between a signed-in
+   * stranger and cancelling somebody else's shift.
+   *
+   * This action refunds the platform fee to the freelancer's ledger, reopens the
+   * shift and resets its offers — it is the only place in the product where an
+   * admin moves money between two other people's accounts. It was also the only
+   * privileged action that never asked WHICH admin was asking: role === "staff"
+   * and through, while approving a diploma next door required a capability.
+   *
+   * Read for staff only, so an ordinary cancellation by either party does not pay
+   * for a permissions lookup it will never consult.
    */
-  if (!isFreelancer && !isFacility && profile?.role !== "staff") {
+  const isStaff =
+    profile?.role === "staff" &&
+    (await capabilitiesFor(user.id)).includes("cancel_assignments");
+
+  if (!isFreelancer && !isFacility && !isStaff) {
     redirect("/geen-toegang");
   }
 
@@ -81,6 +96,32 @@ export async function cancelAssignmentAction(formData: FormData) {
   const result = await cancelAssignment(assignmentId, cancelledBy, reason);
 
   if (!result.ok) redirect(`${backTo}?error=unknown`);
+
+  /*
+   * Written after the cancellation succeeded, and only for staff.
+   *
+   * A party cancelling their own booking is ordinary product use and is already
+   * recorded on the assignment itself. An admin cancelling somebody else's is an
+   * intervention, and the two people it affects are entitled to an answer about
+   * who made it. recordAdminAudit never throws — a missing log line must not turn
+   * a completed cancellation into a reported failure. See lib/permissions.ts.
+   */
+  if (isStaff) {
+    const { data: subject } = await admin
+      .from("profiles")
+      .select("full_name")
+      .eq("id", assignment.freelancer_id)
+      .maybeSingle<{ full_name: string | null }>();
+
+    await recordAdminAudit({
+      actorId: user.id,
+      actorName: profile?.full_name ?? null,
+      subjectId: assignment.freelancer_id,
+      subjectName: subject?.full_name ?? null,
+      action: "assignment_cancelled",
+      note: reason ? assignmentId + " — " + reason : assignmentId,
+    });
+  }
 
   revalidatePath(backTo);
   revalidatePath("/professional");

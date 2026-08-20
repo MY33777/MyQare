@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { capabilitiesFor, type Capability } from "@/lib/permissions";
+import { isRecoveryToken } from "@/lib/authSession";
 
 /*
  * The real authorization gate.
@@ -255,4 +256,33 @@ export async function getFreelancer(): Promise<{ userId: string; profile: Profil
   if (!profile || profile.role !== "freelancer") return null;
 
   return { userId: user.id, profile };
+}
+
+/**
+ * The signed-in user, but only if they got here by following a recovery link.
+ *
+ * The password reset form asks for a new password and never for the old one,
+ * which is right for somebody who has forgotten it and proved they can read the
+ * account's mailbox — and wrong for anybody else. Without this check the form
+ * accepted ANY session, so borrowing an unlocked phone for thirty seconds was
+ * enough to take the account: open /wachtwoord-herstellen, set a password, and
+ * the owner is locked out of their own work.
+ *
+ * getUser() verifies the token against the auth server; getSession() is what
+ * hands us the token itself so its `amr` claim can be read. Both are needed —
+ * the first for authenticity, the second for how that authenticity was obtained.
+ */
+export async function getRecoveryUser() {
+  const supabase = await createClient();
+
+  const [{ data: userData }, { data: sessionData }] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.auth.getSession(),
+  ]);
+
+  const user = userData?.user;
+  if (!user) return null;
+  if (!isRecoveryToken(sessionData?.session?.access_token)) return null;
+
+  return user;
 }

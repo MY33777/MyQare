@@ -105,6 +105,39 @@ and expiry warnings all go nowhere.
 `CONTACT_EMAIL` is where the public contact form delivers. Unset, the form says
 so before you type rather than after.
 
+### Redirect URLs and the mail templates
+
+Under **Authentication → URL Configuration**, add to *Redirect URLs*:
+
+```
+https://myqare.com/auth/callback
+https://<your-vercel-preview>.vercel.app/auth/callback
+http://localhost:3000/auth/callback
+```
+
+Supabase refuses to redirect anywhere not on that list, so a missing entry
+turns every recovery link into an error page.
+
+Then, under **Authentication → Email Templates → Reset Password**, change the
+link to the token-hash form:
+
+```html
+<a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=recovery&next=%2Fwachtwoord-herstellen">
+  Nieuw wachtwoord instellen
+</a>
+```
+
+This is not cosmetic. The default template sends a PKCE `code`, and the
+verifier for that code is a cookie held by the browser that *asked* for the
+reset. Request it on a laptop, open the mail on a phone — which is what our
+users do — and it cannot work, no matter how fresh the link is. `token_hash`
+is verified against the auth server instead, so it works from any device.
+
+`/auth/callback` accepts both shapes, so nothing breaks if you skip this; some
+people just will not be able to reset their password, and the reason will not
+be obvious. The app says "open this in the same browser" rather than
+"expired" when it happens, which is at least honest.
+
 ## 6. Cron
 
 `vercel.json` already declares both jobs. Set `CRON_SECRET` in Vercel;
@@ -147,7 +180,8 @@ insert into staff_permissions (profile_id, capability)
 select p.id, c.capability
 from profiles p
 cross join (values
-  ('verify_organisations'), ('verify_big'), ('review_documents'), ('manage_admins')
+  ('verify_organisations'), ('verify_big'), ('review_documents'),
+  ('cancel_assignments'), ('manage_admins')
 ) as c(capability)
 where p.id = (select id from auth.users where lower(email) = lower('you@example.com'))
 on conflict do nothing;
@@ -165,13 +199,14 @@ them from their organisation with no clean way back, so the panel refuses it too
 After that, every further change goes through `/beheer/beheerders` and lands in
 the audit log with a name and a timestamp.
 
-**The four capabilities:**
+**The five capabilities:**
 
 | Capability | What it allows |
 |---|---|
 | `verify_organisations` | Decide whether a facility may post work at all, and withdraw it |
 | `verify_big` | Record that a BIG number was checked against the register |
 | `review_documents` | Read and approve/reject every VOG, diploma, insurance and KvK extract on the platform |
+| `cancel_assignments` | Unwind a booked assignment on either party's behalf — refunds the fee, reopens the shift, and writes a line to the audit log |
 | `manage_admins` | Appoint admins and set their rights — **including this one** |
 
 `manage_admins` is not a smaller grant than the others; it is a larger one.

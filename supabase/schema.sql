@@ -1147,6 +1147,11 @@ create table if not exists staff_permissions (
     'verify_organisations',
     'verify_big',
     'review_documents',
+    -- cancel_assignments  unwind a booked assignment on either party's behalf,
+    --                     which refunds the platform fee and reopens the shift.
+    --                     Its own capability because approving a diploma implies
+    --                     nothing about undoing somebody's booked work. See 020.
+    'cancel_assignments',
     'manage_admins'
   )),
 
@@ -1223,7 +1228,11 @@ create table if not exists admin_audit_log (
     'admin_appointed',
     'admin_removed',
     'capability_granted',
-    'capability_revoked'
+    'capability_revoked',
+    -- Not a permission change. It is here because it is the one act an admin can
+    -- take that moves money between accounts, and it has to be attributable to a
+    -- person afterwards. See migration 020.
+    'assignment_cancelled'
   )),
   capability text,
   note text,

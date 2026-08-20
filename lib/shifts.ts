@@ -4,6 +4,7 @@ import { assignmentValueCents } from "@/lib/fees";
 import { billableMinutes } from "@/lib/hours";
 import { qualificationLabel } from "@/lib/qualifications";
 import { qualificationMatches, regionMatches, shiftDateKey } from "@/lib/availability";
+import { forEachPage } from "@/lib/pagination";
 
 /*
  * Posting a shift, and deciding who hears about it.
@@ -283,25 +284,48 @@ async function findRecipients(input: NewShift): Promise<string[]> {
      * that as SQL would be an unreadable OR-chain over an ilike and an array
      * containment; expressing it as two tested pure functions is not.
      */
-    const { data: candidates } = await admin
-      .from("freelancers")
-      .select("profile_id, profession, specialisations, region")
-      .returns<
-        {
-          profile_id: string;
-          profession: string | null;
-          specialisations: string[] | null;
-          region: string | null;
-        }[]
-      >();
+    /*
+     * Paged, because this asked for every freelancer on the platform at once.
+     *
+     * Since the matching happens here rather than in the query, a truncated read
+     * does not look like an error — it looks like fewer people being qualified.
+     * The facility is told "aangeboden aan 12 zorgprofessionals", believes the
+     * region is thin, and the freelancers past the cut-off never hear that there
+     * is work near them. Silently reaching a fraction of the market is the worst
+     * possible failure for the one feature whose entire job is reach.
+     */
+    type Candidate = {
+      profile_id: string;
+      profession: string | null;
+      specialisations: string[] | null;
+      region: string | null;
+    };
 
-    for (const candidate of candidates ?? []) {
-      if (!qualificationMatches(input.qualification, candidate.profession, candidate.specialisations)) {
-        continue;
-      }
-      if (!regionMatches(input.region, candidate.region)) continue;
-      ids.add(candidate.profile_id);
-    }
+    await forEachPage<Candidate>(
+      (from, to) =>
+        admin
+          .from("freelancers")
+          .select("profile_id, profession, specialisations, region")
+          .order("profile_id", { ascending: true })
+          .range(from, to)
+          .returns<Candidate[]>(),
+      (candidates) => {
+        for (const candidate of candidates) {
+          if (
+            !qualificationMatches(
+              input.qualification,
+              candidate.profession,
+              candidate.specialisations,
+            )
+          ) {
+            continue;
+          }
+          if (!regionMatches(input.region, candidate.region)) continue;
+          ids.add(candidate.profile_id);
+        }
+      },
+      { label: "region fan-out" },
+    );
 
     // Re-exclude anyone this facility has hidden: a region-wide broadcast must
     // not be a backdoor around that.

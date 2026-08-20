@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { amsterdamDateKey } from "@/lib/timezone";
 import { EmptyState, PageHeader } from "@/components/AppHeader";
 import { FormMessage } from "@/components/AuthShell";
 import { authErrorMessage } from "@/lib/authErrors";
@@ -64,6 +65,10 @@ export default async function DocumentsPage({
 
   const kinds = Object.keys(DOCUMENT_KIND_LABELS) as DocumentKind[];
 
+  // Amsterdam, not UTC: just after local midnight the UTC day is still
+  // yesterday, which would let today's date be picked as an expiry.
+  const todayKey = amsterdamDateKey();
+
   return (
     <div className="max-w-3xl">
       <PageHeader
@@ -119,9 +124,27 @@ export default async function DocumentsPage({
             <label className="label" htmlFor="expires_on">
               Geldig tot
             </label>
-            <input className="input" id="expires_on" name="expires_on" type="date" />
+            {/*
+              min = today, so the date picker itself refuses a lapsed document.
+              uploadDocument checks this again server-side — a date input is a
+              convenience, not a control, and the action is reachable without it.
+
+              Not marked `required`: whether it is depends on which kind is
+              selected above, and this form is a Server Component with no client
+              JavaScript. Making it unconditionally required would block a diploma,
+              which does not expire. The rule is enforced where it can be enforced
+              honestly, and stated here so nobody meets it as a surprise.
+            */}
+            <input
+              className="input"
+              id="expires_on"
+              name="expires_on"
+              type="date"
+              min={todayKey}
+            />
             <p className="hint">
-              Nodig voor {KINDS_NEEDING_EXPIRY.map((k) => DOCUMENT_KIND_LABELS[k].split(" ")[0]).join(", ")}.
+              <strong>Verplicht</strong> voor{" "}
+              {KINDS_NEEDING_EXPIRY.map((k) => DOCUMENT_KIND_LABELS[k].split(" ")[0]).join(", ")}.
               We waarschuwen je twee maanden voor de vervaldatum — een nieuwe VOG aanvragen duurt
               weken.
             </p>

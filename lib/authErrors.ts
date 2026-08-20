@@ -40,6 +40,11 @@ const MESSAGES: Record<string, string> = {
   no_file: "Kies een bestand om te uploaden.",
   too_large: "Het bestand is te groot. Maximaal 5 MB.",
   bad_type: "Alleen PDF of een foto (JPG, PNG, HEIC, WebP).",
+  expiry_required:
+    "Vul de vervaldatum in. Zonder die datum kan MyQare niet aantonen dat dit " +
+    "document nog geldig is, en krijg je geen herinnering voordat het verloopt.",
+  expiry_invalid: "Vul de vervaldatum in als een geldige datum.",
+  expiry_past: "Deze datum ligt in het verleden. Upload een document dat nog geldig is.",
   cannot_delete: "Dit document kan niet worden verwijderd. Goedgekeurde documenten blijven staan.",
   already_approved: "De uren zijn al goedgekeurd. Annuleren kan niet meer.",
   starts_in_past: "Deze dienst ligt in het verleden. Controleer de datum en tijd.",

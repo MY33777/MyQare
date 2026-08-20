@@ -15,6 +15,15 @@ import { sendInvoiceEmail } from "@/lib/email";
 
 export const INVOICE_BUCKET = "documents";
 
+/*
+ * How far back the number allocator looks within one calendar year.
+ *
+ * A freelancer issuing two thousand invoices in a year is doing five and a half
+ * shifts a day, every day; the cap exists so the query has a bound at all, not
+ * because the number is expected to be approached.
+ */
+const INVOICE_NUMBER_SCAN_LIMIT = 2000;
+
 export type InvoiceOutcome =
   /** `held` means created and numbered but deliberately not sent — see auto_send. */
   | { ok: true; invoiceId: string; number: string; held?: boolean }
@@ -175,13 +184,43 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
   let lastError: { code?: string; message?: string } | null = null;
 
   for (let attempt = 0; attempt < 5 && !invoice; attempt++) {
-    // Re-read inside the loop: on a retry the winning number is now committed, so
-    // this picks up the one after it.
+    /*
+     * Re-read inside the loop: on a retry the winning number is now committed, so
+     * this picks up the one after it.
+     *
+     * Narrowed to this year and bounded, because it used to pull EVERY invoice
+     * number the freelancer had ever been issued, unbounded, once per retry. Under
+     * a PostgREST `max-rows` setting that select starts coming back truncated —
+     * and a truncated set means nextInvoiceNumber sees a lower highest sequence
+     * and hands back a number that already exists.
+     *
+     * The failure that produces is loud rather than silent, which is the only
+     * reason a cap is acceptable here: the unique (freelancer_id, number) index
+     * rejects the insert, the loop retries, computes the same number again, and
+     * after five attempts the caller gets number_race. A wrong number that INSERTS
+     * would be far worse — the Belastingdienst expects an unbroken series per
+     * invoicing party, and a duplicate is not a bookkeeping detail.
+     *
+     * The year filter is a narrowing hint, not the rule: nextInvoiceNumber parses
+     * and filters by year itself, so a prefix that happens to contain digits can
+     * only add rows here, never drop the right ones.
+     */
     const { data: previous } = await admin
       .from("invoices")
       .select("number")
       .eq("freelancer_id", assignment.freelancer_id)
+      .like("number", `%${amsterdamYear(issuedOn)}-%`)
+      .order("number", { ascending: false })
+      .limit(INVOICE_NUMBER_SCAN_LIMIT)
       .returns<{ number: string }[]>();
+
+    if ((previous ?? []).length >= INVOICE_NUMBER_SCAN_LIMIT) {
+      console.error(
+        `[invoices] freelancer ${assignment.freelancer_id} has at least ` +
+          `${INVOICE_NUMBER_SCAN_LIMIT} invoices in ${amsterdamYear(issuedOn)}; ` +
+          "numbering may start colliding. Raise INVOICE_NUMBER_SCAN_LIMIT.",
+      );
+    }
 
     const number = nextInvoiceNumber(
       (previous ?? []).map((row) => row.number),

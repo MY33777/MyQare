@@ -8,11 +8,16 @@ import {
 
 const NOW = new Date("2026-08-18T12:00:00Z");
 
-function invoice(overrides: Partial<InvoiceLike & { due_on: string }> = {}) {
+function invoice(
+  overrides: Partial<InvoiceLike & { due_on: string; sent_at: string | null }> = {},
+) {
   return {
     issued_on: "2026-08-01",
     due_on: "2026-08-31",
     paid_at: null,
+    // Sent by default, because that is the ordinary case: auto_send is on unless
+    // the freelancer turns it off. Override with null for a held invoice.
+    sent_at: "2026-08-01T09:00:00Z" as string | null,
     amount_ex_vat_cents: 40_000,
     vat_amount_cents: 8_400,
     total_cents: 48_400,
@@ -124,7 +129,59 @@ describe("summariseReceivables", () => {
       outstandingCents: 0,
       overdueCents: 0,
       overdueCount: 0,
+      unsentCents: 0,
+      unsentCount: 0,
     });
+  });
+
+  /*
+   * The held-invoice cases.
+   *
+   * With auto_send off, an invoice is created and numbered but not delivered —
+   * the freelancer reviews it first. Every one of them was counted as
+   * "Openstaand" and went red as "te laat" once its due date passed, for a
+   * document the facility had never received. Meanwhile the facility's own list
+   * already excluded them, so the two sides of the same invoice disagreed about
+   * whether a debt existed at all.
+   */
+  it("does not count a held invoice as outstanding", () => {
+    const out = summariseReceivables([invoice({ sent_at: null })], NOW);
+    expect(out.outstandingCents).toBe(0);
+    expect(out.unsentCents).toBe(48_400);
+    expect(out.unsentCount).toBe(1);
+  });
+
+  it("never calls a held invoice late, however long it has sat there", () => {
+    const out = summariseReceivables([invoice({ due_on: "2020-01-01", sent_at: null })], NOW);
+    expect(out.overdueCents).toBe(0);
+    expect(out.overdueCount).toBe(0);
+    // Still surfaced, because it needs the freelancer to press send — silence
+    // here is how an invoice is forgotten entirely.
+    expect(out.unsentCount).toBe(1);
+  });
+
+  it("a held invoice that was already paid counts as neither", () => {
+    // Paid outside the platform before it was ever sent through it. Unusual, but
+    // "paid" beats every other state — it is not owed and not waiting on anyone.
+    const out = summariseReceivables(
+      [invoice({ sent_at: null, paid_at: "2026-08-10T00:00:00Z" })],
+      NOW,
+    );
+    expect(out.unsentCount).toBe(0);
+    expect(out.outstandingCents).toBe(0);
+  });
+
+  it("keeps sent and held apart in one list", () => {
+    const out = summariseReceivables(
+      [
+        invoice({ due_on: "2026-08-01" }),
+        invoice({ due_on: "2026-08-01", sent_at: null }),
+      ],
+      NOW,
+    );
+    expect(out.outstandingCents).toBe(48_400);
+    expect(out.overdueCount).toBe(1);
+    expect(out.unsentCents).toBe(48_400);
   });
 });
 

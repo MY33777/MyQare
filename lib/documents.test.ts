@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DOCUMENT_KIND_LABELS,
   KINDS_NEEDING_EXPIRY,
+  uploadDocument,
   MAX_DOCUMENT_BYTES,
   daysUntilExpiry,
   expiryState,
@@ -106,5 +107,107 @@ describe("daysUntilExpiry does not drift through the day", () => {
 
   it("still returns null when nothing expires", () => {
     expect(daysUntilExpiry(null)).toBeNull();
+  });
+});
+
+/*
+ * Uploading, and the two rules that were written down and never applied.
+ *
+ * The storage and database calls are faked because what is under test is the
+ * validation that runs BEFORE either of them — and, in the delete case, that a
+ * failed storage remove stops the row from being deleted.
+ */
+describe("uploadDocument validation", () => {
+  const pdf = () =>
+    new File([new Uint8Array([1, 2, 3])], "vog.pdf", { type: "application/pdf" });
+
+  const tomorrow = () => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() + 30);
+    return d.toISOString().slice(0, 10);
+  };
+
+  it.each(KINDS_NEEDING_EXPIRY)("refuses %s with no expiry date", async (kind) => {
+    const result = await uploadDocument({
+      freelancerId: "f1",
+      kind,
+      file: pdf(),
+      issuedOn: null,
+      expiresOn: null,
+    });
+
+    // The form has always SAID these need one. Nothing checked, so a VOG with a
+    // blank date was approved and then sat in the dossier as valid forever: the
+    // expiry cron matches on a day count and a null never matches.
+    expect(result).toEqual({ ok: false, reason: "expiry_required" });
+  });
+
+  it("refuses an expiry date that is not a date", async () => {
+    const result = await uploadDocument({
+      freelancerId: "f1",
+      kind: "vog",
+      file: pdf(),
+      issuedOn: null,
+      expiresOn: "volgend jaar",
+    });
+    expect(result).toEqual({ ok: false, reason: "expiry_invalid" });
+  });
+
+  it("refuses a document that has already lapsed", async () => {
+    const result = await uploadDocument({
+      freelancerId: "f1",
+      kind: "insurance",
+      file: pdf(),
+      issuedOn: null,
+      expiresOn: "2020-01-01",
+    });
+    expect(result).toEqual({ ok: false, reason: "expiry_past" });
+  });
+
+  it("lets a well-formed future date through to the storage call", async () => {
+    /*
+     * Reaching getSupabaseAdmin IS the assertion. There is no Supabase in a unit
+     * test, so it throws — and the date is what this test is about: it was not the
+     * thing that stopped the upload. Asserting the throw is honest about where
+     * the test stops, rather than mocking a client just to reach a return value
+     * nobody is checking.
+     */
+    await expect(
+      uploadDocument({
+        freelancerId: "f1",
+        kind: "vog",
+        file: pdf(),
+        issuedOn: null,
+        expiresOn: tomorrow(),
+      }),
+    ).rejects.toThrow(/Supabase admin client/);
+  });
+
+  it("does not demand an expiry date for a kind that has none", async () => {
+    // A diploma does not expire, so a blank date must reach storage rather than
+    // being refused. Same reasoning as the test above for why this is a throw.
+    await expect(
+      uploadDocument({
+        freelancerId: "f1",
+        kind: "diploma",
+        file: pdf(),
+        issuedOn: "2018-06-01",
+        expiresOn: null,
+      }),
+    ).rejects.toThrow(/Supabase admin client/);
+  });
+
+  it("still rejects the file itself before looking at any date", async () => {
+    const tooBig = new File([new Uint8Array(6 * 1024 * 1024)], "vog.pdf", {
+      type: "application/pdf",
+    });
+    const result = await uploadDocument({
+      freelancerId: "f1",
+      kind: "vog",
+      file: tooBig,
+      issuedOn: null,
+      expiresOn: null,
+    });
+    expect(result).toEqual({ ok: false, reason: "too_large" });
   });
 });

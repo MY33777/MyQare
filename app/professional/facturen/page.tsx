@@ -43,7 +43,9 @@ function Stat({
   label: string;
   value: string;
   hint?: string;
-  tone?: "danger" | "muted";
+  // "warn" is for something that needs the reader to act but is not a failure:
+   // an invoice waiting to be sent is theirs to send, not a client paying late.
+   tone?: "danger" | "warn" | "muted";
 }) {
   return (
     <div className="card p-4">
@@ -52,7 +54,13 @@ function Stat({
       </p>
       <p
         className="text-2xl font-bold tnum mt-1"
-        style={tone === "danger" ? { color: "var(--danger)" } : undefined}
+        style={
+          tone === "danger"
+            ? { color: "var(--danger)" }
+            : tone === "warn"
+              ? { color: "var(--warn)" }
+              : undefined
+        }
       >
         {value}
       </p>
@@ -265,6 +273,12 @@ export default async function FreelancerInvoicesPage({
           value={formatEuros(earnings.vatChargedCents)}
           hint="Draag je af, niet van jou"
         />
+        {/*
+          "Openstaand" now means sent and unpaid, which is what the word means to
+          the person reading it. Invoices still held for review used to be in this
+          figure and went red as "te laat" once their due date passed — for a
+          document the facility had never been sent. See summariseReceivables.
+        */}
         <Stat
           label="Openstaand"
           value={formatEuros(receivables.outstandingCents)}
@@ -275,6 +289,18 @@ export default async function FreelancerInvoicesPage({
           }
           tone={receivables.overdueCount > 0 ? "danger" : undefined}
         />
+        {receivables.unsentCount > 0 ? (
+          <Stat
+            label="Nog te versturen"
+            value={formatEuros(receivables.unsentCents)}
+            hint={
+              receivables.unsentCount === 1
+                ? "1 factuur wacht op jou"
+                : `${receivables.unsentCount} facturen wachten op jou`
+            }
+            tone="warn"
+          />
+        ) : null}
         <Stat
           label="Ingepland"
           value={formatEuros(earnings.bookedCents)}

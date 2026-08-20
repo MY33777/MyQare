@@ -81,10 +81,28 @@ export function summariseEarnings(
  * Kept separate because "unpaid" and "past due" are different questions and a
  * facility being within its 30-day term is not a problem worth flagging in red.
  */
+export type ReceivablesSummary = {
+  /** Sent, unpaid. Money somebody has actually been asked for. */
+  outstandingCents: number;
+  overdueCents: number;
+  overdueCount: number;
+  /** Numbered but never sent — waiting on the freelancer, not on the facility. */
+  unsentCents: number;
+  unsentCount: number;
+};
+
 export function summariseReceivables(
-  invoices: (InvoiceLike & { due_on: string })[],
+  /*
+   * sent_at is REQUIRED, deliberately.
+   *
+   * Optional would mean a caller that forgets to select the column gets
+   * `undefined`, which is neither null nor a timestamp — and whichever way this
+   * function then guessed, it would be guessing. Required makes the compiler ask
+   * the question at every call site instead.
+   */
+  invoices: (InvoiceLike & { due_on: string; sent_at: string | null })[],
   now = new Date(),
-): { outstandingCents: number; overdueCents: number; overdueCount: number } {
+): ReceivablesSummary {
   // Amsterdam calendar day: the UTC day is still yesterday just after local
   // midnight, which flags an invoice overdue a day early.
   const todayKey = amsterdamDateKey(now);
@@ -92,9 +110,35 @@ export function summariseReceivables(
   let outstanding = 0;
   let overdue = 0;
   let overdueCount = 0;
+  let unsent = 0;
+  let unsentCount = 0;
 
   for (const invoice of invoices) {
     if (invoice.paid_at) continue;
+
+    /*
+     * A held invoice is not a receivable.
+     *
+     * With auto_send off the invoice is created and numbered but deliberately not
+     * sent — the freelancer reviews it first. It was being counted as
+     * "Openstaand" and, once its due date passed, flagged "te laat" in red. The
+     * facility had never received it. Nobody was late; the invoice was sitting
+     * here waiting for a button to be pressed, and the screen was blaming the
+     * client for it.
+     *
+     * The facility's own list already excluded these (see
+     * app/zorginstelling/facturen/page.tsx) — so the two sides disagreed about
+     * whether a debt existed, which is the worse half of the bug.
+     *
+     * Counted separately rather than dropped, because it needs an action from the
+     * person reading this page and silence would not prompt one.
+     */
+    if (invoice.sent_at === null) {
+      unsent += invoice.total_cents;
+      unsentCount++;
+      continue;
+    }
+
     outstanding += invoice.total_cents;
     // String comparison is correct for ISO dates and avoids a timezone question
     // that has no right answer here — a due date is a calendar day, not an instant.
@@ -104,7 +148,13 @@ export function summariseReceivables(
     }
   }
 
-  return { outstandingCents: outstanding, overdueCents: overdue, overdueCount };
+  return {
+    outstandingCents: outstanding,
+    overdueCents: overdue,
+    overdueCount,
+    unsentCents: unsent,
+    unsentCount,
+  };
 }
 
 /**

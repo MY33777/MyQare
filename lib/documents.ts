@@ -66,7 +66,17 @@ export const KINDS_NEEDING_EXPIRY: DocumentKind[] = ["vog", "insurance", "certif
 
 export type UploadResult =
   | { ok: true; documentId: string }
-  | { ok: false; reason: "too_large" | "bad_type" | "no_file" | "unknown" };
+  | {
+      ok: false;
+      reason:
+        | "too_large"
+        | "bad_type"
+        | "no_file"
+        | "expiry_required"
+        | "expiry_invalid"
+        | "expiry_past"
+        | "unknown";
+    };
 
 export async function uploadDocument(input: {
   freelancerId: string;
@@ -82,6 +92,41 @@ export async function uploadDocument(input: {
 
   const extension = ALLOWED_TYPES[file.type];
   if (!extension) return { ok: false, reason: "bad_type" };
+
+  /*
+   * KINDS_NEEDING_EXPIRY, finally applied to something.
+   *
+   * It was declared here, tested here, and printed on the upload form as "Nodig
+   * voor VOG, Verzekering, Certificaat" — and nothing anywhere checked it. A VOG
+   * uploaded with the date left blank was accepted, approved, and then sat in the
+   * dossier as valid forever: the expiry cron matches on a day count and a null
+   * never matches, so it was never flagged, never chased, never expired.
+   *
+   * The dossier is what a facility hands an inspector. "Valid VOG" in it, backed
+   * by a document with no expiry date anyone ever recorded, is the exact claim
+   * this product exists to be able to make honestly. A rule shown to the user and
+   * enforced nowhere is worse than no rule: it reads as a guarantee.
+   */
+  if (KINDS_NEEDING_EXPIRY.includes(input.kind)) {
+    if (!input.expiresOn) return { ok: false, reason: "expiry_required" };
+
+    // A calendar day, compared as a string — same reason as everywhere else in
+    // this codebase that touches dates the user typed. See lib/timezone.ts.
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.expiresOn)) {
+      return { ok: false, reason: "expiry_invalid" };
+    }
+    const parsed = new Date(`${input.expiresOn}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) return { ok: false, reason: "expiry_invalid" };
+
+    /*
+     * Refused rather than accepted-and-flagged. An already-lapsed VOG uploaded
+     * today is not a document that needs chasing in three months; it is not
+     * evidence of anything, and letting it into the review queue spends a
+     * reviewer's attention to reach the same answer the form could have given
+     * instantly.
+     */
+    if (input.expiresOn <= amsterdamDateKey()) return { ok: false, reason: "expiry_past" };
+  }
 
   const admin = getSupabaseAdmin();
 
@@ -157,11 +202,37 @@ export async function deleteDocument(documentId: string, freelancerId: string): 
    */
   if (document.status === "approved") return false;
 
-  await admin.storage.from(DOCUMENT_BUCKET).remove([document.file_path]);
+  /*
+   * Storage first, and its result actually read.
+   *
+   * The error was discarded and the comment below then ASSERTED the object was
+   * gone. When the remove failed, the row was deleted anyway and the file stayed
+   * in the bucket with nothing pointing at it — a VOG or a passport photo,
+   * private, unreferenced, so no screen can show it, no reviewer can act on it
+   * and no owner can ask for it to be deleted, because as far as the database is
+   * concerned it does not exist. For an UAVG erasure request that is the one
+   * outcome that must not be possible.
+   *
+   * So a failed remove aborts the delete. The document stays visible and
+   * deletable, and the freelancer can try again — which is recoverable, unlike an
+   * orphan nobody can find.
+   */
+  const { error: removeError } = await admin.storage
+    .from(DOCUMENT_BUCKET)
+    .remove([document.file_path]);
+
+  if (removeError) {
+    console.error(
+      `[documents] could not remove ${document.file_path}: ${removeError.message}. ` +
+        "Row kept so the object stays reachable.",
+    );
+    return false;
+  }
+
   const { error } = await admin.from("documents").delete().eq("id", documentId);
-  // The storage object is already gone by this point, so a failure here leaves a
-  // row pointing at nothing. Reported so the caller can say so rather than
-  // showing a document that will 404 when opened.
+  // The storage object IS gone by this point, so a failure here leaves a row
+  // pointing at nothing. Reported so the caller can say so rather than showing a
+  // document that will 404 when opened.
   if (error) return false;
   return true;
 }

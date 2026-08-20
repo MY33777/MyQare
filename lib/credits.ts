@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { forEachPage } from "@/lib/pagination";
 
 /*
  * Reads and writes against the append-only credit ledger.
@@ -27,18 +28,59 @@ export function clampTopupCents(cents: number): number {
  * reuse it — the ledger's select policy already restricts a user to their own
  * rows, so this does not need the service role just to read.
  */
+/**
+ * How many ledger rows are fetched per round trip while summing a balance.
+ *
+ * Exported so the test can prove the paging actually loops rather than trusting
+ * that it would if the numbers were bigger.
+ */
+export const LEDGER_PAGE_SIZE = 1000;
+
 export async function creditBalanceCents(
   profileId: string,
   client?: SupabaseClient,
 ): Promise<number> {
   const supabase = client ?? getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("credit_ledger")
-    .select("delta_cents")
-    .eq("profile_id", profileId);
 
-  if (error || !data) return 0;
-  return data.reduce((sum, row) => sum + (row.delta_cents as number), 0);
+  /*
+   * Paged, because this select had no bound on it.
+   *
+   * PostgREST applies whatever `max-rows` the project is configured with, and
+   * hardening a Supabase project by setting it is a recommended, ordinary thing
+   * to do. The moment somebody does, this select starts returning the first N
+   * rows and the sum silently becomes a smaller number — with no error, on the
+   * balance that decides whether a freelancer can accept tonight's shift and how
+   * much of their own money we think they have.
+   *
+   * A balance that quietly goes wrong when an unrelated setting changes is not a
+   * balance. Ordered so the pages partition the rows deterministically; without
+   * an ORDER BY, OFFSET is free to return the same row twice across two pages,
+   * which on a SUM means counting a top-up twice.
+   */
+  let total = 0;
+
+  const complete = await forEachPage<{ delta_cents: number }>(
+    (from, to) =>
+      supabase
+        .from("credit_ledger")
+        .select("delta_cents")
+        .eq("profile_id", profileId)
+        .order("id", { ascending: true })
+        .range(from, to),
+    (rows) => {
+      for (const row of rows) total += row.delta_cents;
+    },
+    { pageSize: LEDGER_PAGE_SIZE, label: "credit_ledger" },
+  );
+
+  /*
+   * Zero on failure, as before. It is the safe direction for the two things this
+   * gates — accepting a shift and offering a top-up — because it refuses rather
+   * than over-credits. But a PARTIAL sum is not safe in that direction, so an
+   * incomplete read discards what it got rather than returning a balance that
+   * looks plausible and is short.
+   */
+  return complete ? total : 0;
 }
 
 export type LedgerReason =

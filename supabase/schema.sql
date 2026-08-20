@@ -142,60 +142,11 @@ as $$
   select coalesce((select role = 'staff' from profiles where id = auth.uid()), false);
 $$;
 
-/*
- * Does the current user hold an offer for this shift?
- *
- * Replaces the subquery inside shifts_select. Runs as owner, so reading
- * shift_offers here does not re-enter shift_offers_select.
- */
-create or replace function has_offer_for_shift(p_shift_id uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from shift_offers
-    where shift_id = p_shift_id and freelancer_id = auth.uid()
-  );
-$$;
 
-/*
- * Which organisation owns this shift?
- *
- * Replaces the subquery inside shift_offers_select. Returns an organisation id
- * for a shift id and nothing else — the caller already has to know the shift id,
- * and shift ids are uuids.
- */
-create or replace function shift_org(p_shift_id uuid)
-returns uuid
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select org_id from shifts where id = p_shift_id;
-$$;
 
-/*
- * Can the current user appoint admins?
- *
- * Parameterless, like is_staff(), and for the same reason: it answers a question
- * about the caller and cannot be pointed at anybody else.
- */
-create or replace function can_manage_admins()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from staff_permissions
-    where profile_id = auth.uid() and capability = 'manage_admins'
-  );
-$$;
+
+
+
 
 -- ============================================================================
 -- FREELANCERS
@@ -664,6 +615,56 @@ alter table rate_limit_hits enable row level security;
 
 -- ---------- organisations ----------
 
+/*
+ * DEFINED HERE, AFTER THE TABLES THEY READ.
+ *
+ * `create function ... language sql` validates its body at creation time
+ * (check_function_bodies is on by default), so a helper that reads shift_offers
+ * cannot be declared before shift_offers exists. These three sat with the other
+ * definer helpers near the top of the file, where profiles happens to already
+ * exist — and a fresh install died on the first of them with 42P01, taking the
+ * whole script with it because the SQL editor runs a paste as one transaction.
+ *
+ * npm run check:sql did not catch it: that parses grammar, and this is an
+ * ordering fault. supabase/sql.test.ts now checks it directly.
+ */
+
+/*
+ * Does the current user hold an offer for this shift?
+ *
+ * Replaces the subquery inside shifts_select. Runs as owner, so reading
+ * shift_offers here does not re-enter shift_offers_select.
+ */
+create or replace function has_offer_for_shift(p_shift_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from shift_offers
+    where shift_id = p_shift_id and freelancer_id = auth.uid()
+  );
+$$;
+
+/*
+ * Which organisation owns this shift?
+ *
+ * Replaces the subquery inside shift_offers_select. Returns an organisation id
+ * for a shift id and nothing else — the caller already has to know the shift id,
+ * and shift ids are uuids.
+ */
+create or replace function shift_org(p_shift_id uuid)
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select org_id from shifts where id = p_shift_id;
+$$;
+
 drop policy if exists organisations_select on organisations;
 create policy organisations_select on organisations for select
   using (
@@ -1087,6 +1088,25 @@ create table if not exists staff_permissions (
 );
 
 create index if not exists staff_permissions_profile_idx on staff_permissions(profile_id);
+
+/*
+ * Can the current user appoint admins?
+ *
+ * Parameterless, like is_staff(), and for the same reason: it answers a question
+ * about the caller and cannot be pointed at anybody else.
+ */
+create or replace function can_manage_admins()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from staff_permissions
+    where profile_id = auth.uid() and capability = 'manage_admins'
+  );
+$$;
 
 alter table staff_permissions enable row level security;
 

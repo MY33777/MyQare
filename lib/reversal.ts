@@ -69,17 +69,31 @@ export type RestoreDecision =
  * would credit a balance nobody paid for. The two are told apart by the key,
  * which is the only thing about the cause that survives into the ledger.
  */
-export function computeRestore(prior: PriorMovement[]): RestoreDecision {
-  const fromDisputes = prior.filter((row) => row.key.includes(":dispute:"));
-  if (fromDisputes.length === 0) return { act: false, reason: "nothing_was_reversed" };
+export function computeRestore(prior: PriorMovement[], disputeId: string): RestoreDecision {
+  /*
+   * THIS dispute's reversal, not every dispute's.
+   *
+   * Scoping only to ":dispute:" gave back the total of every open dispute on the
+   * payment the moment any one of them was won. Two disputes for €200 each, one
+   * won, and €400 came back — half of it for a chargeback still outstanding.
+   *
+   * Reachable because the key now carries the dispute id, which is what the
+   * previous version lacked.
+   */
+  const mine = prior.filter((row) => row.key.includes(`:dispute:${disputeId}:`));
+  if (mine.length === 0) return { act: false, reason: "nothing_was_reversed" };
 
-  // Restores are not tagged by cause, so they offset the dispute total directly —
-  // there is nothing else they could be undoing.
-  const restores = prior.filter((row) => row.key.startsWith("restored:"));
-  const outstanding = netReversed([...fromDisputes, ...restores]);
+  // The restore for this dispute, if an earlier delivery already made one.
+  const restores = prior.filter((row) => row.key === restoreKey(paymentOf(mine[0].key), disputeId));
+  const outstanding = netReversed([...mine, ...restores]);
 
   if (outstanding <= 0) return { act: false, reason: "already_restored" };
   return { act: true, deltaCents: outstanding };
+}
+
+/** Pulls the payment intent back out of a reversal key: reversal:<pi>:... */
+function paymentOf(key: string): string {
+  return key.split(":")[1] ?? "";
 }
 
 /** Net amount currently removed: reversals are negative, restores positive. */
@@ -96,8 +110,27 @@ function netReversed(prior: PriorMovement[]): number {
  * event collide on the unique index while a genuine second partial refund does
  * not.
  */
-export function reversalKey(paymentIntent: string, cause: "refund" | "dispute", cumulative: number) {
-  return `reversal:${paymentIntent}:${cause}:${cumulative}`;
+export function reversalKey(
+  paymentIntent: string,
+  cause: "refund" | "dispute",
+  cumulative: number,
+  /**
+   * The dispute's own id. Required for a dispute, absent for a refund.
+   *
+   * Without it, a charge disputed a SECOND time produced a byte-identical key to
+   * the first: a won dispute restores the credit, so netReversed returns to zero,
+   * so the cumulative amount is the same charge amount again. The insert then hit
+   * the unique index, recordLedgerEntry swallowed the 23505 as a redelivery, and
+   * the webhook returned 200 with `reversed` set — money Stripe had taken back,
+   * reported as taken back, still sitting on the balance.
+   *
+   * Refunds do not need it: Stripe's amount_refunded is cumulative and strictly
+   * increases, so each genuine refund already yields a distinct key.
+   */
+  causeId?: string,
+) {
+  const scope = cause === "dispute" && causeId ? `${cause}:${causeId}` : cause;
+  return `reversal:${paymentIntent}:${scope}:${cumulative}`;
 }
 
 /** The ledger key for a restore. Scoped to the dispute, so a second one restores again. */

@@ -156,3 +156,93 @@ describe("functions.sql", () => {
     }
   });
 });
+
+describe("schema.sql is executable top to bottom", () => {
+  const schema = read("schema.sql");
+
+  /*
+   * Ordering, which the parser cannot see.
+   *
+   * `create function ... language sql` validates its body when the function is
+   * created — check_function_bodies is on by default — so a helper that reads a
+   * table declared further down the file raises 42P01 and, because the SQL editor
+   * runs a paste as one transaction, takes the entire schema with it.
+   *
+   * That happened: migration 016's three definer helpers were folded in beside
+   * the existing ones near the top, where the only table they needed (profiles)
+   * already existed. Two of the three read tables defined hundreds of lines
+   * later. npm run check:sql passed throughout, correctly — it parses grammar.
+   *
+   * Third time a fresh install has been broken by something no automated check
+   * was looking at, which is why this one exists.
+   */
+  it("declares every function after the tables its body reads", () => {
+    const tableAt = new Map<string, number>();
+    for (const m of schema.matchAll(/create table if not exists (\w+)/g)) {
+      if (!tableAt.has(m[1])) tableAt.set(m[1], m.index ?? 0);
+    }
+
+    const problems: string[] = [];
+
+    /*
+     * Each body matched to its OWN dollar-quote tag.
+     *
+     * A pattern ending at the next `$$;` runs straight past a body delimited
+     * `$fn$`, swallowing everything up to the following function — which made
+     * this report a trigger function as reading credit_ledger. The delimiter is
+     * captured and required to close.
+     */
+    for (const fn of schema.matchAll(
+      /create or replace function (\w+)\([\s\S]*?as (\$\w*\$)([\s\S]*?)\2;/g,
+    )) {
+      const name = fn[1];
+      const block = fn[3];
+      const at = fn.index ?? 0;
+
+      for (const ref of block.matchAll(/\bfrom (\w+)\b/g)) {
+        const table = ref[1];
+        const declaredAt = tableAt.get(table);
+        if (declaredAt === undefined) continue; // not one of ours (auth.users etc)
+        if (declaredAt > at) {
+          problems.push(`${name}() reads ${table}, which is created ${declaredAt - at} chars later`);
+        }
+      }
+    }
+
+    expect(problems).toEqual([]);
+  });
+
+  it("declares every function before the policy that calls it", () => {
+    // A policy referencing a function that does not exist yet fails the same way.
+    const fnAt = new Map<string, number>();
+    for (const m of schema.matchAll(/create or replace function (\w+)\(/g)) {
+      if (!fnAt.has(m[1])) fnAt.set(m[1], m.index ?? 0);
+    }
+
+    const problems: string[] = [];
+
+    /*
+     * Each policy bounded by the next top-level statement.
+     *
+     * Matching the body as "everything up to `\n  );`" is greedy past any policy
+     * whose USING clause fits on one line — it swallowed six policies and blamed
+     * `availability_select` for calling a function it never mentions. Bounding on
+     * the next create/drop/alter/revoke keeps each body to itself.
+     */
+    for (const policy of schema.matchAll(
+      /create policy \w+ on \w+ for \w+([\s\S]*?)(?=\n(?:create|drop|alter|revoke|grant|comment)\s|\n\/\*|$)/g,
+    )) {
+      const at = policy.index ?? 0;
+      for (const [name, declaredAt] of fnAt) {
+        // Escaped for the STRING, not just the regex: in a template literal `\b`
+        // is a backspace character and `\(` is a bare paren, which produced
+        // /current_role_names*(/ — an unterminated group.
+        if (new RegExp(`\\b${name}\\s*\\(`).test(policy[1]) && declaredAt > at) {
+          problems.push(`a policy at ${at} calls ${name}(), declared at ${declaredAt}`);
+        }
+      }
+    }
+
+    expect(problems).toEqual([]);
+  });
+});

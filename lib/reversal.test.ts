@@ -20,13 +20,19 @@ const TOP_UP = 50_000; // €500
 const PI = "pi_X";
 
 /** Applies a decision the way the webhook does, returning the new prior list. */
+const DISPUTE = "dp_1";
+
 function apply(
   prior: PriorMovement[],
   cause: "refund" | "dispute",
   cumulative: number,
   deltaCents: number,
+  disputeId = DISPUTE,
 ): PriorMovement[] {
-  return [...prior, { deltaCents: -deltaCents, key: reversalKey(PI, cause, cumulative) }];
+  return [
+    ...prior,
+    { deltaCents: -deltaCents, key: reversalKey(PI, cause, cumulative, disputeId) },
+  ];
 }
 
 describe("partial refunds", () => {
@@ -79,7 +85,7 @@ describe("a partial refund followed by a dispute", () => {
 describe("winning a dispute", () => {
   it("gives back what the dispute took", () => {
     const prior = apply([], "dispute", TOP_UP, TOP_UP);
-    expect(computeRestore(prior)).toEqual({ act: true, deltaCents: TOP_UP });
+    expect(computeRestore(prior, DISPUTE)).toEqual({ act: true, deltaCents: TOP_UP });
   });
 
   it("does NOT give back a refund", () => {
@@ -91,20 +97,20 @@ describe("winning a dispute", () => {
     let prior = apply([], "refund", 5_000, 5_000);
     prior = apply(prior, "dispute", TOP_UP, 45_000);
 
-    expect(computeRestore(prior)).toEqual({ act: true, deltaCents: 45_000 });
+    expect(computeRestore(prior, DISPUTE)).toEqual({ act: true, deltaCents: 45_000 });
   });
 
   it("does nothing when only a refund happened", () => {
     const prior = apply([], "refund", 5_000, 5_000);
-    expect(computeRestore(prior)).toEqual({ act: false, reason: "nothing_was_reversed" });
+    expect(computeRestore(prior, DISPUTE)).toEqual({ act: false, reason: "nothing_was_reversed" });
   });
 
   it("does nothing on a redelivered close event", () => {
     const prior: PriorMovement[] = [
-      { deltaCents: -TOP_UP, key: reversalKey(PI, "dispute", TOP_UP) },
-      { deltaCents: TOP_UP, key: restoreKey(PI, "dp_1") },
+      { deltaCents: -TOP_UP, key: reversalKey(PI, "dispute", TOP_UP, DISPUTE) },
+      { deltaCents: TOP_UP, key: restoreKey(PI, DISPUTE) },
     ];
-    expect(computeRestore(prior)).toEqual({ act: false, reason: "already_restored" });
+    expect(computeRestore(prior, DISPUTE)).toEqual({ act: false, reason: "already_restored" });
   });
 });
 
@@ -117,8 +123,8 @@ describe("a refund AFTER a dispute was won", () => {
      * out of Stripe and the freelancer kept €500 of spendable balance.
      */
     const prior: PriorMovement[] = [
-      { deltaCents: -TOP_UP, key: reversalKey(PI, "dispute", TOP_UP) },
-      { deltaCents: TOP_UP, key: restoreKey(PI, "dp_1") },
+      { deltaCents: -TOP_UP, key: reversalKey(PI, "dispute", TOP_UP, DISPUTE) },
+      { deltaCents: TOP_UP, key: restoreKey(PI, DISPUTE) },
     ];
 
     const decision = computeReversal({ topUpCents: TOP_UP, reversibleCents: TOP_UP, prior });
@@ -129,7 +135,7 @@ describe("a refund AFTER a dispute was won", () => {
 describe("the keys", () => {
   it("distinguishes cause, so a win can give back only its own share", () => {
     expect(reversalKey(PI, "refund", 5_000)).toBe("reversal:pi_X:refund:5000");
-    expect(reversalKey(PI, "dispute", 50_000)).toBe("reversal:pi_X:dispute:50000");
+    expect(reversalKey(PI, "dispute", 50_000, "dp_1")).toBe("reversal:pi_X:dispute:dp_1:50000");
   });
 
   it("scopes a restore to one dispute, so a second dispute restores again", () => {
@@ -141,5 +147,53 @@ describe("the keys", () => {
       expect(key).not.toBe(PI);
       expect(key.startsWith(PI)).toBe(false);
     }
+  });
+});
+
+describe("a charge disputed twice", () => {
+  /*
+   * The round 7 critical. A won dispute restores the credit, so netReversed
+   * returns to zero and the next dispute recomputes the SAME cumulative amount.
+   * With the dispute id absent from the key, that produced a byte-identical
+   * string to the first dispute's row — still present, because the ledger is
+   * append-only. The insert hit the unique index, recordLedgerEntry swallowed the
+   * 23505 as a redelivery, and the webhook returned 200 with `reversed` set:
+   * money Stripe had taken back, reported as taken back, still spendable.
+   *
+   * The test file itself pinned the gap open. It asserted distinct RESTORE keys
+   * for dp_1 and dp_2 and never checked the reversal side.
+   */
+  it("produces a different key for the second dispute", () => {
+    expect(reversalKey(PI, "dispute", TOP_UP, "dp_1")).not.toBe(
+      reversalKey(PI, "dispute", TOP_UP, "dp_2"),
+    );
+  });
+
+  it("reverses again after the first was won", () => {
+    const prior: PriorMovement[] = [
+      { deltaCents: -TOP_UP, key: reversalKey(PI, "dispute", TOP_UP, "dp_1") },
+      { deltaCents: TOP_UP, key: restoreKey(PI, "dp_1") },
+    ];
+    expect(computeReversal({ topUpCents: TOP_UP, reversibleCents: TOP_UP, prior })).toEqual({
+      act: true,
+      deltaCents: TOP_UP,
+      cumulative: TOP_UP,
+    });
+  });
+
+  it("restores only the dispute that was won", () => {
+    // Two disputes of €200 each, both reversed. Winning one must give back €200,
+    // not €400 — the other chargeback is still outstanding.
+    const prior: PriorMovement[] = [
+      { deltaCents: -20_000, key: reversalKey(PI, "dispute", 20_000, "dp_1") },
+      { deltaCents: -20_000, key: reversalKey(PI, "dispute", 40_000, "dp_2") },
+    ];
+    expect(computeRestore(prior, "dp_1")).toEqual({ act: true, deltaCents: 20_000 });
+    expect(computeRestore(prior, "dp_2")).toEqual({ act: true, deltaCents: 20_000 });
+  });
+
+  it("says nothing was reversed for a dispute it has no row for", () => {
+    const prior = apply([], "dispute", TOP_UP, TOP_UP, "dp_1");
+    expect(computeRestore(prior, "dp_9")).toEqual({ act: false, reason: "nothing_was_reversed" });
   });
 });

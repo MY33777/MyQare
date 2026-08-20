@@ -190,6 +190,9 @@ async function reverseCharge(
    * survives into the ledger.
    */
   let cause: "refund" | "dispute" = "refund";
+  // The dispute's own id, so a second dispute on one charge cannot reuse the
+  // first one's ledger key. See reversalKey.
+  let causeId: string | undefined;
 
   if (event.type === "charge.refunded") {
     const charge = event.data.object as Stripe.Charge;
@@ -217,6 +220,7 @@ async function reverseCharge(
     }
 
     cause = "dispute";
+    causeId = dispute.id;
     paymentIntent =
       typeof dispute.payment_intent === "string"
         ? dispute.payment_intent
@@ -319,7 +323,7 @@ async function reverseCharge(
        * produces a different one and lands. Prefixed so it never collides with
        * the top-up's own row.
        */
-      stripePaymentIntent: reversalKey(paymentIntent, cause, decision.cumulative),
+      stripePaymentIntent: reversalKey(paymentIntent, cause, decision.cumulative, causeId),
       note:
         event.type === "charge.refunded"
           ? "Terugbetaling van een opwaardering"
@@ -378,6 +382,7 @@ async function restoreWonDispute(
 
   const decision = computeRestore(
     rows.map((row) => ({ deltaCents: row.delta_cents, key: row.stripe_payment_intent })),
+    dispute.id,
   );
 
   if (!decision.act) return { skipped: decision.reason };

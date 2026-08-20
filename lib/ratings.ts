@@ -90,3 +90,26 @@ export function clampScore(score: number): number {
   if (!Number.isFinite(score)) return BASELINE_SCORE;
   return Math.min(10, Math.max(0, Math.round(score)));
 }
+
+/**
+ * Turns rating_summary()'s two columns into the shape the pages render.
+ *
+ * The raw scores no longer leave the database — see migration 019, which stopped
+ * handing a freelancer the individual mark one named coordinator gave them for
+ * one specific night. So the shrinkage happens in SQL and this only adapts it.
+ *
+ * A null score means below PROVISIONAL_BELOW: too few opinions to publish, and
+ * few enough that a published figure could be inverted back to a single one.
+ */
+export function summaryFromRpc(
+  row: { rating_count: number | null; shrunk_score: number | string | null } | null,
+): RatingSummary {
+  const count = row?.rating_count ?? 0;
+  const raw = row?.shrunk_score;
+
+  if (raw === null || raw === undefined) {
+    return { score: BASELINE_SCORE, count, provisional: true };
+  }
+
+  return { score: Number(raw), count, provisional: false };
+}

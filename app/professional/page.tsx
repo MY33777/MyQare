@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { creditBalanceCents } from "@/lib/credits";
 import { formatEuros } from "@/lib/money";
 import { formatShiftWindow } from "@/lib/hours";
-import { summariseRatings } from "@/lib/ratings";
+import { summaryFromRpc } from "@/lib/ratings";
 
 export const metadata: Metadata = { title: "Overzicht" };
 
@@ -50,18 +50,22 @@ export default async function FreelancerDashboard() {
       .order("created_at", { ascending: false })
       .limit(10)
       .returns<OfferRow[]>(),
-    supabase
-      .from("ratings")
-      .select("score, assignments!inner(freelancer_id)")
-      .eq("direction", "facility_to_freelancer")
-      .eq("assignments.freelancer_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(20)
-      .returns<{ score: number }[]>(),
+    /*
+     * Through the function, not the rows.
+     *
+     * Reading individual scores meant a freelancer could ask for the mark on ONE
+     * assignment — one shift, one facility, one coordinator — which is what the
+     * rating form promises does not happen. rating_summary returns a count and a
+     * shrunk average and nothing that identifies anybody. See migration 019.
+     */
+    supabase.rpc("rating_summary", { p_freelancer_id: userId }).single<{
+      rating_count: number;
+      shrunk_score: number | string | null;
+    }>(),
     creditBalanceCents(userId),
   ]);
 
-  const rating = summariseRatings((ratingRows ?? []).map((row) => row.score));
+  const rating = summaryFromRpc(ratingRows);
 
   // Only offers whose shift is still open are actionable — a shift someone else
   // already claimed should not sit in the list looking available.

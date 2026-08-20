@@ -83,6 +83,21 @@ export default async function OfferDetailPage({
 
       {errorCode ? <FormMessage kind="error">{authErrorMessage(errorCode)}</FormMessage> : null}
 
+      {/*
+        The deadline, said out loud.
+
+        respond_by was fetched and used to disable the button, and shown nowhere.
+        A freelancer thinking one over had no way to know there was a clock on it
+        — they found out by coming back and being told the window had closed, on a
+        shift they had decided to take. Enforcing a deadline nobody was told about
+        is not a deadline, it is a trap.
+      */}
+      {shift.respond_by && !windowClosed && !offer.responded_at ? (
+        <FormMessage kind="warn">
+          Reageren kan tot {formatDateTime(shift.respond_by)}. Daarna vervalt dit aanbod.
+        </FormMessage>
+      ) : null}
+
       <div className="card p-6 space-y-4">
         <dl className="grid gap-4 sm:grid-cols-2">
           <div>
@@ -93,6 +108,14 @@ export default async function OfferDetailPage({
               {formatDateTime(shift.starts_at)} – {formatTime(shift.ends_at)}
             </dd>
           </div>
+          {shift.respond_by ? (
+            <div>
+              <dt className="text-sm" style={{ color: "var(--text-muted)" }}>
+                Reageren voor
+              </dt>
+              <dd className="font-semibold tnum">{formatDateTime(shift.respond_by)}</dd>
+            </div>
+          ) : null}
           <div>
             <dt className="text-sm" style={{ color: "var(--text-muted)" }}>
               Te declareren uren

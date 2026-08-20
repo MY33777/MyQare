@@ -46,15 +46,35 @@ export function AuthShell({
  * free text, so a crafted `?error=` cannot render arbitrary content into the
  * page — an unknown code falls back to a generic message.
  */
-export function FormMessage({ kind, children }: { kind: "error" | "ok"; children: React.ReactNode }) {
+/**
+ * A result banner.
+ *
+ * "warn" is for something the reader needs to act on that is not a failure — a
+ * deadline they have not missed yet. Rendering that in red says they did
+ * something wrong; rendering it in green says nothing needs attention.
+ */
+export function FormMessage({
+  kind,
+  children,
+}: {
+  kind: "error" | "ok" | "warn";
+  children: React.ReactNode;
+}) {
   const isError = kind === "error";
+  const isWarn = kind === "warn";
   return (
     <div
+      // Not an alert: a warning is information, and role="alert" interrupts a
+      // screen reader mid-sentence to deliver it.
       role={isError ? "alert" : "status"}
       className="mb-4 rounded-lg px-3 py-2 text-sm"
       style={{
-        background: isError ? "var(--danger-subtle)" : "var(--ok-subtle)",
-        color: isError ? "var(--danger)" : "var(--ok)",
+        background: isError
+          ? "var(--danger-subtle)"
+          : isWarn
+            ? "var(--warn-subtle)"
+            : "var(--ok-subtle)",
+        color: isError ? "var(--danger)" : isWarn ? "var(--warn)" : "var(--ok)",
       }}
     >
       {children}

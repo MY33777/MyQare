@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatEuros } from "@/lib/money";
 import { formatDate, formatShiftWindow } from "@/lib/hours";
 import { qualificationLabel } from "@/lib/qualifications";
-import { summariseRatings } from "@/lib/ratings";
+import { summaryFromRpc } from "@/lib/ratings";
 import {
   DOCUMENT_KIND_LABELS,
   documentUrl,
@@ -72,13 +72,14 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
           }[]
         >(),
       supabase
-        .from("ratings")
-        .select("score, assignments!inner(freelancer_id)")
-        .eq("direction", "facility_to_freelancer")
-        .eq("assignments.freelancer_id", id)
-        .order("created_at", { ascending: false })
-        .limit(20)
-        .returns<{ score: number }[]>(),
+        /*
+         * Through the function. Reading the rows gave this facility an average of
+         * only ITS OWN assignments — all RLS ever let it see — while presenting
+         * the number as the freelancer's standing. This is the figure everyone
+         * sees. See migration 019.
+         */
+        .rpc("rating_summary", { p_freelancer_id: id })
+        .single<{ rating_count: number; shrunk_score: number | string | null }>(),
       supabase
         .from("documents")
         .select("id, kind, file_path, expires_on, status")
@@ -89,7 +90,7 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
 
   if (!freelancer) notFound();
 
-  const rating = summariseRatings((ratingRows ?? []).map((row) => row.score));
+  const rating = summaryFromRpc(ratingRows);
   const hasWorkedHere = (assignments ?? []).length > 0;
 
   /*

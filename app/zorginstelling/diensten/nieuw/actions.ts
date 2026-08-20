@@ -43,6 +43,17 @@ export async function createShiftAction(formData: FormData) {
   if (!startsAt || !endsAt) redirect(`${NEW_SHIFT_PATH}?error=invalid_times`);
   if (new Date(endsAt) <= new Date(startsAt)) redirect(`${NEW_SHIFT_PATH}?error=end_before_start`);
 
+  /*
+   * And it has to be in the future.
+   *
+   * Only "ends after it starts" was checked, so a shift dated last Tuesday
+   * posted, emailed the whole pool, and rendered with an Aannemen button —
+   * accept_shift then refused it with "Deze dienst is al begonnen" after the
+   * freelancer had already decided to take it. A mistyped year does this, and
+   * everyone involved wastes their time on it.
+   */
+  if (new Date(startsAt) <= new Date()) redirect(`${NEW_SHIFT_PATH}?error=starts_in_past`);
+
   // parseEurosToCents returns null rather than 0 for unusable input, precisely so
   // a typo cannot become free work.
   if (rateCents === null || rateCents <= 0) redirect(`${NEW_SHIFT_PATH}?error=invalid_rate`);
@@ -59,6 +70,19 @@ export async function createShiftAction(formData: FormData) {
   // after the first.
   const respondByInput = String(formData.get("respond_by") ?? "").trim();
   const explicitRespondBy = respondByInput ? localInputToIso(respondByInput) : null;
+
+  /*
+   * A deadline after the shift begins is not a deadline.
+   *
+   * The value was copied onto every occurrence unvalidated, so one typo posted a
+   * whole series nobody could accept — accept_shift refuses a lapsed respond_by,
+   * and for a series the same absolute moment is already past for every shift
+   * after the first. Checked against the FIRST occurrence's start; later ones are
+   * later still.
+   */
+  if (explicitRespondBy && new Date(explicitRespondBy) >= new Date(startsAt)) {
+    redirect(`${NEW_SHIFT_PATH}?error=respond_by_after_start`);
+  }
 
   /*
    * Region defaults to the organisation's city. Editable, because a facility near

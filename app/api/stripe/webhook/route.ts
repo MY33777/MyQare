@@ -140,7 +140,23 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  if (event.type === "charge.refunded" || event.type === "charge.dispute.created") {
+  /*
+   * charge.dispute.updated is handled alongside created.
+   *
+   * An inquiry — status prefixed `warning_` — is skipped on creation because
+   * Stripe has withdrawn nothing. When one ESCALATES into a real chargeback,
+   * Stripe does not fire `created` again; it fires `updated` with the new
+   * status. Handling only `created` therefore meant every dispute that began as
+   * an inquiry reversed nothing, ever.
+   *
+   * Safe to handle both: reverseCharge derives its movement from the ledger, so
+   * a second event for a dispute already reversed computes zero.
+   */
+  if (
+    event.type === "charge.refunded" ||
+    event.type === "charge.dispute.created" ||
+    event.type === "charge.dispute.updated"
+  ) {
     try {
       const reversal = await reverseCharge(event);
       return NextResponse.json({ received: true, ...reversal });

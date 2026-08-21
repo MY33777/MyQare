@@ -62,7 +62,9 @@ export async function updateOrganisationAction(formData: FormData) {
  * name and KvK — and from then on the two of them ran separate products:
  * separate pools, separate shifts, two invoice series against one supplier, and
  * a compliance dossier split in half. Nothing detected it, and nothing could
- * merge it afterwards, because invoices carry ON DELETE RESTRICT on purpose.
+ * merge it afterwards, because invoices carry ON DELETE RESTRICT — which they
+ * only actually did from migration 025 onwards; this comment asserted it while
+ * the constraint said CASCADE.
  *
  * Joining by matching KvK alone would be the wrong control even though a KvK
  * number IS the organisation's legal identity: those numbers are public, so

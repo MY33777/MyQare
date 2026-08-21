@@ -84,7 +84,13 @@ create table if not exists profiles (
   -- No phone column, deliberately. It lives in profile_contact below, because
   -- profiles_select returns the WHOLE ROW to any facility with this person in its
   -- pool and a row policy cannot pin columns. See migrations 004 and 006.
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  /*
+   * Set by anonymise_account(). The row is KEPT because invoices, assignments
+   * and the compliance dossier reference it and must be retained; everything
+   * that identifies the person has been removed. See migration 025.
+   */
+  anonymised_at timestamptz
 );
 
 create index if not exists profiles_org_idx on profiles(org_id);
@@ -375,8 +381,11 @@ create table if not exists assignments (
   -- so the replacement freelancer's accept raised 23505 — which the UI could only
   -- report as "Er ging iets mis". See migration 008.
   shift_id uuid not null references shifts(id) on delete restrict,
-  freelancer_id uuid not null references freelancers(profile_id) on delete cascade,
-  org_id uuid not null references organisations(id) on delete cascade,
+  -- RESTRICT: an assignment is what an invoice and a compliance record hang off,
+  -- so it is evidence in its own right. See migration 025.
+  freelancer_id uuid not null references freelancers(profile_id) on delete restrict,
+  -- RESTRICT for the same reason as freelancer_id above. Migration 025.
+  org_id uuid not null references organisations(id) on delete restrict,
   -- Snapshotted from the shift at acceptance. If the facility later edits the
   -- shift, what was agreed does not move.
   agreed_rate_cents integer not null check (agreed_rate_cents > 0),
@@ -426,8 +435,17 @@ create table if not exists invoices (
   -- invoicing party here is the freelancer, not MyQare — we generate the
   -- document on their behalf.
   number text not null,
-  freelancer_id uuid not null references freelancers(profile_id) on delete cascade,
-  org_id uuid not null references organisations(id) on delete cascade,
+  /*
+   * RESTRICT, not cascade.
+   *
+   * This was cascade, so deleting the auth user removed seven years of invoices
+   * with it — art. 52 AWR requires them retained, and three comments in this
+   * codebase claimed this constraint already said restrict when it did not. See
+   * migration 025. Removing somebody now goes through anonymise_account().
+   */
+  freelancer_id uuid not null references freelancers(profile_id) on delete restrict,
+  -- RESTRICT for the same reason as freelancer_id above. Migration 025.
+  org_id uuid not null references organisations(id) on delete restrict,
   issued_on date not null default current_date,
   due_on date not null,
   minutes_billed integer not null,
@@ -523,7 +541,9 @@ create table if not exists invoice_settings (
 
 create table if not exists credit_ledger (
   id uuid primary key default gen_random_uuid(),
-  profile_id uuid not null references profiles(id) on delete cascade,
+  -- RESTRICT: the ledger is append-only precisely so the money trail cannot be
+  -- rewritten, and deleting it with the profile is rewriting it. Migration 025.
+  profile_id uuid not null references profiles(id) on delete restrict,
   -- Positive for top-ups and refunds, negative for fees.
   delta_cents integer not null,
   -- 'chargeback' is a reversal: a refund or a disputed payment pulled back by the
@@ -578,7 +598,15 @@ create table if not exists ratings (
   id uuid primary key default gen_random_uuid(),
   assignment_id uuid not null references assignments(id) on delete cascade,
   direction text not null check (direction in ('facility_to_freelancer', 'freelancer_to_facility')),
-  author_id uuid not null references profiles(id) on delete cascade,
+  /*
+   * NULLABLE, and set null on delete.
+   *
+   * This was "not null ... on delete cascade", so a freelancer leaving silently
+   * deleted every rating they had written and changed the score shown for
+   * facilities they worked with, months later, for a reason nobody could see.
+   * The rating is about the OTHER party; the author is metadata. See 025.
+   */
+  author_id uuid references profiles(id) on delete set null,
   score integer not null check (score between 0 and 10),
   dimensions jsonb not null default '{}'::jsonb,
   comment text,
@@ -1211,6 +1239,11 @@ create table if not exists staff_permissions (
     --                     Its own capability because approving a diploma implies
     --                     nothing about undoing somebody's booked work. See 020.
     'cancel_assignments',
+    -- anonymise_accounts  irreversibly remove a person on request: documents and
+    --                     contact details deleted, invoices and dossier kept as
+    --                     the law requires. Its own capability because approving
+    --                     a diploma implies nothing about this. See 025.
+    'anonymise_accounts',
     'manage_admins'
   )),
 
@@ -1291,7 +1324,10 @@ create table if not exists admin_audit_log (
     -- Not a permission change. It is here because it is the one act an admin can
     -- take that moves money between accounts, and it has to be attributable to a
     -- person afterwards. See migration 020.
-    'assignment_cancelled'
+    'assignment_cancelled',
+    -- The second irreversible act an admin can take against somebody else's
+    -- account. Who ran it has to be answerable afterwards. See migration 025.
+    'account_anonymised'
   )),
   capability text,
   note text,

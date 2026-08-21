@@ -20,7 +20,8 @@
 --
 -- Nothing detected it and nothing could merge it afterwards: assignments,
 -- invoices and compliance records all hang off org_id, and invoices deliberately
--- carry ON DELETE RESTRICT.
+-- carry ON DELETE RESTRICT. (They did not when this was written — see
+-- migration 025, which is what made that sentence true.)
 --
 -- ============================================================================
 -- Why an invite and not "join by KvK"

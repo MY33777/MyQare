@@ -183,7 +183,8 @@ export default function VoorwaardenPage() {
             "Je kunt je account op elk moment opzeggen" described a self-service
             flow that does not exist anywhere in the product — and it cannot be a
             simple delete: a Dutch invoice is retained seven years, so
-            invoices.freelancer_id has ON DELETE RESTRICT and deleting an account
+            invoices.freelancer_id now has ON DELETE RESTRICT (migration 025 — it was
+            CASCADE, so this comment was false until then) and deleting an account
             that has ever been invoiced fails outright. The AVG answer is
             anonymise-and-retain, which is a process, not a button.
 

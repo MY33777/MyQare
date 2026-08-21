@@ -29,6 +29,7 @@ import { capabilitiesFor, type Capability } from "@/lib/permissions";
 const NAV: { href: string; label: string; needs: Capability[] }[] = [
   { href: "/beheer", label: "Te verifiëren", needs: ["verify_organisations", "verify_big"] },
   { href: "/beheer/documenten", label: "Documenten", needs: ["review_documents"] },
+  { href: "/beheer/accounts", label: "Accounts", needs: ["anonymise_accounts"] },
   { href: "/beheer/beheerders", label: "Beheerders", needs: ["manage_admins"] },
 ];
 

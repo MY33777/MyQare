@@ -416,3 +416,95 @@ as $fn$
 $fn$;
 
 revoke all on function lookup_account_by_email(text) from public, anon, authenticated;
+
+
+/*
+ * Removes a person while keeping the records the law says must stay.
+ *
+ * Deleting the account outright now FAILS once anything has been invoiced —
+ * migration 025 made the person chain restrict — and that failure is correct.
+ * A Dutch invoice is retained seven years and the compliance dossier is what a
+ * facility leans on under the Wkkgz. The AVG answer for that case is
+ * anonymise-and-retain, which is what this does.
+ *
+ * One function rather than a runbook of eleven statements, because it has to be
+ * all-or-nothing: a half-anonymised account is worse than either end state — the
+ * person believes they are gone and their phone number is still stored.
+ */
+create or replace function anonymise_account(p_profile_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_role text;
+begin
+  select role into v_role from profiles where id = p_profile_id;
+
+  if v_role is null then
+    raise exception 'Geen account gevonden.' using errcode = 'P0002';
+  end if;
+
+  /*
+   * Staff are refused. A platform administrator is named in admin_audit_log
+   * against every permission they ever granted, and anonymising them turns that
+   * log into a record of decisions nobody made. Remove them as an admin first;
+   * the account then anonymises like any other.
+   */
+  if v_role = 'staff' then
+    raise exception 'Verwijder deze persoon eerst als beheerder.' using errcode = 'P0001';
+  end if;
+
+  -- Everything purely personal, with no evidentiary role.
+  delete from profile_contact where profile_id = p_profile_id;
+  delete from availability_blocks where freelancer_id = p_profile_id;
+  delete from pools where freelancer_id = p_profile_id;
+
+  /*
+   * Documents go. Their storage objects are removed by the caller before this
+   * runs — see lib/anonymise.ts. A VOG is the most sensitive thing this product
+   * holds and there is no retention obligation on OUR copy: the facility's duty
+   * is to have checked, which the dossier snapshot already records.
+   */
+  delete from documents where freelancer_id = p_profile_id;
+
+  -- Bank details and address. Issued invoices carry their own snapshot of what
+  -- was needed at the time.
+  delete from invoice_settings where profile_id = p_profile_id;
+
+  -- An offer that was never accepted says nothing about a working relationship.
+  delete from shift_offers
+  where freelancer_id = p_profile_id and response is distinct from 'accept';
+
+  /*
+   * The freelancers row is kept, because invoices and assignments reference it,
+   * but emptied of everything that describes a person.
+   */
+  update freelancers
+  set profession = '',
+      specialisations = '{}',
+      region = null,
+      region_codes = '{}',
+      bio = null,
+      kvk = null,
+      big_number = null,
+      big_verified_at = null,
+      big_checked_at = null,
+      big_check_note = null,
+      hourly_rate_min_cents = null
+  where profile_id = p_profile_id;
+
+  /*
+   * The name is replaced rather than blanked, so a retained invoice still reads
+   * as a document about somebody rather than about nothing. Not reversible, and
+   * not a pseudonym anybody can resolve.
+   */
+  update profiles
+  set full_name = 'Verwijderd account',
+      anonymised_at = now()
+  where id = p_profile_id;
+end;
+$fn$;
+
+revoke all on function anonymise_account(uuid) from public, anon, authenticated;

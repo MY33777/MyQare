@@ -96,6 +96,15 @@ const MESSAGES: Record<string, string> = {
   empty_export:
     "Er zijn geen facturen in die periode. Pas het datumbereik aan, of laat de " +
     "velden leeg om alles te exporteren.",
+  is_staff:
+    "Dit is een beheerdersaccount. Verwijder deze persoon eerst als beheerder, " +
+    "daarna kan het account worden geanonimiseerd.",
+  storage_failed:
+    "De documenten konden niet uit de opslag worden verwijderd, dus er is niets " +
+    "gewijzigd. Probeer het opnieuw — half anonimiseren is erger dan niet.",
+  account_not_found:
+    "Geen account gevonden met dit e-mailadres. Controleer het adres waarmee het " +
+    "verzoek is gedaan.",
   bad_kind: "Kies een geldig soort document.",
   finish_onboarding_first:
     "Rond eerst je profiel af. Zonder een compleet profiel kunnen we een betaling " +

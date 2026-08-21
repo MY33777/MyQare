@@ -123,7 +123,9 @@ export async function completeOnboardingAction(formData: FormData) {
      * running separate products: separate pools, separate shifts, two invoice
      * series against one supplier, and a compliance dossier split in half.
      * Nothing detected it and nothing could merge it afterwards, because
-     * invoices carry ON DELETE RESTRICT on purpose.
+     * invoices carry ON DELETE RESTRICT — which they only actually did from
+     * migration 025 onwards; this comment asserted it while the constraint said
+     * CASCADE.
      *
      * Matched on the signed-in address, which is the only identity we have that
      * the inviting coordinator also had. Lower-cased on both sides.

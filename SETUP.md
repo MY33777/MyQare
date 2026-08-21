@@ -187,7 +187,7 @@ select p.id, c.capability
 from profiles p
 cross join (values
   ('verify_organisations'), ('verify_big'), ('review_documents'),
-  ('cancel_assignments'), ('manage_admins')
+  ('cancel_assignments'), ('anonymise_accounts'), ('manage_admins')
 ) as c(capability)
 where p.id = (select id from auth.users where lower(email) = lower('you@example.com'))
 on conflict do nothing;
@@ -205,7 +205,7 @@ them from their organisation with no clean way back, so the panel refuses it too
 After that, every further change goes through `/beheer/beheerders` and lands in
 the audit log with a name and a timestamp.
 
-**The five capabilities:**
+**The six capabilities:**
 
 | Capability | What it allows |
 |---|---|
@@ -213,6 +213,7 @@ the audit log with a name and a timestamp.
 | `verify_big` | Record that a BIG number was checked against the register |
 | `review_documents` | Read and approve/reject every VOG, diploma, insurance and KvK extract on the platform |
 | `cancel_assignments` | Unwind a booked assignment on either party's behalf — refunds the fee, reopens the shift, and writes a line to the audit log |
+| `anonymise_accounts` | Honour a deletion request: removes documents, contact details and the profile, keeps invoices and the dossier. **Irreversible.** |
 | `manage_admins` | Appoint admins and set their rights — **including this one** |
 
 `manage_admins` is not a smaller grant than the others; it is a larger one.
@@ -279,6 +280,34 @@ having count(*) > 1;
 Coordinators invite colleagues from **Instellingen → Collega's**. The invite is
 claimed by whoever completes onboarding with that address; it carries no token,
 so a forwarded email gets somebody nothing unless they control the mailbox.
+
+## Account opzeggen
+
+The terms tell somebody to send a message, and this is what happens next. There
+is no self-service button, deliberately: once anything has been invoiced the
+account cannot be deleted at all, and pretending otherwise with a red button
+would be worse than saying so.
+
+**Deleting outright fails, and that is correct.** A Dutch invoice must be kept
+seven years (art. 52 AWR) and the compliance dossier is what a facility leans on
+under the Wkkgz. Migration 025 made the person chain `on delete restrict` so the
+database refuses. Before 025 those constraints were `cascade` — one
+`delete from auth.users` removed the invoices, the assignments and the whole
+credit ledger, silently, while three comments in the codebase claimed it could
+not. If your database predates 025, run it before honouring any request.
+
+**The AVG answer is anonymise-and-retain.** From /beheer, an admin holding
+`anonymise_accounts` runs it from the person page. It removes the documents from
+storage first, then the contact details, availability, pool memberships,
+invoice settings and unaccepted offers, empties the freelancer profile, replaces
+the name with "Verwijderd account", and finally deletes the auth account so the
+email address is free again. Invoices, assignments and compliance records stay,
+with the snapshot they were issued with.
+
+Staff accounts are refused. A platform administrator is named in
+`admin_audit_log` against every permission they granted, and anonymising them
+turns that log into a record of decisions nobody made — remove them as an admin
+first, then anonymise.
 
 ## Before a single real user
 

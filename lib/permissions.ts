@@ -17,6 +17,7 @@ export const CAPABILITIES = [
   "verify_big",
   "review_documents",
   "cancel_assignments",
+  "anonymise_accounts",
   "manage_admins",
 ] as const;
 
@@ -27,6 +28,7 @@ export const CAPABILITY_LABELS: Record<Capability, string> = {
   verify_big: "BIG-nummers controleren",
   review_documents: "Documenten beoordelen",
   cancel_assignments: "Diensten annuleren",
+  anonymise_accounts: "Accounts anonimiseren",
   manage_admins: "Beheerders benoemen",
 };
 
@@ -41,6 +43,10 @@ export const CAPABILITY_DESCRIPTIONS: Record<Capability, string> = {
     "Een aangenomen dienst namens een van beide partijen annuleren. Dit stort de " +
     "bemiddelingsvergoeding terug op het saldo van de zorgprofessional en zet de dienst " +
     "weer open. Elke annulering wordt vastgelegd in het logboek.",
+  anonymise_accounts:
+    "Een account op verzoek onherroepelijk anonimiseren: documenten, contactgegevens " +
+    "en profiel worden verwijderd, facturen en dossierrecords blijven bewaard zoals de " +
+    "wet vraagt. Dit kan niet worden teruggedraaid.",
   manage_admins:
     "Beheerders benoemen, hun rechten aanpassen en ze verwijderen — inclusief dit recht zelf. Wie dit heeft, kan zichzelf alles geven.",
 };
@@ -112,7 +118,14 @@ export type AuditAction =
    * freelancer's ledger and the facility loses its cover. When one of them asks
    * who decided that, the answer has to exist. See migration 020.
    */
-  | "assignment_cancelled";
+  | "assignment_cancelled"
+  /*
+   * The other irreversible one. It removes a person's documents and contact
+   * details permanently, and the two records it leaves behind — the invoices and
+   * the dossier — are the ones somebody may later ask about. Who ran it has to
+   * be answerable.
+   */
+  | "account_anonymised";
 
 /**
  * Records a change to who may do what.

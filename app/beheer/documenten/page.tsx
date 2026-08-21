@@ -199,9 +199,26 @@ export default async function ReviewDocumentsPage({
                   </SubmitButton>
                 </form>
 
+                {/*
+                  Behind a disclosure, so approving cannot discard a typed reason.
+
+                  The reason field sat open beside the Goedkeuren button. A
+                  reviewer who typed "naam komt niet overeen" and then mis-clicked
+                  approve lost the sentence AND approved the document — two
+                  separate wrong outcomes from one slip, on the queue that decides
+                  whether somebody may work. Opening the rejection path is now a
+                  deliberate act, which is what it should be.
+                */}
+                <details className="flex-1 min-w-64">
+                  <summary
+                    className="cursor-pointer text-sm font-semibold"
+                    style={{ color: "var(--danger)" }}
+                  >
+                    Afkeuren
+                  </summary>
                 <form
                   action={reviewDocumentAction}
-                  className="flex gap-2 items-end flex-1 min-w-64"
+                  className="flex gap-2 items-end mt-2"
                 >
                   <input type="hidden" name="document_id" value={document.id} />
                   <input type="hidden" name="status" value="rejected" />
@@ -224,9 +241,10 @@ export default async function ReviewDocumentsPage({
                     />
                   </div>
                   <SubmitButton className="btn btn-danger">
-                    Afkeuren
+                    Afkeuren met deze reden
                   </SubmitButton>
                 </form>
+                </details>
               </div>
             </div>
           ))}

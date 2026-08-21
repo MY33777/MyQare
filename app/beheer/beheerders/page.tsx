@@ -237,14 +237,52 @@ export default async function AdminsPage({
                           </p>
                         </div>
 
-                        <form action={setCapabilityAction}>
-                          <input type="hidden" name="profile_id" value={person.id} />
-                          <input type="hidden" name="capability" value={capability} />
-                          <input type="hidden" name="grant" value={has ? "false" : "true"} />
-                          <SubmitButton className={has ? "btn btn-secondary" : "btn btn-primary"}>
-                            {has ? "Intrekken" : "Geven"}
-                          </SubmitButton>
-                        </form>
+                        {/*
+                          Granting the dangerous one costs a second click.
+
+                          manage_admins is not a bigger version of the others — it
+                          is the one that grants every other capability, including
+                          itself, to anybody. Handing it out is therefore a larger
+                          decision than handing out all four of the rest, and it
+                          was the same single tap as "mag documenten bekijken".
+
+                          Only on GRANTING, and only for that one. Revoking is
+                          already guarded against leaving nobody able to appoint,
+                          and a confirmation in front of the harmless toggles is
+                          what teaches people to click through this one.
+                        */}
+                        {dangerous && !has ? (
+                          <details>
+                            <summary className="cursor-pointer text-sm font-semibold">
+                              Geven
+                            </summary>
+                            <p
+                              className="text-sm mt-2 mb-3 max-w-md"
+                              style={{ color: "var(--text-muted)" }}
+                            >
+                              {person.full_name} kan hiermee zichzelf en anderen elk recht geven,
+                              beheerders verwijderen, en dit recht doorgeven. Je kunt het daarna
+                              alleen nog intrekken zolang er iemand anders is die het óók heeft.
+                            </p>
+                            <form action={setCapabilityAction}>
+                              <input type="hidden" name="profile_id" value={person.id} />
+                              <input type="hidden" name="capability" value={capability} />
+                              <input type="hidden" name="grant" value="true" />
+                              <SubmitButton className="btn btn-primary">
+                                Ja, dit recht geven
+                              </SubmitButton>
+                            </form>
+                          </details>
+                        ) : (
+                          <form action={setCapabilityAction}>
+                            <input type="hidden" name="profile_id" value={person.id} />
+                            <input type="hidden" name="capability" value={capability} />
+                            <input type="hidden" name="grant" value={has ? "false" : "true"} />
+                            <SubmitButton className={has ? "btn btn-secondary" : "btn btn-primary"}>
+                              {has ? "Intrekken" : "Geven"}
+                            </SubmitButton>
+                          </form>
+                        )}
                       </div>
                     );
                   })}

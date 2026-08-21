@@ -90,8 +90,9 @@ export default async function BalancePage({
           Betaling ontvangen. Je saldo wordt binnen een paar seconden bijgewerkt.
         </FormMessage>
       ) : null}
+      {/* Cancelling a payment is a choice, not a failure. Red says otherwise. */}
       {params.topup === "cancelled" ? (
-        <FormMessage kind="error">Betaling geannuleerd. Er is niets afgeschreven.</FormMessage>
+        <FormMessage kind="warn">Betaling geannuleerd. Er is niets afgeschreven.</FormMessage>
       ) : null}
 
       <div className="card p-6 mb-6">

@@ -9,32 +9,69 @@
  */
 const MESSAGES: Record<string, string> = {
   invalid_credentials: "E-mailadres of wachtwoord is onjuist.",
-  email_not_confirmed: "Bevestig eerst je e-mailadres via de link die we je hebben gestuurd.",
-  email_taken: "Er bestaat al een account met dit e-mailadres.",
+  email_not_confirmed:
+    "Bevestig eerst je e-mailadres. We hebben je een link gestuurd — kijk ook even " +
+    "in je spam. Geen mail gekregen? Meld je opnieuw aan, dan sturen we een nieuwe.",
+  email_taken:
+    "Er bestaat al een account met dit e-mailadres. Log in, of vraag een nieuw " +
+    "wachtwoord aan als je het niet meer weet.",
   weak_password: "Kies een wachtwoord van minimaal 8 tekens.",
   passwords_differ: "De twee wachtwoorden zijn niet gelijk.",
   missing_fields: "Vul alle verplichte velden in.",
   invalid_email: "Dit e-mailadres lijkt niet te kloppen.",
-  rate_limited: "Te veel pogingen. Probeer het over een paar minuten opnieuw.",
+  /*
+    * Names the actual window. The limiter counts failures over FIFTEEN minutes
+    * (app/login/actions.ts), and "een paar minuten" sends somebody back after
+    * three to be refused again — which reads as the account being broken rather
+    * than as a limit that has not lifted yet.
+    */
+  rate_limited:
+    "Te veel mislukte pogingen. Wacht een kwartier en probeer het opnieuw, of " +
+    "stel je wachtwoord opnieuw in als je het niet meer weet.",
   invalid_role: "Kies of je een zorginstelling bent of zelfstandig zorgprofessional.",
   org_name_required: "Vul de naam van de zorginstelling in.",
-  not_verified: "Je account is nog niet geverifieerd. Je kunt daarom nog geen diensten plaatsen.",
+  not_verified:
+    "We controleren je KvK-inschrijving nog. Zodra dat rond is — meestal binnen één " +
+    "werkdag — kun je diensten plaatsen. Je kunt intussen wel je pool opbouwen.",
   missing_qualification: "Kies welke kwalificatie deze dienst vraagt.",
   invalid_times: "Vul een geldige begin- en eindtijd in.",
-  end_before_start: "De eindtijd ligt voor de begintijd.",
+  /*
+    * Names the night shift. A dienst from 23:00 to 07:00 is the most ordinary
+    * thing in this product, and "de eindtijd ligt voor de begintijd" reads as a
+    * refusal of it — the coordinator's mistake is almost always the DATE on the
+    * end field, not the time.
+    */
+  end_before_start:
+    "De eindtijd ligt vóór de begintijd. Loopt de dienst door na middernacht? " +
+    "Zet de einddatum dan op de volgende dag.",
   invalid_rate: "Vul een geldig uurtarief in, bijvoorbeeld 42,50.",
-  invalid_break: "De pauze moet een aantal minuten zijn.",
+  invalid_break: "Vul de pauze in als een aantal minuten, bijvoorbeeld 30. Geen pauze? Vul 0 in.",
   invalid_visibility: "Kies aan wie je deze dienst aanbiedt.",
-  shift_unavailable: "Deze dienst is niet meer beschikbaar.",
+  shift_unavailable:
+    "Iemand anders was net eerder. Bekijk het andere aanbod — er staat vaak meer open.",
   already_responded: "Je hebt al op deze dienst gereageerd.",
   not_offered: "Deze dienst is niet aan jou aangeboden.",
-  insufficient_credits: "Je saldo is te laag voor de bemiddelingsvergoeding. Waardeer eerst op.",
-  respond_window_closed: "De reactietermijn voor deze dienst is verstreken.",
-  invalid_minutes: "Vul een geldig aantal gewerkte minuten in.",
-  timesheet_missing: "Er zijn nog geen uren ingediend voor deze opdracht.",
-  vat_undetermined: "De btw-behandeling van deze zorgprofessional is nog niet vastgesteld.",
-  freelancer_not_found: "Geen MyQare-account gevonden met dit e-mailadres.",
-  not_a_freelancer: "Dit account is geen zelfstandig zorgprofessional.",
+  insufficient_credits:
+    "Je saldo is te laag voor de bemiddelingsvergoeding. Waardeer op bij Saldo — " +
+    "weigeren kan altijd, daar is geen saldo voor nodig.",
+  respond_window_closed:
+    "De reactietermijn voor deze dienst is verstreken. Hij staat niet meer open, " +
+    "maar er is geen enkel gevolg voor toekomstig aanbod.",
+  invalid_minutes:
+    "Vul de gewerkte tijd in als een aantal minuten, bijvoorbeeld 480 voor acht uur.",
+  timesheet_missing:
+    "Er zijn nog geen uren ingediend voor deze opdracht. De zorgprofessional dient " +
+    "ze in zodra de dienst voorbij is.",
+  vat_undetermined:
+    "De btw-behandeling van deze zorgprofessional is nog niet vastgesteld, dus we " +
+    "kunnen nog geen factuur opmaken. Zij vult dit aan bij Profiel; de uren blijven " +
+    "goedgekeurd staan.",
+  freelancer_not_found:
+    "Geen MyQare-account gevonden met dit e-mailadres. Controleer de spelling, of " +
+    "vraag de zorgprofessional zich eerst aan te melden — daarna kun je haar toevoegen.",
+  not_a_freelancer:
+    "Dit account is een zorginstelling, geen zelfstandig zorgprofessional. Een account " +
+    "kan maar één van beide zijn.",
   topup_too_low:
     "Het laagste bedrag is € 5,00. Daaronder kosten de transactiekosten meer dan " +
     "de opwaardering waard is.",
@@ -60,7 +97,14 @@ const MESSAGES: Record<string, string> = {
     "De reactietermijn ligt in het verleden. Kies een moment dat nog moet komen.",
   respond_by_after_start:
     "De reactietermijn ligt na het begin van de dienst. Kies een moment daarvóór.",
-  region_required: "Vul in welke regio je in werkt, anders zie je geen diensten van nieuwe instellingen.",
+  /*
+    * Written for the wrong person. This fires on the SHIFT form, where a
+    * coordinator is posting region-wide work — "welke regio je in werkt" is
+    * addressed to a freelancer and left them wondering whose region was meant.
+    */
+  region_required:
+    "Vul in voor welke regio deze dienst geldt. Zonder regio zouden we hem aan " +
+    "iedereen op het platform aanbieden.",
   shift_already_started:
     "Deze dienst is inmiddels begonnen en kan niet meer worden aangenomen.",
   shift_not_finished:

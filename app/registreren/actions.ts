@@ -3,7 +3,13 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { mapAuthError } from "@/lib/authErrors";
-import { bucketKey, checkRateLimit } from "@/lib/rateLimit";
+import {
+  bucketKey,
+  checkRateLimit,
+  clientIp,
+  isRateLimited,
+  recordRateLimitHit,
+} from "@/lib/rateLimit";
 import { absoluteUrl } from "@/lib/site";
 import { clearFormDraft, saveFormDraft } from "@/lib/formDraft";
 
@@ -87,5 +93,61 @@ export async function signUpAction(formData: FormData) {
   // to repopulate the next one on a shared workstation.
   await clearFormDraft(DRAFT_KEY, DRAFT_PATH);
 
-  redirect("/registreren/bevestig");
+  // The address rides along so /registreren/bevestig can name it and prefill the
+  // resend field. It is re-read from the form there, never trusted from the URL.
+  redirect(`/registreren/bevestig?email=${encodeURIComponent(email)}`);
+}
+
+/**
+ * Sends the confirmation mail again.
+ *
+ * /registreren/bevestig had no controls at all, so the two things that actually
+ * happen there — the mail lands in spam, or it never arrives — both ended with
+ * the person closing the tab. There was no route back into their own account.
+ *
+ * The address comes from the FORM, never from the query string. Somebody can
+ * arrive at that page with any ?email= they like, and a resend endpoint that
+ * mails whatever the URL says is a way to send mail from our domain to a
+ * stranger — a small open relay with our branding on it.
+ */
+export async function resendConfirmationAction(formData: FormData) {
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const back = (query: string) => `/registreren/bevestig?${query}`;
+
+  if (!email) redirect(back("error=missing_fields"));
+
+  /*
+   * Per address and per client, same shape as the password-reset form and for
+   * the same reason: this sends mail to an address the caller typed, so it is a
+   * way to fill somebody's inbox. Tripping it reports success rather than
+   * "rate_limited" — saying "you have asked too often" about an address confirms
+   * nothing about whether it exists, but saying it only SOMETIMES would.
+   */
+  const ip = await clientIp();
+  const blocked =
+    (await isRateLimited(bucketKey("resend", email), 5, 3600)) ||
+    (ip ? await isRateLimited(bucketKey("resend_ip", ip), 15, 3600) : false);
+
+  if (blocked) redirect(back(`sent=1&email=${encodeURIComponent(email)}`));
+
+  await recordRateLimitHit(bucketKey("resend", email));
+  if (ip) await recordRateLimitHit(bucketKey("resend_ip", ip));
+
+  const supabase = await createClient();
+
+  /*
+   * The error is deliberately not surfaced. Supabase refuses to resend for an
+   * address with no pending signup, and reporting that would turn this form into
+   * an account-enumeration oracle — the same reason the password-reset form
+   * always reports success. For a platform whose users are named healthcare
+   * workers, confirming who has an account is worth more to an attacker than it
+   * sounds.
+   */
+  await supabase.auth.resend({
+    type: "signup",
+    email,
+    options: { emailRedirectTo: absoluteUrl("/auth/callback?next=%2Fonboarding") },
+  });
+
+  redirect(back(`sent=1&email=${encodeURIComponent(email)}`));
 }

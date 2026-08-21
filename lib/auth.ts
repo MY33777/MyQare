@@ -295,3 +295,33 @@ export async function getRecoveryUser() {
 
   return user;
 }
+
+
+/**
+ * Just the role, for a caller that only needs to know where to send somebody.
+ *
+ * The public header needs this to point "Naar mijn account" at the right
+ * dashboard — it used to point every signed-in visitor at /professional, so a
+ * coordinator following it was redirected to /geen-toegang from our own
+ * homepage. Kept separate from requireProfile because this one must not redirect:
+ * it renders on pages a stranger is allowed to see.
+ *
+ * Returns null on any failure. A header that cannot answer "which dashboard"
+ * falls back to a link, not to an error page.
+ */
+export async function sessionRole(userId: string | null | undefined): Promise<Role | null> {
+  if (!userId) return null;
+
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", userId)
+      .maybeSingle<{ role: Role }>();
+
+    return data?.role ?? null;
+  } catch {
+    return null;
+  }
+}

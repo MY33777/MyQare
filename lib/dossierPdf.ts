@@ -34,6 +34,21 @@ function guardText(doc: PDFKit.PDFDocument): void {
 export type DossierEntry = {
   freelancerName: string;
   qualification: string;
+  /*
+   * The two numbers that make this document worth anything.
+   *
+   * The dossier is what a facility hands an inspector to show that the person who
+   * worked that night was an independent contractor and was qualified to do it —
+   * and it named neither the KvK registration that establishes the first nor the
+   * BIG number that establishes the second. A name and a job title prove neither.
+   *
+   * Nullable, and printed as "niet vastgelegd" when absent, because saying so is
+   * the honest answer and inventing a blank line is not: a facility reading its
+   * own dossier should be able to see which engagements are thin.
+   */
+  kvk: string | null;
+  bigNumber: string | null;
+  bigVerifiedAt: string | null;
   startsAt: string;
   endsAt: string;
   minutes: number;
@@ -150,6 +165,21 @@ export function renderDossierPdf(input: DossierInput): Promise<Buffer> {
         doc.text(`${label}: `, { continued: true }).font("Helvetica-Bold").text(value);
         doc.font("Helvetica");
       };
+
+      /*
+       * Identity and competence first, before the commercial detail. This is the
+       * order an inspector reads in: who was this, were they allowed to do it,
+       * and only then what it cost.
+       */
+      line("KvK-nummer", entry.kvk?.trim() || "niet vastgelegd");
+      line(
+        "BIG-nummer",
+        entry.bigNumber?.trim()
+          ? entry.bigVerifiedAt
+            ? `${entry.bigNumber} (gecontroleerd op ${formatDate(entry.bigVerifiedAt)})`
+            : `${entry.bigNumber} (nog niet gecontroleerd)`
+          : "niet van toepassing of niet vastgelegd",
+      );
 
       line("Dienst", `${formatDate(entry.startsAt)} · ${formatMinutes(entry.minutes)}`);
       line("Tarief", `${formatEuros(entry.rateCents)} per uur`);

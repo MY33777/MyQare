@@ -13,6 +13,9 @@ function entry(overrides: Partial<DossierEntry> = {}): DossierEntry {
   return {
     freelancerName: "J. de Vries",
     qualification: "Verzorgende IG",
+    kvk: "12345678",
+    bigNumber: "91234567890",
+    bigVerifiedAt: "2026-06-01",
     startsAt: "2026-08-14T05:00:00.000Z",
     endsAt: "2026-08-14T13:00:00.000Z",
     minutes: 450,
@@ -165,5 +168,57 @@ describe("the dossier says where it stops", () => {
   it("says nothing when it is complete", async () => {
     const text = extractPdfText(await renderDossierPdf(dossier([entry()])));
     expect(pdfContains(text, "afgekapt")).toBe(false);
+  });
+});
+
+describe("the dossier names who the person was and what they were allowed to do", () => {
+  /*
+   * The document's whole job is to show an inspector that the person who worked
+   * that night was an independent contractor and was qualified for it. It named
+   * neither — a name and a job title establish neither — while accept_shift had
+   * been capturing both on every acceptance since the snapshot existed.
+   */
+  it("prints the KvK number and the BIG number", async () => {
+    const text = extractPdfText(
+      await renderDossierPdf(
+        dossier([
+          entry({ kvk: "12345678", bigNumber: "91234567890", bigVerifiedAt: "2026-06-01" }),
+        ]),
+      ),
+    );
+
+    expect(pdfContains(text, "KvK-nummer: 12345678")).toBe(true);
+    expect(pdfContains(text, "91234567890")).toBe(true);
+  });
+
+  it("says a BIG number was checked, and when", async () => {
+    const text = extractPdfText(
+      await renderDossierPdf(
+        dossier([entry({ bigNumber: "91234567890", bigVerifiedAt: "2026-06-01" })]),
+      ),
+    );
+    expect(pdfContains(text, "gecontroleerd op")).toBe(true);
+  });
+
+  it("says so when a BIG number was never checked", async () => {
+    // A number nobody looked up is a string somebody typed, and the dossier has
+    // to be able to tell those apart.
+    const text = extractPdfText(
+      await renderDossierPdf(dossier([entry({ bigNumber: "91234567890", bigVerifiedAt: null })])),
+    );
+    expect(pdfContains(text, "nog niet gecontroleerd")).toBe(true);
+  });
+
+  it("says 'niet vastgelegd' rather than leaving a blank", async () => {
+    /*
+     * An older record predating the snapshot has no KvK to print. A blank line
+     * reads as "no number"; "niet vastgelegd" reads as "we did not capture this",
+     * and a facility reading its own dossier should be able to see which
+     * engagements are thin before an inspector does.
+     */
+    const text = extractPdfText(
+      await renderDossierPdf(dossier([entry({ kvk: null, bigNumber: null, bigVerifiedAt: null })])),
+    );
+    expect(pdfContains(text, "niet vastgelegd")).toBe(true);
   });
 });

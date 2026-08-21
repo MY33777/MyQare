@@ -50,7 +50,7 @@ export default async function TimesheetsPage({
   const params = await searchParams;
   const supabase = await createClient();
 
-  const { data: rows } = await supabase
+  const { data: rows, error: rowsError } = await supabase
     .from("assignments")
     .select(
       "id, agreed_rate_cents, agreed_break_minutes, status, profiles!assignments_freelancer_id_fkey(full_name), shifts(profession, department, starts_at, ends_at), timesheets(minutes_claimed, break_minutes, note, approved_at, disputed_at)",
@@ -75,6 +75,17 @@ export default async function TimesheetsPage({
   // Only rows where the freelancer has actually submitted something and it is
   // not yet approved need a decision. Everything else is noise on this page.
   const pending = (rows ?? []).filter((row) => row.timesheets && !row.timesheets.approved_at);
+
+  /*
+   * "Could not read" is not "nothing to do".
+   *
+   * The error was discarded, so a failed query became `?? []`, which fell
+   * through to "Niets te beoordelen" — the queue where unapproved hours wait
+   * telling a coordinator, in a calm empty state, that everybody had been paid.
+   * Hours nobody approves are hours nobody invoices and nobody is paid for, so
+   * this is the one screen where a false empty is expensive.
+   */
+  const queueFailed = Boolean(rowsError);
 
   /*
    * Completed work still awaiting this facility's rating. Kept on the same page as
@@ -140,7 +151,14 @@ export default async function TimesheetsPage({
         </FormMessage>
       ) : null}
 
-      {pending.length === 0 && toRate.length === 0 ? (
+      {queueFailed ? (
+        <FormMessage kind="error">
+          De wachtrij kon niet worden geladen, dus deze pagina is op dit moment niet compleet.
+          Ververs zo meteen — er staan mogelijk uren te wachten die hier nog niet bij staan.
+        </FormMessage>
+      ) : null}
+
+      {!queueFailed && pending.length === 0 && toRate.length === 0 ? (
         <EmptyState
           title="Niets te beoordelen"
           body="Zodra een zorgprofessional gewerkte uren indient, verschijnen ze hier."
@@ -159,7 +177,19 @@ export default async function TimesheetsPage({
               <div key={row.id} className="card p-5">
                 <div className="flex flex-wrap justify-between gap-4 mb-3">
                   <div>
-                    <p className="font-bold">{row.profiles?.full_name ?? "—"}</p>
+                    <p className="font-bold">
+                      {row.profiles?.full_name ?? "—"}
+                      {/*
+                        A timesheet that was sent back and resubmitted looked
+                        exactly like one arriving for the first time. So the
+                        coordinator who asked a question a week ago had no way to
+                        tell that this row IS the answer, and re-read it from
+                        scratch — or worse, asked the same question again.
+                      */}
+                      {sheet.disputed_at ? (
+                        <span className="badge badge-warn ml-2">Opnieuw ingediend</span>
+                      ) : null}
+                    </p>
                     <p className="text-sm" style={{ color: "var(--text-muted)" }}>
                       {qualificationLabel(row.shifts?.profession)}
                       {row.shifts?.department ? ` · ${row.shifts.department}` : ""}

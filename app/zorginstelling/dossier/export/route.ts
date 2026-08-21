@@ -108,7 +108,19 @@ type Snapshot = {
     billable_minutes?: number | null;
     hourly_rate_cents?: number | null;
   } | null;
-  freelancer?: { full_name?: string | null } | null;
+  freelancer?: {
+    full_name?: string | null;
+    /*
+     * Captured by accept_shift on every acceptance since the snapshot existed,
+     * and read by nothing until now — so the dossier, whose whole job is to show
+     * that the person was an independent contractor and was qualified, named
+     * neither the KvK registration that establishes the first nor the BIG number
+     * that establishes the second.
+     */
+    kvk?: string | null;
+    big_number?: string | null;
+    big_verified_at?: string | null;
+  } | null;
 };
 
   /*
@@ -142,6 +154,24 @@ type Snapshot = {
         freelancerName:
           snap?.freelancer?.full_name ?? assignment.profiles?.full_name ?? "Onbekend",
         qualification: qualificationLabel(snap?.shift?.qualification ?? shift.profession),
+        /*
+         * Snapshot only, with no live fallback — unlike the fields above.
+         *
+         * These are historical facts about the night the shift ran. A freelancer
+         * who registers with the KvK next year did not have a number then, and
+         * joining the live row would quietly backdate it onto an engagement it
+         * did not cover. An older record that predates the snapshot prints
+         * "niet vastgelegd", which is the true answer.
+         *
+         * accept_shift has captured kvk and big_number on every acceptance since
+         * the snapshot existed, and nothing read either — so the document whose
+         * job is to show the person was independent and qualified named neither
+         * the registration that establishes the first nor the number that
+         * establishes the second.
+         */
+        kvk: snap?.freelancer?.kvk ?? null,
+        bigNumber: snap?.freelancer?.big_number ?? null,
+        bigVerifiedAt: snap?.freelancer?.big_verified_at ?? null,
         startsAt,
         endsAt,
         minutes:

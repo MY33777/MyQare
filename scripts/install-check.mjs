@@ -22,14 +22,17 @@
  * that depends on real Supabase behaviour beyond those stubs is out of scope,
  * and the stubs are deliberately tiny so it is obvious what is being assumed.
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SUPA = join(ROOT, "supabase");
-const asJson = process.argv.includes("--json");
+// --out implies machine output: a caller asking for the report in a file is not
+// also going to want the human summary on stdout.
+const outFile = process.argv.find((arg) => arg.startsWith("--out="))?.slice("--out=".length);
+const asJson = process.argv.includes("--json") || Boolean(outFile);
 
 /**
  * The parts of Supabase the schema leans on.
@@ -297,7 +300,20 @@ const supersededSeen = results.filter(
 );
 
 if (asJson) {
-  console.log(JSON.stringify({ results, inventory, drift, broken: broken.length }));
+  /*
+   * --out writes the JSON to a file instead of stdout.
+   *
+   * The vitest side used to read this through execFileSync with a 32MB pipe
+   * buffer, from inside a worker fork. On Windows, under load, that combination
+   * hung and then killed the worker — the suite went red on the clock with the
+   * SQL itself perfectly fine, three times in one session. A test that fails at
+   * random teaches people to re-run until green, which is how a real failure gets
+   * waved through. A file has no buffer to fill.
+   */
+  const payload = JSON.stringify({ results, inventory, drift, broken: broken.length });
+
+  if (outFile) writeFileSync(outFile, payload, "utf8");
+  else console.log(payload);
 } else {
   console.log("Fresh install (schema.sql then functions.sql), on PostgreSQL:\n");
   for (const r of results) {

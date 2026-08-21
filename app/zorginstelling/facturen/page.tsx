@@ -20,6 +20,7 @@ type InvoiceRow = {
   total_cents: number;
   vat_treatment: string;
   paid_at: string | null;
+  pdf_path: string | null;
   profiles: { full_name: string } | null;
 };
 
@@ -45,7 +46,7 @@ export default async function FacilityInvoicesPage() {
   const { data: invoices } = await supabase
     .from("invoices")
     .select(
-      "id, number, issued_on, due_on, amount_ex_vat_cents, vat_amount_cents, total_cents, vat_treatment, paid_at, profiles!invoices_freelancer_id_fkey(full_name)",
+      "id, number, issued_on, due_on, amount_ex_vat_cents, vat_amount_cents, total_cents, vat_treatment, paid_at, pdf_path, profiles!invoices_freelancer_id_fkey(full_name)",
     )
     .eq("org_id", org.id)
     /*
@@ -146,16 +147,36 @@ export default async function FacilityInvoicesPage() {
                     </td>
                     <td className="tnum font-semibold">{formatEuros(invoice.total_cents)}</td>
                     <td>
-                      {invoice.paid_at ? (
-                        <span className="badge badge-ok">Betaald</span>
-                      ) : (
-                        <form action={markInvoicePaidAction}>
-                          <input type="hidden" name="invoice_id" value={invoice.id} />
-                          <SubmitButton className="btn btn-secondary">
-                            Markeer betaald
-                          </SubmitButton>
-                        </form>
-                      )}
+                      <div className="flex gap-2 justify-end">
+                        {/*
+                          The document itself, at last reachable from this side.
+
+                          app/zorginstelling/facturen/[id]/pdf/route.ts has existed
+                          the whole time and no screen ever linked to it, so the
+                          facility could see that an invoice existed and read its
+                          total, and could not obtain the thing their
+                          accounts-payable process actually needs. The freelancer's
+                          own list had the same gap until round 6.
+                        */}
+                        {invoice.pdf_path ? (
+                          <a
+                            className="btn btn-secondary"
+                            href={`/zorginstelling/facturen/${invoice.id}/pdf`}
+                          >
+                            Pdf
+                          </a>
+                        ) : null}
+                        {invoice.paid_at ? (
+                          <span className="badge badge-ok self-center">Betaald</span>
+                        ) : (
+                          <form action={markInvoicePaidAction}>
+                            <input type="hidden" name="invoice_id" value={invoice.id} />
+                            <SubmitButton className="btn btn-secondary">
+                              Markeer betaald
+                            </SubmitButton>
+                          </form>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

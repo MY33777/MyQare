@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync, readdirSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { documentAccessStatuses } from "@/lib/documents";
 
@@ -27,6 +28,43 @@ import { documentAccessStatuses } from "@/lib/documents";
  */
 
 const DIR = join(process.cwd(), "supabase");
+
+/**
+ * Runs one of the SQL scripts and reads back what it wrote.
+ *
+ * Through a FILE, not a pipe. These used to be read with execFileSync and a 32MB
+ * maxBuffer from inside a vitest worker fork, and on Windows under load that
+ * combination hung until the worker was killed — the suite went red on the clock
+ * three times in one session with the SQL perfectly fine. A test that fails at
+ * random teaches people to re-run until it is green, which is how a real failure
+ * eventually gets waved through.
+ *
+ * Exit 1 means the script found problems and its report is still valid — that is
+ * the case these tests exist to inspect. Exit 2 from check-sql means the PARSER
+ * is broken, and then nothing it says about our files means anything, so that one
+ * is raised rather than reported.
+ */
+function runScript(script: string, label: string): string {
+  const out = join(tmpdir(), `myqare-${label}-${process.pid}.json`);
+
+  try {
+    execFileSync("node", [script, `--out=${out}`], {
+      cwd: process.cwd(),
+      stdio: "ignore",
+    });
+  } catch (error) {
+    const failure = error as { status?: number };
+    if (failure.status === 2) throw new Error(`${script} could not run: its own sanity probes failed`);
+  }
+
+  try {
+    const body = readFileSync(out, "utf8");
+    unlinkSync(out);
+    return body;
+  } catch {
+    throw new Error(`${script} produced no report at ${out}`);
+  }
+}
 const read = (name: string) => readFileSync(join(DIR, name), "utf8");
 
 describe("every SQL file parses", () => {
@@ -41,22 +79,7 @@ describe("every SQL file parses", () => {
    * failure gets waved through.
    */
   it("passes PostgreSQL's own grammar", { timeout: 120_000 }, () => {
-    let output: string;
-
-    try {
-      output = execFileSync("node", ["scripts/check-sql.mjs", "--json"], {
-        cwd: process.cwd(),
-        encoding: "utf8",
-        maxBuffer: 32 * 1024 * 1024,
-      });
-    } catch (error) {
-      // Exit 1 means files failed to parse; the JSON is still on stdout. Exit 2
-      // means the parser's own sanity probes failed, and then nothing it says
-      // about our files means anything.
-      const failure = error as { status?: number; stdout?: string; stderr?: string };
-      if (failure.status === 2) throw new Error(`SQL parser is not working: ${failure.stderr}`);
-      output = failure.stdout ?? "";
-    }
+    const output = runScript("scripts/check-sql.mjs", "sql-parse");
 
     const report = JSON.parse(output) as {
       broken: number;
@@ -319,19 +342,9 @@ describe("the schema actually installs", () => {
      * table, not a policy's USING clause, not a function signature, not an index.
      * If it does, which database you have depends on when you set it up.
      */
-    const output = (() => {
-      try {
-        return execFileSync("node", ["scripts/install-check.mjs", "--json"], {
-          cwd: process.cwd(),
-          encoding: "utf8",
-          maxBuffer: 32 * 1024 * 1024,
-        });
-      } catch (error) {
-        return (error as { stdout?: string }).stdout ?? "";
-      }
-    })();
-
-    const report = JSON.parse(output) as { drift: string[] };
+    const report = JSON.parse(runScript("scripts/install-check.mjs", "install")) as {
+      drift: string[];
+    };
     expect(report.drift).toEqual([]);
   });
 });

@@ -84,7 +84,7 @@ export async function acceptShift(shiftId: string, freelancerId: string): Promis
 
   const { data: freelancer } = await admin
     .from("freelancers")
-    .select("profession, kvk, big_number, hourly_rate_min_cents, vat_exempt")
+    .select("profession, kvk, big_number, big_verified_at, hourly_rate_min_cents, vat_exempt")
     .eq("profile_id", freelancerId)
     .maybeSingle();
 
@@ -136,6 +136,14 @@ export async function acceptShift(shiftId: string, freelancerId: string): Promis
       profession: freelancer?.profession ?? null,
       kvk: freelancer?.kvk ?? null,
       big_number: freelancer?.big_number ?? null,
+      /*
+       * Whether the number was checked against the register, as at acceptance.
+       *
+       * A BIG number on its own is a string somebody typed. The dossier has to be
+       * able to say whether anyone looked it up, and it has to say what was true
+       * THEN — verifying it next year does not make last year's shift verified.
+       */
+      big_verified_at: freelancer?.big_verified_at ?? null,
       advertised_rate_cents: freelancer?.hourly_rate_min_cents ?? null,
       vat_exempt: freelancer?.vat_exempt ?? null,
     },

@@ -1,101 +1,49 @@
 import { describe, expect, it } from "vitest";
-import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync, unlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { documentAccessStatuses } from "@/lib/documents";
 
 /*
- * Two things nothing else in this project checks: that the SQL is executable at
- * all, and that a fresh install and an incremental one end up the same.
+ * Rules about the SQL that can be checked by reading it.
  *
- * Nothing in supabase/ has ever been run — there is no Supabase project — and two
- * consecutive audits found their worst defect in a file that could not have
- * executed. Migration 007 selected a column that does not exist, so the whole
- * migration would have rolled back with nothing applied. schema.sql itself was
- * later spliced by a script whose replacement string contained `$'`, which
- * JavaScript treats as "the portion after the match": it ate the delimiter,
- * duplicated 626 lines, and left an unterminated string literal in the one file
- * the README calls the source of truth.
+ * Nothing in supabase/ has ever been run against a real database — there is no
+ * Supabase project yet — and two consecutive audits found their worst defect in a
+ * file that could not have executed. Migration 007 selected a column that does
+ * not exist, so the whole migration would have rolled back with nothing applied.
+ * schema.sql itself was later spliced by a script whose replacement string
+ * contained `$'`, which JavaScript treats as "the portion after the match": it
+ * ate the delimiter, duplicated 626 lines, and left an unterminated string
+ * literal in the one file the README calls the source of truth.
  *
  * Typecheck, the rest of this suite and the production build all passed
  * throughout. None of them look at SQL.
  *
- * The parse itself runs in scripts/check-sql.mjs, out of process: it uses
- * PostgreSQL's own grammar compiled to WASM, and that module does not survive
- * vitest's module transform — it fails in a way indistinguishable from a syntax
- * error, which would have made this vacuously red and then deleted.
+ * WHAT RUNS WHERE
+ * ---------------
+ * Two checks actually EXECUTE the SQL — parsing it with PostgreSQL's own grammar
+ * and installing the whole schema into a PostgreSQL compiled to WASM. Both live
+ * in scripts/, run as their own processes, and are chained ahead of vitest in
+ * `npm test`:
+ *
+ *     npm run check:sql && npm run check:install && vitest run
+ *
+ * They used to run from inside this file via execFileSync. On Windows that killed
+ * the vitest worker about two runs in five, taking all thirteen tests here with
+ * it and reporting "1 failed | 372 passed" for a codebase where nothing was
+ * wrong. Raising the timeout did not help — the worker dies, it does not time out
+ * — and neither did writing the report to a file instead of a pipe. Spawning a
+ * subprocess from a test worker is the wrong shape, not a thing to tune.
+ *
+ * Nothing was lost by moving them: both scripts exit non-zero on failure and
+ * print a better report than an assertion could, and a red suite now means a real
+ * defect rather than a coin flip.
+ *
+ * Everything below is pure string work over the SQL, and stays here so it can be
+ * read next to the rules it checks.
  */
 
 const DIR = join(process.cwd(), "supabase");
-
-/**
- * Runs one of the SQL scripts and reads back what it wrote.
- *
- * Through a FILE, not a pipe. These used to be read with execFileSync and a 32MB
- * maxBuffer from inside a vitest worker fork, and on Windows under load that
- * combination hung until the worker was killed — the suite went red on the clock
- * three times in one session with the SQL perfectly fine. A test that fails at
- * random teaches people to re-run until it is green, which is how a real failure
- * eventually gets waved through.
- *
- * Exit 1 means the script found problems and its report is still valid — that is
- * the case these tests exist to inspect. Exit 2 from check-sql means the PARSER
- * is broken, and then nothing it says about our files means anything, so that one
- * is raised rather than reported.
- */
-function runScript(script: string, label: string): string {
-  const out = join(tmpdir(), `myqare-${label}-${process.pid}.json`);
-
-  try {
-    execFileSync("node", [script, `--out=${out}`], {
-      cwd: process.cwd(),
-      stdio: "ignore",
-    });
-  } catch (error) {
-    const failure = error as { status?: number };
-    if (failure.status === 2) throw new Error(`${script} could not run: its own sanity probes failed`);
-  }
-
-  try {
-    const body = readFileSync(out, "utf8");
-    unlinkSync(out);
-    return body;
-  } catch {
-    throw new Error(`${script} produced no report at ${out}`);
-  }
-}
 const read = (name: string) => readFileSync(join(DIR, name), "utf8");
-
-describe("every SQL file parses", () => {
-  /*
-   * 120s, not the 5s default.
-   *
-   * These three spawn a node subprocess — the SQL grammar in one case, a whole
-   * PostgreSQL compiled to WASM in the other two. On an unloaded machine they
-   * finish in two seconds; with anything else running they do not, and the test
-   * then fails on the clock rather than on the SQL. A suite that goes red at
-   * random teaches people to re-run it until it is green, which is how a real
-   * failure gets waved through.
-   */
-  it("passes PostgreSQL's own grammar", { timeout: 120_000 }, () => {
-    const output = runScript("scripts/check-sql.mjs", "sql-parse");
-
-    const report = JSON.parse(output) as {
-      broken: number;
-      results: { file: string; ok: boolean; problems: { line: number; message: string }[] }[];
-    };
-
-    // A glob that matched nothing would make this pass silently.
-    expect(report.results.length).toBeGreaterThanOrEqual(13);
-
-    const failures = report.results
-      .filter((r) => !r.ok)
-      .flatMap((r) => r.problems.map((p) => `${r.file}:${p.line} — ${p.message}`));
-
-    expect(failures).toEqual([]);
-  });
-});
 
 describe("schema.sql is internally coherent", () => {
   const schema = read("schema.sql");
@@ -281,84 +229,32 @@ describe("schema.sql is executable top to bottom", () => {
   });
 });
 
-describe("the schema actually installs", () => {
-  /*
-   * Not read — RUN. Against PostgreSQL 18 compiled to WASM, in process.
-   *
-   * Seven audits read this SQL and three found a defect that meant a fresh
-   * install created nothing: a column that does not exist, a file corrupted into
-   * an unterminated literal, and helper functions declared before the tables
-   * their bodies read. Every one was committed, and every one was invisible to
-   * typecheck, this suite and the production build.
-   *
-   * scripts/check-sql.mjs closed the syntactic subset and could not have caught
-   * any of the three. This can: it is the server, so the only opinion that
-   * matters is its own.
-   *
-   * Out of process for the same reason as the parser — the WASM module does not
-   * survive vitest's transform, and a failure there is indistinguishable from a
-   * real one.
-   */
-  it("creates every table, policy and function on an empty database", { timeout: 120_000 }, () => {
-    let output: string;
-
-    try {
-      output = execFileSync("node", ["scripts/install-check.mjs", "--json"], {
-        cwd: process.cwd(),
-        encoding: "utf8",
-        maxBuffer: 32 * 1024 * 1024,
-      });
-    } catch (error) {
-      output = (error as { stdout?: string }).stdout ?? "";
-    }
-
-    const report = JSON.parse(output) as {
-      broken: number;
-      drift: string[];
-      inventory: { tables: string[]; withoutRls?: string[] };
-      results: { file: string; problems: { line: number; message: string }[] }[];
-    };
-
-    const failures = report.results.flatMap((r) =>
-      r.problems.map((p) => `${r.file}:${p.line} — ${p.message}`),
-    );
-
-    // Only unexpected ones: two historical migrations refer to state a later
-    // migration removed, which is why SETUP.md says not to run that directory on
-    // a fresh database. install-check.mjs names them.
-    expect(report.broken, failures.join("\n")).toBe(0);
-
-    // A schema that installed nothing would otherwise pass everything above.
-    expect(report.inventory.tables.length).toBeGreaterThanOrEqual(19);
-    expect(report.inventory.withoutRls ?? []).toEqual([]);
-  });
-
-  it("ends up the same whether installed fresh or migrated", { timeout: 120_000 }, () => {
-    /*
-     * The drift question, answered by observation instead of by comparing files.
-     *
-     * schema.sql claims to be the current state. Replaying all eighteen
-     * migrations over a fresh install must therefore change nothing: not a
-     * table, not a policy's USING clause, not a function signature, not an index.
-     * If it does, which database you have depends on when you set it up.
-     */
-    const report = JSON.parse(runScript("scripts/install-check.mjs", "install")) as {
-      drift: string[];
-    };
-    expect(report.drift).toEqual([]);
-  });
-});
-
 /*
- * One rule split across SQL and TypeScript, checked against each other.
+ * THE TWO EXECUTION CHECKS DO NOT LIVE HERE ANY MORE.
  *
- * documents_select decides which facility may READ a document row; the pages
- * decide who gets a signed URL to the file itself. Those must agree, and they did
- * not: the policy filtered cancelled assignments out and the page counted every
- * assignment row, so a facility that booked somebody and cancelled still got
- * links to their VOG. documentUrl uses the service role, so the policy never got
- * a chance to catch the difference on the way past.
+ * "the schema actually installs" and "ends up the same whether installed fresh or
+ * migrated" both ran a node subprocess from inside a vitest worker fork — one to
+ * parse with PostgreSQL's grammar, one to boot a whole PostgreSQL compiled to
+ * WASM. On Windows that killed the worker about two runs in five, taking all
+ * thirteen tests in this file with it and reporting "1 failed | 372 passed" for a
+ * codebase where nothing was wrong.
+ *
+ * Raising the timeout did not help (the worker dies, it does not time out) and
+ * neither did writing the report to a file instead of a pipe. The honest
+ * conclusion is that spawning a subprocess from a test worker is the wrong shape,
+ * not that it needed tuning.
+ *
+ * So they run as their own processes, before vitest, chained into `npm test`:
+ *
+ *     npm run check:sql && npm run check:install && vitest run
+ *
+ * Nothing is lost. Both scripts exit non-zero on failure and print a far better
+ * report than an assertion could, `npm test` still covers everything, and a red
+ * suite now means a real defect rather than a coin flip. Everything left in this
+ * file is pure string work over the SQL and stays where it can be read next to
+ * the rules it checks.
  */
+
 describe("document access agrees between the policy and the code", () => {
   const policyOf = (name: string) => {
     const schema = read("schema.sql");

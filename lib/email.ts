@@ -365,3 +365,37 @@ export async function sendContactMessage(input: {
     footnote: "Beantwoord dit bericht door rechtstreeks naar het opgegeven adres te mailen.",
   });
 }
+
+/**
+ * Invites a colleague into an existing facility.
+ *
+ * The alternative to this email is the thing it replaces: the colleague signs up
+ * on their own and founds a duplicate organisation with the same name and KvK,
+ * after which the two of them run separate pools, separate shifts, two invoice
+ * series against one supplier, and half a compliance dossier each.
+ *
+ * Carries no token. The invite is claimed by whoever completes onboarding with
+ * this address, which is checked server-side against the invite row — so a
+ * forwarded email gets somebody nothing unless they also control the mailbox.
+ * That also means the link is safe to paste into a chat, which is how a
+ * coordinator will actually send it when our mail lands in spam.
+ */
+export async function sendColleagueInviteEmail(input: {
+  to: string;
+  facilityName: string;
+  invitedByName: string;
+}): Promise<boolean> {
+  return send({
+    to: input.to,
+    subject: `${input.invitedByName} nodigt je uit voor ${input.facilityName} op MyQare`,
+    heading: `Je bent uitgenodigd voor ${input.facilityName}`,
+    body: [
+      `${input.invitedByName} heeft je toegevoegd aan ${input.facilityName} op MyQare.`,
+      "Maak een account aan met dít e-mailadres, dan kom je automatisch bij dezelfde " +
+        "instelling terecht: dezelfde pool, dezelfde diensten, één factuurreeks en één dossier.",
+      "Meld je aan met een ander adres en je maakt per ongeluk een tweede instelling aan, " +
+        "die niets van deze deelt.",
+    ],
+    cta: { label: "Account aanmaken", href: absoluteUrl("/registreren") },
+  });
+}

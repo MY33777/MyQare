@@ -1312,6 +1312,59 @@ create policy admin_audit_log_select on admin_audit_log for select
 
 revoke insert, update, delete on admin_audit_log from authenticated, anon;
 
+
+-- ============================================================================
+-- ORGANISATION INVITES
+-- ============================================================================
+-- A facility is ONE organisation, and a second coordinator joins it rather than
+-- founding a duplicate. Onboarding used to insert a fresh organisations row for
+-- every facility_admin, so the colleague who takes the roster on Thursdays ended
+-- up running a separate product: separate pool, separate shifts, two invoice
+-- series against one supplier, and a compliance dossier split in half. See
+-- migration 024.
+--
+-- Joining by KvK alone would be the wrong control — KvK numbers are public, so
+-- anyone typing a hospital's number would land inside its pool and its
+-- freelancers' documents. Somebody already inside has to invite you.
+
+create table if not exists organisation_invites (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references organisations(id) on delete cascade,
+
+  -- Lower-cased on write. Whoever signs in with this address claims the invite,
+  -- so it is the whole of the identity check.
+  email text not null,
+
+  -- Kept even if that person later leaves: "who let them in" is the question
+  -- asked afterwards, and a null answer is not an answer.
+  invited_by uuid references profiles(id) on delete set null,
+  invited_by_name text,
+
+  created_at timestamptz not null default now(),
+  accepted_at timestamptz,
+
+  -- One open invite per address per organisation, so a second send updates
+  -- rather than leaving a forgotten duplicate behind a revoke.
+  unique (org_id, email)
+);
+
+create index if not exists organisation_invites_email_idx on organisation_invites(lower(email));
+
+alter table organisation_invites enable row level security;
+
+/*
+ * Readable by the organisation it belongs to, so a coordinator can see who has
+ * been invited and not yet joined. NOT readable by the invitee before they join:
+ * they have no profile scoped to this org, and "this address was invited
+ * somewhere" is itself worth not publishing. They learn about it from the email
+ * and from onboarding, both of which run with the service role.
+ */
+drop policy if exists organisation_invites_select on organisation_invites;
+create policy organisation_invites_select on organisation_invites for select
+  using (org_id = current_org_id() or is_staff());
+
+revoke insert, update, delete on organisation_invites from authenticated, anon;
+
 -- ============================================================================
 -- NO CLIENT WRITES AT ALL (migration 005)
 -- ============================================================================

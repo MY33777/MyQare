@@ -29,6 +29,15 @@ const MESSAGES: Record<string, string> = {
     "Te veel mislukte pogingen. Wacht een kwartier en probeer het opnieuw, of " +
     "stel je wachtwoord opnieuw in als je het niet meer weet.",
   invalid_role: "Kies of je een zorginstelling bent of zelfstandig zorgprofessional.",
+  already_colleague: "Deze collega heeft al toegang tot deze instelling.",
+  account_exists_elsewhere:
+    "Er bestaat al een MyQare-account met dit e-mailadres, bij een andere instelling " +
+    "of als zorgprofessional. Een account kan maar bij één instelling horen — vraag " +
+    "je collega een account met een werkadres aan te maken.",
+  org_already_registered:
+    "Er bestaat al een MyQare-account voor deze KvK-inschrijving. Vraag een collega " +
+    "die al toegang heeft om je uit te nodigen — dan werken jullie in dezelfde pool, " +
+    "met één factuurreeks en één dossier.",
   org_name_required: "Vul de naam van de zorginstelling in.",
   not_verified:
     "We controleren je KvK-inschrijving nog. Zodra dat rond is — meestal binnen één " +

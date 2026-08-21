@@ -114,6 +114,62 @@ export async function completeOnboardingAction(formData: FormData) {
   let orgId: string | null = null;
 
   if (role === "facility_admin") {
+    /*
+     * An invite from somebody already inside, first.
+     *
+     * Onboarding used to insert a fresh organisations row every single time, so
+     * the second coordinator at the same care home founded a duplicate facility
+     * with the same name and KvK — and from that moment the two of them were
+     * running separate products: separate pools, separate shifts, two invoice
+     * series against one supplier, and a compliance dossier split in half.
+     * Nothing detected it and nothing could merge it afterwards, because
+     * invoices carry ON DELETE RESTRICT on purpose.
+     *
+     * Matched on the signed-in address, which is the only identity we have that
+     * the inviting coordinator also had. Lower-cased on both sides.
+     */
+    const email = (user.email ?? "").trim().toLowerCase();
+
+    const { data: invite } = email
+      ? await admin
+          .from("organisation_invites")
+          .select("id, org_id")
+          .eq("email", email)
+          .is("accepted_at", null)
+          .maybeSingle<{ id: string; org_id: string }>()
+      : { data: null };
+
+    if (invite) {
+      orgId = invite.org_id;
+
+      // Marked used rather than deleted: "who let them in, and when" is the
+      // question asked afterwards, and a deleted row cannot answer it.
+      await admin
+        .from("organisation_invites")
+        .update({ accepted_at: new Date().toISOString() })
+        .eq("id", invite.id);
+    }
+
+    /*
+     * No invite, but the KvK is already registered: refuse rather than duplicate.
+     *
+     * Joining automatically on a matching KvK would be the wrong control even
+     * though a KvK number IS the organisation's legal identity — the numbers are
+     * public, so anyone typing a hospital's number would land inside its pool,
+     * its freelancers' document metadata and its invoices.
+     */
+    if (!orgId && kvk) {
+      const { data: existing } = await admin
+        .from("organisations")
+        .select("id")
+        .eq("kvk", kvk)
+        .maybeSingle<{ id: string }>();
+
+      if (existing) redirect("/onboarding?error=org_already_registered");
+    }
+  }
+
+  if (role === "facility_admin" && !orgId) {
     const { data: org, error: orgError } = await admin
       .from("organisations")
       .insert({

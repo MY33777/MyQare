@@ -253,6 +253,33 @@ the seeded coordinator in two browsers, and do all of it:
 Then set a freelancer's `auto_send` off and repeat 3–5: the invoice should hold,
 stay invisible to the facility, and go out only when released.
 
+## Duplicate facilities
+
+Onboarding used to create a fresh organisation for every facility_admin, so the
+second coordinator at a care home founded a duplicate with the same name and KvK
+— separate pool, separate shifts, two invoice series against one supplier, half a
+compliance dossier each. Migration 024 stops new ones: a matching KvK is refused,
+and joining requires an invite from somebody already inside.
+
+It does **not** merge the ones that exist, and deliberately so — merging means
+rewriting org_id on assignments, shifts, pools, invoices and compliance records,
+and an invoice is a financial record whose org_id is part of what it attests.
+That is a decision for a human with the two facilities in front of them.
+
+Check for them before going live, while it is cheapest:
+
+```sql
+select kvk, count(*), array_agg(name), array_agg(id)
+from organisations
+where kvk is not null
+group by kvk
+having count(*) > 1;
+```
+
+Coordinators invite colleagues from **Instellingen → Collega's**. The invite is
+claimed by whoever completes onboarding with that address; it carries no token,
+so a forwarded email gets somebody nothing unless they control the mailbox.
+
 ## Before a single real user
 
 - Legal review of `/voorwaarden`, `/privacy` and the modelovereenkomst. All three

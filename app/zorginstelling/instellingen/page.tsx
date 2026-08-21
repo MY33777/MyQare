@@ -5,7 +5,11 @@ import { authErrorMessage } from "@/lib/authErrors";
 import { requireFacilityAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/hours";
-import { updateOrganisationAction } from "./actions";
+import {
+  inviteColleagueAction,
+  revokeInviteAction,
+  updateOrganisationAction,
+} from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Instellingen" };
@@ -13,17 +17,41 @@ export const metadata: Metadata = { title: "Instellingen" };
 export default async function OrganisationSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; saved?: string }>;
+  searchParams: Promise<{ error?: string; saved?: string; invited?: string; revoked?: string }>;
 }) {
   const { org } = await requireFacilityAdmin("/zorginstelling/instellingen");
   const params = await searchParams;
   const supabase = await createClient();
 
-  const { data: full } = await supabase
+  /*
+   * Who else works here, and who has been invited and not yet joined.
+   *
+   * A facility is one organisation, and until migration 024 the second
+   * coordinator founded a duplicate instead of joining — separate pool,
+   * separate shifts, two invoice series, half a dossier each. This is the screen
+   * where that is prevented, so it has to show the current state of it.
+   */
+  const [{ data: colleagues }, { data: invites }, { data: full }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("id, full_name")
+      .eq("org_id", org.id)
+      .eq("role", "facility_admin")
+      .order("created_at", { ascending: true })
+      .returns<{ id: string; full_name: string }[]>(),
+    supabase
+      .from("organisation_invites")
+      .select("id, email, invited_by_name, created_at")
+      .eq("org_id", org.id)
+      .is("accepted_at", null)
+      .order("created_at", { ascending: false })
+      .returns<{ id: string; email: string; invited_by_name: string | null; created_at: string }[]>(),
+    supabase
     .from("organisations")
     .select("address_line, postcode, city")
     .eq("id", org.id)
-    .maybeSingle<{ address_line: string | null; postcode: string | null; city: string | null }>();
+    .maybeSingle<{ address_line: string | null; postcode: string | null; city: string | null }>(),
+  ]);
 
   return (
     <div className="max-w-2xl">
@@ -33,6 +61,24 @@ export default async function OrganisationSettingsPage({
       />
 
       {params.saved ? <FormMessage kind="ok">Opgeslagen.</FormMessage> : null}
+      {params.invited === "1" ? (
+        <FormMessage kind="ok">
+          Uitnodiging verstuurd. Je collega komt bij deze instelling terecht zodra ze zich met dat
+          e-mailadres aanmeldt.
+        </FormMessage>
+      ) : null}
+      {params.invited === "nomail" ? (
+        /*
+          The invite exists either way — it is claimed on the address, not on a
+          link — so a mail provider having a bad afternoon must not lose it. Said
+          plainly, because the coordinator is the only one who can pass it on.
+        */
+        <FormMessage kind="warn">
+          De uitnodiging staat klaar, maar de e-mail kon niet worden verstuurd. Vraag je collega
+          zich aan te melden met dat adres, dan komt ze automatisch hier terecht.
+        </FormMessage>
+      ) : null}
+      {params.revoked ? <FormMessage kind="ok">Uitnodiging ingetrokken.</FormMessage> : null}
       {params.error ? <FormMessage kind="error">{authErrorMessage(params.error)}</FormMessage> : null}
 
       {!org.billing_email ? (
@@ -112,6 +158,57 @@ export default async function OrganisationSettingsPage({
           Opslaan
         </SubmitButton>
       </form>
+
+      <div className="card p-6 mt-6">
+        <h2 className="font-bold mb-1">Collega&apos;s</h2>
+        <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
+          Nodig hier iedereen uit die diensten plaatst of uren goedkeurt. Meldt een collega zich op
+          eigen houtje aan, dan maakt ze een tweede instelling aan die jullie pool, diensten,
+          facturen en dossier niet deelt — en dat is achteraf niet meer samen te voegen.
+        </p>
+
+        <ul className="text-sm mb-4">
+          {(colleagues ?? []).map((person) => (
+            <li key={person.id} className="py-1">
+              {person.full_name || "—"}
+            </li>
+          ))}
+        </ul>
+
+        {(invites ?? []).length > 0 ? (
+          <div className="mb-4">
+            <p className="text-sm font-semibold mb-2">Uitgenodigd, nog niet aangemeld</p>
+            <ul className="text-sm">
+              {(invites ?? []).map((invite) => (
+                <li key={invite.id} className="flex flex-wrap items-center justify-between gap-2 py-1">
+                  <span style={{ color: "var(--text-muted)" }}>{invite.email}</span>
+                  <form action={revokeInviteAction}>
+                    <input type="hidden" name="invite_id" value={invite.id} />
+                    <SubmitButton className="btn btn-secondary">Intrekken</SubmitButton>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <form action={inviteColleagueAction} className="flex flex-wrap gap-3 items-end">
+          <div className="flex-1 min-w-64">
+            <label className="label" htmlFor="invite_email">
+              E-mailadres van je collega
+            </label>
+            <input
+              className="input"
+              id="invite_email"
+              name="email"
+              type="email"
+              autoComplete="off"
+              required
+            />
+          </div>
+          <SubmitButton className="btn btn-primary">Uitnodigen</SubmitButton>
+        </form>
+      </div>
 
       <div className="card p-6 mt-6">
         <h2 className="font-bold mb-3">Verificatie</h2>

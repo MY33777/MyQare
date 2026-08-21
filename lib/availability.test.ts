@@ -3,7 +3,6 @@ import {
   blockCoversDate,
   isBlockedForShift,
   qualificationMatches,
-  regionMatches,
   shiftDateKey,
   type AvailabilityBlock,
 } from "@/lib/availability";
@@ -77,50 +76,6 @@ describe("isBlockedForShift", () => {
 
     const blocked15th = [block("2026-08-15", "2026-08-15")];
     expect(isBlockedForShift(blocked15th, "2026-08-14T21:00:00Z")).toBe(false);
-  });
-});
-
-describe("regionMatches", () => {
-  it("matches identical regions", () => {
-    expect(regionMatches("Rotterdam", "Rotterdam")).toBe(true);
-  });
-
-  it("is case and whitespace insensitive", () => {
-    expect(regionMatches("  ROTTERDAM ", "rotterdam")).toBe(true);
-  });
-
-  /*
-   * Free text on both sides, so equality would match almost nothing in practice —
-   * facilities write "Rotterdam" and freelancers write "Rotterdam-Rijnmond".
-   */
-  it("matches when either string contains the other", () => {
-    expect(regionMatches("Rotterdam", "Rotterdam-Rijnmond")).toBe(true);
-    expect(regionMatches("Rotterdam-Rijnmond", "Rotterdam")).toBe(true);
-  });
-
-  it("does not match unrelated regions", () => {
-    expect(regionMatches("Rotterdam", "Groningen")).toBe(false);
-  });
-
-  /*
-   * A blank is NOT a wildcard, and this test used to assert the opposite.
-   *
-   * The original reasoning — over-offering is visible and declinable while
-   * under-offering is silent — holds inside a pool, where the facility already
-   * knows everyone. regionMatches is only consulted for the one visibility that
-   * reaches strangers, and there a blank on the shift side meant a single post
-   * fanned out to EVERY freelancer on the platform. An organisation's city is
-   * optional at onboarding, so that was reachable by doing nothing wrong.
-   *
-   * Each of those offers is a shift_offers row, and that row is what grants the
-   * facility standing read access to the freelancer's BIG number and rate. So the
-   * cost of the generous reading is not a declinable message; it is a disclosure
-   * that cannot be taken back.
-   */
-  it("refuses to match when either side has no region", () => {
-    expect(regionMatches("Rotterdam", null)).toBe(false);
-    expect(regionMatches(null, "Groningen")).toBe(false);
-    expect(regionMatches("", "")).toBe(false);
   });
 });
 

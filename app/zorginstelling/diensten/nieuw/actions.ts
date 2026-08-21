@@ -10,6 +10,7 @@ import { createShiftSeries, type ShiftVisibility } from "@/lib/shifts";
 import { expandRecurrence, type RecurrencePattern } from "@/lib/recurrence";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { clearFormDraft, saveFormDraft } from "@/lib/formDraft";
+import { matchLegacyRegion } from "@/lib/regions";
 
 const NEW_SHIFT_PATH = "/zorginstelling/diensten/nieuw";
 
@@ -125,7 +126,24 @@ export async function createShiftAction(formData: FormData) {
     .eq("id", admin.org.id)
     .maybeSingle<{ city: string | null }>();
 
-  const region = String(formData.get("region") ?? "").trim() || org?.city || null;
+  /*
+   * A code from the fixed list, with the org's city as a fallback GUESS.
+   *
+   * The free text stays alongside it for the record, but nothing matches on it
+   * any more: comparing two text boxes by substring made a one-character region
+   * a wildcard over the country, and each match writes a shift_offers row that
+   * hands the facility a standing read of that freelancer. See lib/regions.ts.
+   *
+   * The fallback maps the organisation's own city onto its region, so a
+   * coordinator who leaves the field alone still posts into the right area
+   * rather than into nothing. matchLegacyRegion returns null rather than
+   * guessing when the city is unrecognisable, and the check below then refuses
+   * the shift instead of broadcasting it.
+   */
+  const regionCode =
+    String(formData.get("region_code") ?? "").trim() || matchLegacyRegion(org?.city) || null;
+
+  const region = org?.city || null;
 
   /*
    * A region-wide shift without a region reached everyone.
@@ -138,7 +156,7 @@ export async function createShiftAction(formData: FormData) {
    * Refusing rather than defaulting: guessing a region from an address we do not
    * have is how the blank got here in the first place.
    */
-  if (visibility === "region" && !region) {
+  if (visibility === "region" && !regionCode) {
     redirect("/zorginstelling/diensten/nieuw?error=region_required");
   }
 
@@ -191,6 +209,7 @@ export async function createShiftAction(formData: FormData) {
       description: String(formData.get("description") ?? "").trim() || null,
       visibility,
       region,
+      regionCode,
     },
     occurrences,
     explicitRespondBy,

@@ -175,10 +175,30 @@ create table if not exists freelancers (
   big_check_note text,
   profession text not null default '',
   specialisations text[] not null default '{}',
-  -- Province or region they will travel to. Free text in v1 — a controlled
-  -- list is premature before we know how facilities actually describe their
-  -- catchment.
-  region text,
+  /*
+    * The old free-text answer. Kept, no longer matched on.
+    *
+    * The comment here used to say a controlled list was "premature before we
+    * know how facilities describe their catchment". What we learned instead is
+    * that free text on both sides plus substring matching makes a short value a
+    * wildcard: "a" matched almost every place name in the country and pulled in
+    * every region-wide shift, each one a shift_offers row granting that facility
+    * a standing read of this row.
+    *
+    * Retained rather than dropped because "omgeving Utrecht, liefst niet 's
+    * nachts" is a real thing somebody typed, and it is the only record of what
+    * they meant. Shown back to them on their profile so they can pick properly.
+    */
+   region text,
+  /*
+   * WHERE they will work, as codes from a fixed list (lib/regions.ts).
+   *
+   * An array because one commuting area rarely describes somebody: a nurse in
+   * Schiedam works in both Groot-Rijnmond and Delft en Westland, and picking one
+   * would be wrong either way. Empty means "no region-wide offers", which is the
+   * safe default for a row that predates the list.
+   */
+  region_codes text[] not null default '{}',
   -- The floor they advertise. The *agreed* rate for a given assignment is
   -- stored on the assignment, because it is negotiated per shift and must
   -- remain whatever both parties actually agreed at the time, even if the
@@ -603,6 +623,10 @@ create table if not exists rate_limit_hits (
   bucket text not null,
   created_at timestamptz not null default now()
 );
+
+-- Read only by the region fan-out. GIN because the question is "does this
+-- freelancer's array contain the shift's code".
+create index if not exists freelancers_region_codes_idx on freelancers using gin (region_codes);
 
 create index if not exists rate_limit_hits_bucket_idx on rate_limit_hits(bucket, created_at desc);
 
@@ -1106,6 +1130,16 @@ drop policy if exists availability_write on availability_blocks;
 -- posting time, but editable, because a facility on a boundary recruits from both
 -- sides of it.
 alter table shifts add column if not exists region text;
+
+-- The same shift region as a code from the fixed list. Only consulted for
+-- visibility 'region' — the one setting that reaches freelancers this facility
+-- has never worked with. See migration 022 and lib/regions.ts.
+alter table shifts add column if not exists region_code text;
+
+-- Indexed HERE rather than beside the other shift indexes further up: the column
+-- is added by this statement, and an index declared above it would be created
+-- before the column exists. Same ordering trap as migration 016's helpers.
+create index if not exists shifts_region_code_idx on shifts(region_code);
 
 drop policy if exists invoice_settings_select on invoice_settings;
 create policy invoice_settings_select on invoice_settings for select

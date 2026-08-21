@@ -52,43 +52,16 @@ export function isBlockedForShift(blocks: AvailabilityBlock[], shiftStartsAt: st
   return blocks.some((block) => blockCoversDate(block, key));
 }
 
-/**
- * Loose region comparison.
+/*
+ * regionMatches MOVED to lib/regions.ts.
  *
- * Region is free text on both sides — "Rotterdam", "Rotterdam-Rijnmond",
- * "Zuid-Holland" all appear — so an equality check would match almost nothing.
- * Either string containing the other is treated as a match, which is generous in
- * the right direction: over-offering is visible and declinable, under-offering is
- * silent.
- *
- * An unset region on either side means no restriction. A freelancer who never
- * filled the field has not opted out of anything.
+ * It compared two free-text values with substring containment in both
+ * directions, which made a one-character region a wildcard over the whole
+ * country — and every match writes a shift_offers row granting that facility a
+ * standing read of the freelancer's profile. Region is now a code from a fixed
+ * list and the comparison is exact, so the function belongs with the list.
  */
-export function regionMatches(
-  shiftRegion: string | null | undefined,
-  freelancerRegion: string | null | undefined,
-): boolean {
-  const shift = (shiftRegion ?? "").trim().toLowerCase();
-  const freelancer = (freelancerRegion ?? "").trim().toLowerCase();
 
-  /*
-   * A missing region is not a wildcard.
-   *
-   * This used to `return true` when either side was blank, on the reasoning that
-   * under-offering is the worse error. That holds inside a pool, where the
-   * facility already knows everyone. It does not hold here: region is only
-   * consulted for the one visibility that reaches strangers, and a facility whose
-   * organisation has no city set — the field is optional at onboarding — silently
-   * broadcast every shift to EVERY freelancer on the platform. Each of those
-   * offers is a row in shift_offers, and shift_offers is what grants that facility
-   * standing read access to the freelancer's BIG number and rate.
-   *
-   * So a blank on either side means no match, and the shift form now refuses to
-   * post a region-wide shift without a region at all.
-   */
-  if (!shift || !freelancer) return false;
-  return shift.includes(freelancer) || freelancer.includes(shift);
-}
 
 /**
  * Does this freelancer hold the qualification a shift asks for?

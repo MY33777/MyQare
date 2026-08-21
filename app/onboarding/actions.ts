@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { isKnownQualification } from "@/lib/qualifications";
 import { clearFormDraft, saveFormDraft } from "@/lib/formDraft";
+import { findRegion } from "@/lib/regions";
 
 /** Scopes the draft cookie to this form. See lib/formDraft.ts. */
 const DRAFT_KEY = "onboarding";
@@ -90,8 +91,24 @@ export async function completeOnboardingAction(formData: FormData) {
    * everybody who skipped the field — the same class of invisible under-offering
    * the strict matching was meant to prevent, pointed the other way.
    */
-  const region = String(formData.get("region") ?? "").trim();
-  if (role === "freelancer" && !region) redirect("/onboarding?error=region_required");
+  /*
+   * Codes from the fixed list, and only ones that are actually on it.
+   *
+   * getAll because the control is a multi-select: one commuting area rarely
+   * describes where somebody will work. Filtered through findRegion so a crafted
+   * form post cannot store a value the matcher would later compare against —
+   * this decides who receives offers, and an unknown code stored here would sit
+   * in the row forever matching nothing while looking like a real answer.
+   */
+  const regionCodes = formData
+    .getAll("region_codes")
+    .map(String)
+    .filter((code) => findRegion(code) !== null);
+  // At least one region, because zero means no region-wide offers reach them at
+  // all — and this is the screen where somebody is told the field decides that.
+  if (role === "freelancer" && regionCodes.length === 0) {
+    redirect("/onboarding?error=region_required");
+  }
   if (role === "facility_admin" && !orgName) redirect("/onboarding?error=org_name_required");
 
   let orgId: string | null = null;
@@ -153,7 +170,7 @@ export async function completeOnboardingAction(formData: FormData) {
     const { error: freelancerError } = await admin.from("freelancers").insert({
       profile_id: user.id,
       profession,
-      region,
+      region_codes: regionCodes,
       // vat_exempt stays null on purpose: undetermined is the honest starting
       // state, and lib/vat.ts refuses to issue an invoice until someone decides.
       vat_exempt: null,

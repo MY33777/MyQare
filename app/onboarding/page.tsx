@@ -7,6 +7,7 @@ import { QualificationSelect } from "@/components/QualificationSelect";
 import { completeOnboardingAction } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { readFormDraft } from "@/lib/formDraft";
+import { RegionSelect } from "@/components/RegionSelect";
 
 export const metadata: Metadata = { title: "Gegevens aanvullen" };
 
@@ -152,20 +153,20 @@ export default async function OnboardingPage({
             */}
             <div className="mt-4">
               <label className="label" htmlFor="region">
-                Regio waarin je werkt
+                Regio&apos;s waarin je wilt werken
               </label>
-              <input
-                className="input"
+              <RegionSelect
+                name="region_codes"
                 id="region"
-                name="region"
-                defaultValue={draft.region ?? ""}
-                type="text"
-                placeholder="bijv. Rotterdam-Rijnmond"
+                multiple
+                defaultValue={draft.region_codes ? draft.region_codes.split(",") : undefined}
                 required
               />
               <p className="hint">
-                Bepaalt welke diensten je te zien krijgt van instellingen waar je nog niet werkt.
-                Aan te passen in je profiel.
+                Kies er gerust meer dan één — de indeling volgt het woon-werkverkeer, dus wie in
+                Schiedam woont vinkt meestal Groot-Rijnmond én Delft en Westland aan. Bepaalt welke
+                diensten je te zien krijgt van instellingen waar je nog niet werkt. Aan te passen in
+                je profiel.
               </p>
             </div>
           </div>

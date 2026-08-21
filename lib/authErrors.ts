@@ -114,6 +114,9 @@ const MESSAGES: Record<string, string> = {
   region_required:
     "Vul in voor welke regio deze dienst geldt. Zonder regio zouden we hem aan " +
     "iedereen op het platform aanbieden.",
+  region_codes_required:
+    "Kies minstens één regio. Zonder regio krijg je geen diensten te zien van " +
+    "instellingen waar je nog niet werkt.",
   shift_already_started:
     "Deze dienst is inmiddels begonnen en kan niet meer worden aangenomen.",
   shift_not_finished:

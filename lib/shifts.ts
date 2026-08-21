@@ -3,7 +3,8 @@ import { emailConfigured, sendShiftOfferEmail } from "@/lib/email";
 import { assignmentValueCents } from "@/lib/fees";
 import { billableMinutes } from "@/lib/hours";
 import { qualificationLabel } from "@/lib/qualifications";
-import { qualificationMatches, regionMatches, shiftDateKey } from "@/lib/availability";
+import { qualificationMatches, shiftDateKey } from "@/lib/availability";
+import { regionMatches } from "@/lib/regions";
 import { forEachPage } from "@/lib/pagination";
 
 /*
@@ -29,8 +30,16 @@ export type NewShift = {
   description: string | null;
   visibility: ShiftVisibility;
   respondBy: string | null;
-  /** Where the shift is being offered. Defaults from the org city at posting time. */
+  /** The old free-text answer. Stored for the record; never matched on. */
   region: string | null;
+  /*
+   * The region as a CODE, which is what the fan-out compares.
+   *
+   * Free text on both sides matched by substring made a one-character region a
+   * wildcard over the country, and every match writes a shift_offers row that
+   * grants the facility a standing read of that freelancer. See lib/regions.ts.
+   */
+  regionCode: string | null;
 };
 
 export type FanOutResult = {
@@ -66,6 +75,7 @@ export async function createShiftWithOffers(input: NewShift): Promise<FanOutResu
       visibility: input.visibility,
       respond_by: input.respondBy,
       region: input.region,
+      region_code: input.regionCode,
       status: "open",
     })
     .select("id")
@@ -298,14 +308,14 @@ async function findRecipients(input: NewShift): Promise<string[]> {
       profile_id: string;
       profession: string | null;
       specialisations: string[] | null;
-      region: string | null;
+      region_codes: string[] | null;
     };
 
     await forEachPage<Candidate>(
       (from, to) =>
         admin
           .from("freelancers")
-          .select("profile_id, profession, specialisations, region")
+          .select("profile_id, profession, specialisations, region_codes")
           .order("profile_id", { ascending: true })
           .range(from, to)
           .returns<Candidate[]>(),
@@ -320,7 +330,7 @@ async function findRecipients(input: NewShift): Promise<string[]> {
           ) {
             continue;
           }
-          if (!regionMatches(input.region, candidate.region)) continue;
+          if (!regionMatches(input.regionCode, candidate.region_codes)) continue;
           ids.add(candidate.profile_id);
         }
       },

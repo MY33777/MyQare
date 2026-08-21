@@ -7,6 +7,8 @@ import { requireFreelancer } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { updateProfileAction } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { RegionSelect } from "@/components/RegionSelect";
+import { matchLegacyRegion } from "@/lib/regions";
 
 export const metadata: Metadata = { title: "Profiel" };
 
@@ -29,7 +31,7 @@ export default async function ProfilePage({
 
   const { data: freelancer } = await supabase
     .from("freelancers")
-    .select("kvk, big_number, big_verified_at, profession, region, bio, hourly_rate_min_cents, vat_exempt, big_check_note")
+    .select("kvk, big_number, big_verified_at, profession, region, bio, hourly_rate_min_cents, vat_exempt, big_check_note, region_codes")
     .eq("profile_id", userId)
     .maybeSingle<{
       kvk: string | null;
@@ -39,6 +41,8 @@ export default async function ProfilePage({
       big_check_note: string | null;
       profession: string;
       region: string | null;
+      /** Codes from the fixed list. See migration 022. */
+      region_codes: string[] | null;
       bio: string | null;
       hourly_rate_min_cents: number | null;
       vat_exempt: boolean | null;
@@ -169,14 +173,23 @@ export default async function ProfilePage({
             <label className="label" htmlFor="region">
               Regio
             </label>
-            <input
-              className="input"
-              id="region"
-              name="region"
-              type="text"
-              placeholder="bijv. Rotterdam-Rijnmond"
-              defaultValue={freelancer?.region ?? ""}
-            />
+            <RegionSelect
+                name="region_codes"
+                id="region"
+                multiple
+                defaultValue={
+                  freelancer?.region_codes?.length
+                    ? freelancer.region_codes
+                    : /*
+                        Their old free-text answer, pre-selected where it is
+                        unambiguous. Everyone who onboarded before the list has
+                        an empty region_codes, which means no region-wide offers
+                        at all — so this is the difference between one confirming
+                        click and reading forty options cold.
+                      */
+                      (matchLegacyRegion(freelancer?.region) ?? undefined)
+                }
+              />
           </div>
           <div>
             <label className="label" htmlFor="hourly_rate_min">

@@ -12,6 +12,8 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { readFormDraft } from "@/lib/formDraft";
 import { ShiftCostPreview } from "@/components/ShiftCostPreview";
 import { createClient } from "@/lib/supabase/server";
+import { RegionSelect } from "@/components/RegionSelect";
+import { matchLegacyRegion } from "@/lib/regions";
 
 export const metadata: Metadata = { title: "Dienst plaatsen" };
 
@@ -313,17 +315,15 @@ export default async function NewShiftPage({
           <label className="label" htmlFor="region">
             Regio
           </label>
-          <input
-            className="input"
+          <RegionSelect
+            name="region_code"
             id="region"
-            name="region"
-            type="text"
-            defaultValue={draft.region ?? ""}
-            placeholder={org.city ?? "bijv. Rotterdam"}
-            {...fieldProps("region")}
+            defaultValue={draft.region_code ?? matchLegacyRegion(org.city)}
           />
           <p className="hint">
-            Alleen gebruikt bij een regio-aanbod. Leeg laten neemt de plaats van je instelling.
+            Alleen gebruikt bij een regio-aanbod. De regio&apos;s zijn de CBS-indeling naar
+            woon-werkverkeer, dus &quot;Groot-Rijnmond&quot; is Rotterdam en alles op tien minuten
+            daarvandaan. Leeg laten kan alleen als je niet regio-breed aanbiedt.
           </p>
         </div>
 

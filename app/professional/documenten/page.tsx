@@ -9,6 +9,7 @@ import {
   DOCUMENT_KIND_LABELS,
   KINDS_NEEDING_EXPIRY,
   MAX_DOCUMENT_BYTES,
+  daysUntilExpiry,
   expiryState,
   type DocumentKind,
 } from "@/lib/documents";
@@ -35,12 +36,31 @@ function statusBadge(status: string) {
   return <span className="badge badge-warn">In behandeling</span>;
 }
 
+/*
+ * "Verloopt binnenkort" covered everything from sixty days out to tomorrow.
+ *
+ * Those are not the same situation. A new VOG takes weeks to obtain, so sixty
+ * days is "start the application" and seven days is "you are about to stop being
+ * bookable" — one badge for both meant the urgent case looked exactly like the
+ * one that had been sitting there for a month, and people learn to ignore a
+ * colour that has cried wolf.
+ */
 function expiryBadge(expiresOn: string | null) {
+  const days = daysUntilExpiry(expiresOn);
+
   switch (expiryState(expiresOn)) {
     case "verlopen":
       return <span className="badge badge-danger">Verlopen</span>;
     case "verloopt_binnenkort":
-      return <span className="badge badge-warn">Verloopt binnenkort</span>;
+      return days !== null && days <= 14 ? (
+        <span className="badge badge-danger">
+          Verloopt over {days} {days === 1 ? "dag" : "dagen"}
+        </span>
+      ) : (
+        <span className="badge badge-warn">
+          Verloopt over {days} dagen
+        </span>
+      );
     case "geldig":
       return <span className="badge badge-ok">Geldig</span>;
     default:
@@ -176,60 +196,87 @@ export default async function DocumentsPage({
           body="Upload in elk geval je VOG en je diploma. Zonder die twee nemen de meeste instellingen je niet op in hun pool."
         />
       ) : (
-        <div className="card table-scroll" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Soort</th>
-                <th>Bestand</th>
-                <th>Geldig tot</th>
-                <th>Status</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {documents.map((document) => (
-                <tr key={document.id}>
-                  <td className="font-medium">
-                    {DOCUMENT_KIND_LABELS[document.kind as DocumentKind] ?? document.kind}
-                  </td>
-                  <td style={{ color: "var(--text-muted)" }}>
-                    {document.original_filename ?? "—"}
-                    <span className="block text-xs tnum">
+        /*
+          Cards, not a five-column table.
+
+          Status and the reviewer's rejection reason were the fourth column: at
+          375px both were off the right edge, so a freelancer whose VOG had been
+          refused saw a list of documents and no indication that one of them had
+          been turned down or why. The one thing this screen has to communicate
+          was the one thing a phone could not show.
+
+          The reason is also the route back — a rejected document offered only
+          "Verwijderen", so the way to act on the feedback was to delete the
+          evidence of it and scroll up to a form with nothing filled in.
+        */
+        <div className="grid gap-3">
+          {documents.map((document) => {
+            const rejected = document.status === "rejected";
+
+            return (
+              <div key={document.id} className="card p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold">
+                      {DOCUMENT_KIND_LABELS[document.kind as DocumentKind] ?? document.kind}
+                    </p>
+                    <p className="text-sm truncate" style={{ color: "var(--text-muted)" }}>
+                      {document.original_filename ?? "—"}
+                    </p>
+                    <p className="text-xs tnum mt-0.5" style={{ color: "var(--text-muted)" }}>
                       geüpload {formatDate(document.created_at)}
-                    </span>
-                  </td>
-                  <td className="tnum">
-                    {document.expires_on ? formatDate(document.expires_on) : "—"}
-                    <span className="block mt-1">{expiryBadge(document.expires_on)}</span>
-                  </td>
-                  <td>
+                      {document.expires_on ? ` · geldig tot ${formatDate(document.expires_on)}` : ""}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 shrink-0">
                     {statusBadge(document.status)}
-                    {document.review_note ? (
-                      <span className="block text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-                        {document.review_note}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td>
-                    {/*
-                      An approved document cannot be withdrawn here. Facilities rely
-                      on it for their own Wkkgz duty, and assignments were accepted
-                      on the strength of it.
-                    */}
-                    {document.status === "approved" ? null : (
-                      <form action={deleteDocumentAction}>
-                        <input type="hidden" name="document_id" value={document.id} />
-                        <SubmitButton className="btn btn-danger">
-                          Verwijderen
-                        </SubmitButton>
-                      </form>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    {expiryBadge(document.expires_on)}
+                  </div>
+                </div>
+
+                {document.review_note ? (
+                  <p
+                    className="text-sm mt-3 rounded-lg px-3 py-2"
+                    style={{
+                      background: rejected ? "var(--danger-subtle)" : "var(--surface-sunken)",
+                      color: rejected ? "var(--danger)" : "var(--text-muted)",
+                    }}
+                  >
+                    <strong className="block">
+                      {rejected ? "Waarom dit is afgekeurd" : "Opmerking van de beoordelaar"}
+                    </strong>
+                    {document.review_note}
+                  </p>
+                ) : null}
+
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {/*
+                    A route back, on the row that needs one. The upload form sits
+                    above with the right kind already selected, which is the
+                    action a rejection actually calls for.
+                  */}
+                  {rejected ? (
+                    <a className="btn btn-primary" href={`#kind`}>
+                      Opnieuw uploaden
+                    </a>
+                  ) : null}
+
+                  {/*
+                    An approved document cannot be withdrawn here. Facilities rely
+                    on it for their own Wkkgz duty, and assignments were accepted
+                    on the strength of it.
+                  */}
+                  {document.status === "approved" ? null : (
+                    <form action={deleteDocumentAction}>
+                      <input type="hidden" name="document_id" value={document.id} />
+                      <SubmitButton className="btn btn-secondary">Verwijderen</SubmitButton>
+                    </form>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -10,6 +10,8 @@ import { MAX_OCCURRENCES, RECURRENCE_LABELS } from "@/lib/recurrence";
 import { createShiftAction } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { readFormDraft } from "@/lib/formDraft";
+import { ShiftCostPreview } from "@/components/ShiftCostPreview";
+import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Dienst plaatsen" };
 
@@ -25,6 +27,7 @@ const ERROR_FIELD: Record<string, string> = {
   invalid_rate: "hourly_rate",
   invalid_break: "break_minutes",
   invalid_visibility: "visibility",
+  repeat_without_pattern: "repeat_pattern",
   respond_by_after_start: "respond_by",
   respond_by_in_past: "respond_by",
   region_required: "region",
@@ -46,6 +49,36 @@ export default async function NewShiftPage({
    * not, and is one submit away from posting a shift nobody meant to post.
    */
   const draft = await readFormDraft("shift", Boolean(params.error));
+
+  /*
+   * How many people the pool actually holds.
+   *
+   * Posting into an empty pool is the most common early mistake here, and it was
+   * only discoverable AFTER submitting — "aangeboden aan 0 zorgprofessionals" on
+   * the list page, by which point the shift exists. Counted with head:true so
+   * this costs two counts rather than two row sets.
+   *
+   * Hidden members are excluded from both, because they are excluded from every
+   * fan-out: a number that counts people who will never receive the offer is not
+   * the number the coordinator is deciding on.
+   */
+  const supabase = await createClient();
+
+  const [{ count: poolTotal }, { count: starTotal }] = await Promise.all([
+    supabase
+      .from("pools")
+      .select("freelancer_id", { count: "exact", head: true })
+      .eq("org_id", org.id)
+      .neq("status", "hidden"),
+    supabase
+      .from("pools")
+      .select("freelancer_id", { count: "exact", head: true })
+      .eq("org_id", org.id)
+      .eq("status", "star"),
+  ]);
+
+  const poolCount = poolTotal ?? 0;
+  const starCount = starTotal ?? 0;
 
   /*
    * Which field the message is about.
@@ -149,6 +182,15 @@ export default async function NewShiftPage({
           </div>
         </div>
 
+        {/*
+          What the four fields above add up to, before it is posted.
+
+          The two mistakes nobody catches by re-reading are a shift accidentally
+          24 hours long because the end DATE stayed on today, and a rate typed as
+          4250 instead of 42,50. Both are obvious the moment a total appears.
+        */}
+        <ShiftCostPreview />
+
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="label" htmlFor="department">
@@ -192,6 +234,24 @@ export default async function NewShiftPage({
               </option>
             ))}
           </select>
+          {/*
+            How far each choice reaches, in people.
+
+            "Eigen pool" and "favorieten" are words; a coordinator deciding
+            between them wants the number. Posting into an empty pool is the most
+            common early mistake in this product, and it was only discoverable
+            AFTER submitting, from "aangeboden aan 0 zorgprofessionals".
+
+            Region has no number here on purpose: who it reaches depends on the
+            qualification chosen above and on free-text region matching, so any
+            figure printed before submitting would be a guess presented as a
+            count. Said in words instead.
+          */}
+          <p className="hint">
+            Je pool telt {poolCount} {poolCount === 1 ? "zorgprofessional" : "zorgprofessionals"},
+            waarvan {starCount} als favoriet. Een regio-aanbod gaat daarnaast naar iedereen in de
+            regio met de juiste kwalificatie, ook als je nog niet met ze hebt gewerkt.
+          </p>
           <p className="hint">
             Zorgprofessionals die je hebt verborgen krijgen deze dienst nooit te zien, ook niet bij
             een regio-aanbod.
@@ -234,9 +294,17 @@ export default async function NewShiftPage({
               max={MAX_OCCURRENCES}
               defaultValue={draft.repeat_count ?? 1}
             />
+            {/*
+              Says that this field does nothing without a pattern.
+
+              "Herhalen: niet" plus "Aantal diensten: 5" produced one shift, in
+              silence — expandRecurrence returns a single occurrence for pattern
+              "none" whatever the count says. The coordinator went looking for
+              four shifts that were never created.
+            */}
             <p className="hint">
-              Inclusief deze eerste dienst, maximaal {MAX_OCCURRENCES}. Elke dienst krijgt zijn
-              eigen reactietermijn.
+              Inclusief deze eerste dienst, maximaal {MAX_OCCURRENCES}. Werkt alleen als je
+              hierboven een herhaling kiest.
             </p>
           </div>
         </div>
@@ -271,9 +339,19 @@ export default async function NewShiftPage({
             defaultValue={draft.respond_by ?? ""}
             {...fieldProps("respond_by")}
           />
+          {/*
+            Says what filling this in does to a SERIES.
+
+            The field beside "Aantal diensten" promises each shift its own
+            deadline, and that is only true while this is empty: an explicit
+            moment is copied onto every occurrence, so the same absolute time is
+            already past for every shift after the first. The action refuses that
+            now, and the hint says so before somebody meets the refusal.
+          */}
           <p className="hint">
-            Laat leeg voor een automatische termijn: tweederde van de tijd tot de dienst, met een
-            maximum van 48 uur.
+            Laat leeg voor een automatische termijn per dienst: tweederde van de tijd tot die
+            dienst, met een maximum van 48 uur. Vul je hier een moment in, dan geldt dat ene moment
+            voor de hele reeks — meestal niet wat je wilt bij een herhaling.
           </p>
         </div>
 

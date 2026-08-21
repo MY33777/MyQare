@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
 import { FEE_PERCENT_LABEL } from "@/lib/fees";
 import { requireFreelancer } from "@/lib/auth";
@@ -30,12 +31,23 @@ export default async function FreelancerLayout({ children }: { children: React.R
       <AppHeader
         nav={NAV}
         right={
-          <span
-            className={balance <= 0 ? "badge badge-warn tnum" : "badge badge-brand tnum"}
-            title={`Saldo voor de bemiddelingsvergoeding van ${FEE_PERCENT_LABEL} plus btw`}
+          /*
+            "Saldo" in words, and the empty state said rather than coloured.
+
+            This was a bare amount whose only indication of "you cannot accept
+            work right now" was the badge turning amber — invisible to a reader
+            who cannot distinguish it from the brand blue, and meaningless to
+            anyone who has not learnt the convention. A title attribute does not
+            help: it never appears on a touch device, which is where this is read.
+          */
+          <Link
+            className={`badge tnum no-underline ${balance <= 0 ? "badge-warn" : "badge-brand"}`}
+            href="/professional/saldo"
           >
+            <span className="sr-only">Saldo: </span>
             {formatEuros(balance)}
-          </span>
+            {balance <= 0 ? <span className="ml-1">· opwaarderen</span> : null}
+          </Link>
         }
       />
       {/* id, so the skip link in AppHeader has somewhere to land. */}

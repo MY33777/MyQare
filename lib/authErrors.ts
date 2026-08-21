@@ -46,6 +46,9 @@ const MESSAGES: Record<string, string> = {
     "Zet de einddatum dan op de volgende dag.",
   invalid_rate: "Vul een geldig uurtarief in, bijvoorbeeld 42,50.",
   invalid_break: "Vul de pauze in als een aantal minuten, bijvoorbeeld 30. Geen pauze? Vul 0 in.",
+  repeat_without_pattern:
+    "Je hebt een aantal diensten ingevuld maar geen herhaling gekozen. Kies een " +
+    "herhaling, of zet het aantal terug op 1.",
   invalid_visibility: "Kies aan wie je deze dienst aanbiedt.",
   shift_unavailable:
     "Iemand anders was net eerder. Bekijk het andere aanbod — er staat vaak meer open.",

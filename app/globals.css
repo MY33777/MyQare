@@ -362,8 +362,41 @@ body {
   border-bottom: none;
 }
 
+/* Colour is not the only signal.
+ *
+ * An inline link inside body text was distinguished from the text around it by
+ * hue alone. Against --text-muted (#55617a) the royal blue --brand-text
+ * (#1d3596) sits at roughly 1.7:1 — WCAG asks for 3:1 between a link and its
+ * surrounding text when colour is the only cue, and 1.7 is not visible at all to
+ * a reader with a common colour deficiency. Several of these links are the exit
+ * from an error message, so missing one means being stuck.
+ *
+ * Underlined by default; buttons and navigation opt out explicitly with
+ * .no-underline, which they already did. */
 a {
   color: var(--brand-text);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  /* Thin enough not to shout in a paragraph, thick enough to survive at 14px. */
+  text-decoration-thickness: 1px;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* Every focusable thing gets a visible ring. The browser default is removed by
+   Tailwind's reset, and nothing put one back — so a keyboard user had no idea
+   where they were on any screen in the product. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 /*

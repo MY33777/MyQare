@@ -8,6 +8,9 @@ import { creditBalanceCents } from "@/lib/credits";
 import { formatEuros } from "@/lib/money";
 import { formatShiftWindow } from "@/lib/hours";
 import { summaryFromRpc } from "@/lib/ratings";
+import { amsterdamDateKey } from "@/lib/timezone";
+import { FEE_PERCENT_LABEL } from "@/lib/fees";
+import { DOCUMENT_KIND_LABELS, type DocumentKind } from "@/lib/documents";
 
 export const metadata: Metadata = { title: "Overzicht" };
 
@@ -30,7 +33,13 @@ export default async function FreelancerDashboard() {
   const { userId, profile } = await requireFreelancer("/professional");
   const supabase = await createClient();
 
-  const [{ data: freelancer }, { data: offers }, { data: ratingRows }, balance] = await Promise.all([
+  const [
+    { data: freelancer },
+    { data: offers },
+    { data: ratingRows },
+    balance,
+    { data: documents },
+  ] = await Promise.all([
     supabase
       .from("freelancers")
       .select("profession, vat_exempt, big_number, big_verified_at")
@@ -64,9 +73,26 @@ export default async function FreelancerDashboard() {
       shrunk_score: number | string | null;
     }>(),
     creditBalanceCents(userId),
+    /*
+     * Approved documents that have lapsed.
+     *
+     * Only approved ones: a pending or rejected upload is already visible on
+     * /professional/documenten as something in progress, while an APPROVED
+     * document that quietly expired is the one nobody is looking at — and it is
+     * the one that stops facilities being able to book this person.
+     */
+    supabase
+      .from("documents")
+      .select("id, kind, expires_on")
+      .eq("freelancer_id", userId)
+      .eq("status", "approved")
+      .not("expires_on", "is", null)
+      .lt("expires_on", amsterdamDateKey())
+      .returns<{ id: string; kind: string; expires_on: string }[]>(),
   ]);
 
   const rating = summaryFromRpc(ratingRows);
+  const expiredDocuments = documents ?? [];
 
   // Only offers whose shift is still open are actionable — a shift someone else
   // already claimed should not sit in the list looking available.
@@ -94,7 +120,25 @@ export default async function FreelancerDashboard() {
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
             Saldo
           </p>
-          <p className="text-2xl font-bold tnum mt-1">{formatEuros(balance)}</p>
+          <p
+            className="text-2xl font-bold tnum mt-1"
+            style={balance <= 0 ? { color: "var(--warn)" } : undefined}
+          >
+            {formatEuros(balance)}
+          </p>
+          {/*
+            Says what the balance is FOR, on the screen where somebody first sees
+            it. Nothing told a new freelancer that accepting work requires a
+            prepaid balance at all — they found out on the offer detail page, at
+            the moment they tried to take a shift, which is the worst possible
+            time to discover a payment step. Weigeren is named in the same breath
+            because it needs no balance and that is the part people assume wrong.
+          */}
+          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+            {balance <= 0
+              ? `Nodig om een dienst aan te nemen: hiervan wordt ${FEE_PERCENT_LABEL} van de opdrachtwaarde plus btw afgeschreven. Weigeren kan altijd, ook zonder saldo.`
+              : `Hiervan gaat ${FEE_PERCENT_LABEL} plus btw af zodra je een dienst aanneemt.`}
+          </p>
           <Link className="text-sm" href="/professional/saldo">
             Saldo opwaarderen
           </Link>
@@ -125,6 +169,35 @@ export default async function FreelancerDashboard() {
           ) : null}
         </div>
       </div>
+
+      {/*
+        A lapsed document, said here.
+
+        The dossier is what gets somebody booked, and this screen — the one they
+        actually open — said nothing about it. A VOG that expired last week meant
+        facilities quietly stopped being able to book them, with no signal on the
+        dashboard at all. Wkkgz makes this the facility's problem too, so the
+        silence costs both sides.
+      */}
+      {expiredDocuments.length > 0 ? (
+        <div
+          className="card p-4 mb-6"
+          style={{ borderColor: "var(--danger)", background: "var(--danger-subtle)" }}
+        >
+          <p className="font-semibold" style={{ color: "var(--danger)" }}>
+            {expiredDocuments.length === 1
+              ? "Eén document is verlopen"
+              : `${expiredDocuments.length} documenten zijn verlopen`}
+          </p>
+          <p className="text-sm mt-1" style={{ color: "var(--danger)" }}>
+            {expiredDocuments
+              .map((d) => DOCUMENT_KIND_LABELS[d.kind as DocumentKind] ?? d.kind)
+              .join(", ")}
+            . Instellingen kunnen je hierdoor niet inplannen.{" "}
+            <Link href="/professional/documenten">Vernieuw je documenten</Link>.
+          </p>
+        </div>
+      ) : null}
 
       {freelancer && freelancer.vat_exempt === null ? (
         <div

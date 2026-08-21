@@ -156,6 +156,20 @@ export async function createShiftAction(formData: FormData) {
     ? pattern
     : "none";
 
+  /*
+   * A count without a pattern does nothing, so say so rather than doing nothing.
+   *
+   * expandRecurrence returns a single occurrence for pattern "none" whatever the
+   * count says, so "Herhalen: niet" plus "Aantal diensten: 5" produced one shift
+   * in silence — and the coordinator went looking for four that were never
+   * created. Refused rather than silently corrected in either direction: we do
+   * not know whether they meant to pick a pattern or meant to leave the count
+   * at 1, and guessing either way posts work nobody asked for.
+   */
+  if (validPattern === "none" && Number.isFinite(count) && count > 1) {
+    redirect(`${NEW_SHIFT_PATH}?error=repeat_without_pattern`);
+  }
+
   const occurrences = expandRecurrence(
     String(formData.get("starts_at") ?? ""),
     String(formData.get("ends_at") ?? ""),

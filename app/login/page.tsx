@@ -24,7 +24,19 @@ export default async function LoginPage({
       subtitle="Voor zorginstellingen en zelfstandige zorgprofessionals."
       footer={
         <>
-          Nog geen account? <Link href="/registreren">Account aanmaken</Link>
+          {/*
+            ?next survives the trip.
+
+            Somebody following a shift link while signed out lands here with
+            ?next=/professional/aanbod/<id>. Both outbound links dropped it, so
+            registering or resetting a password returned them to a generic
+            dashboard with no memory of the shift they were trying to reach — the
+            one thing they came for.
+          */}
+          Nog geen account?{" "}
+          <Link href={next ? `/registreren?next=${encodeURIComponent(next)}` : "/registreren"}>
+            Account aanmaken
+          </Link>
         </>
       }
     >
@@ -64,7 +76,13 @@ export default async function LoginPage({
             required
           />
           <p className="hint">
-            <Link href="/wachtwoord-vergeten">Wachtwoord vergeten?</Link>
+            <Link
+              href={
+                next ? `/wachtwoord-vergeten?next=${encodeURIComponent(next)}` : "/wachtwoord-vergeten"
+              }
+            >
+              Wachtwoord vergeten?
+            </Link>
           </p>
         </div>
 

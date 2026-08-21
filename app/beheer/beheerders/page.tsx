@@ -56,6 +56,13 @@ const ACTION_LABELS: Record<string, string> = {
   admin_removed: "verwijderd als beheerder",
   capability_granted: "recht gekregen",
   capability_revoked: "recht ingetrokken",
+  /*
+   * Added by migration 020 and not here, so every staff cancellation rendered as
+   * the raw string "assignment_cancelled" in a log meant to be read by a person
+   * — on the one entry that records an admin moving money between two other
+   * people's accounts.
+   */
+  assignment_cancelled: "dienst geannuleerd namens beide partijen",
 };
 
 export default async function AdminsPage({

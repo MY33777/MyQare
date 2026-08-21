@@ -48,8 +48,9 @@ export default async function StaffDashboard({
    * only to review documents could reach all of it — which is precisely what
    * migration 014 exists to stop, and this page had not been updated to use it.
    *
-   * Either capability is enough, because the page shows two queues and the
-   * sections below hide the one you cannot act on.
+   * Either capability is enough to open the page, and each of the two queues is
+   * rendered only for the capability that can act on it — see the note at each
+   * section. Somebody with neither is sent away above.
    */
   const me = await requireStaff("/beheer");
   const canVerifyOrgs = me.capabilities.includes("verify_organisations");
@@ -90,6 +91,22 @@ export default async function StaffDashboard({
       {params.saved ? <FormMessage kind="ok">Opgeslagen.</FormMessage> : null}
       {params.error ? <FormMessage kind="error">Er ging iets mis.</FormMessage> : null}
 
+      {/*
+        Hidden when this admin cannot act on it.
+
+        The two flags above were computed and never used, while the comment beside
+        them claimed "the sections below hide the one you cannot act on". They did
+        not. So an admin hired only to check BIG numbers read every organisation's
+        KvK number and billing address, and one hired only to verify organisations
+        read every unverified BIG number on the platform — which is the exact
+        separation migration 014 exists to create.
+
+        Not merely cosmetic: the button below each row posts to an action that
+        checks the capability and refuses, so showing the queue offered work that
+        would be rejected after the click.
+      */}
+      {canVerifyOrgs ? (
+        <>
       <h2 className="text-lg font-bold mb-3">Wachtende zorginstellingen</h2>
       {pendingOrgs.length === 0 ? (
         <EmptyState title="Niets te verifiëren" body="Alle zorginstellingen zijn beoordeeld." />
@@ -109,7 +126,27 @@ export default async function StaffDashboard({
               {pendingOrgs.map((org) => (
                 <tr key={org.id}>
                   <td className="font-medium">{org.name}</td>
-                  <td className="tnum">{org.kvk ?? "—"}</td>
+                  <td className="tnum">
+                      {/*
+                        The number, and the register it has to be checked against.
+
+                        The page instructs the reviewer to look the KvK number up
+                        and then made them copy it into another tab by hand, every
+                        single time. A reviewer doing that fifty times a week is a
+                        reviewer who eventually stops doing it.
+                      */}
+                      {org.kvk ? (
+                        <a
+                          href={`https://www.kvk.nl/zoeken/?q=${encodeURIComponent(org.kvk)}`}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                        >
+                          {org.kvk}
+                        </a>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                   <td style={{ color: "var(--text-muted)" }}>{org.billing_email ?? "—"}</td>
                   <td className="tnum">{formatDate(org.created_at)}</td>
                   <td>
@@ -128,6 +165,11 @@ export default async function StaffDashboard({
         </div>
       )}
 
+        </>
+      ) : null}
+
+      {canVerifyBig ? (
+        <>
       <h2 className="text-lg font-bold mb-3">BIG-nummers om te controleren</h2>
       <p className="text-sm mb-3" style={{ color: "var(--text-muted)" }}>
         Zoek het nummer op in het BIG-register voordat je het goedkeurt. Instellingen leunen hierop
@@ -151,7 +193,21 @@ export default async function StaffDashboard({
                 <tr key={row.profile_id}>
                   <td className="font-medium">{row.profiles?.full_name ?? "—"}</td>
                   <td>{qualificationLabel(row.profession)}</td>
-                  <td className="tnum">{row.big_number}</td>
+                  <td className="tnum">
+                    {/*
+                      Same reasoning as the KvK cell above: this page tells the
+                      reviewer to look the number up in the BIG-register before
+                      approving it, and then made them retype it into another tab.
+                      The register takes the number directly.
+                    */}
+                    <a
+                      href={`https://zoeken.bigregister.nl/zoeken?nummer=${encodeURIComponent(row.big_number ?? "")}`}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                    >
+                      {row.big_number}
+                    </a>
+                  </td>
                   <td>
                     <form action={verifyBigAction}>
                       <input type="hidden" name="freelancer_id" value={row.profile_id} />
@@ -196,6 +252,8 @@ export default async function StaffDashboard({
             </table>
           </div>
         </details>
+      ) : null}
+        </>
       ) : null}
     </>
   );

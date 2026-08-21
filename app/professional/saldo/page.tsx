@@ -8,10 +8,11 @@ import { requireFreelancer } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { creditBalanceCents, MAX_TOPUP_CENTS, MIN_TOPUP_CENTS } from "@/lib/credits";
 import { formatEuros } from "@/lib/money";
-import { formatDateTime } from "@/lib/hours";
+import { formatDate, formatDateTime } from "@/lib/hours";
 import { stripeConfigured } from "@/lib/stripe";
 import { startTopupAction } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { qualificationLabel } from "@/lib/qualifications";
 
 export const metadata: Metadata = { title: "Saldo" };
 
@@ -21,6 +22,19 @@ type LedgerRow = {
   reason: string;
   note: string | null;
   created_at: string;
+  /*
+   * Which shift the money was about.
+   *
+   * The ledger showed "Bemiddelingsvergoeding − € 7,26" and the date it was
+   * taken, and nothing else. A freelancer querying a deduction — which is the
+   * only reason anyone opens this page twice — had to match timestamps against
+   * their own shift list by hand. The column has always been there; nothing
+   * read it.
+   */
+  assignments: {
+    shifts: { profession: string; starts_at: string } | null;
+    organisations: { name: string } | null;
+  } | null;
 };
 
 const REASON_LABELS: Record<string, string> = {
@@ -50,7 +64,10 @@ export default async function BalancePage({
     creditBalanceCents(userId, supabase),
     supabase
       .from("credit_ledger")
-      .select("id, delta_cents, reason, note, created_at")
+      .select(
+        "id, delta_cents, reason, note, created_at, " +
+          "assignments(shifts(profession, starts_at), organisations(name))",
+      )
       .eq("profile_id", userId)
       .order("created_at", { ascending: false })
       .limit(50)
@@ -157,6 +174,20 @@ export default async function BalancePage({
                   <td className="tnum">{formatDateTime(row.created_at)}</td>
                   <td>
                     {REASON_LABELS[row.reason] ?? row.reason}
+                    {/*
+                      The shift the money was about, named. Without it a deduction
+                      is a date and an amount, and the only way to check one was to
+                      match timestamps against your own shift list by hand.
+                    */}
+                    {row.assignments?.shifts ? (
+                      <span className="block text-xs" style={{ color: "var(--text-muted)" }}>
+                        {qualificationLabel(row.assignments.shifts.profession)}
+                        {row.assignments.organisations?.name
+                          ? " bij " + row.assignments.organisations.name
+                          : ""}
+                        {" · " + formatDate(row.assignments.shifts.starts_at)}
+                      </span>
+                    ) : null}
                     {row.note ? (
                       <span className="block text-xs" style={{ color: "var(--text-muted)" }}>
                         {row.note}

@@ -296,8 +296,8 @@ export default async function FreelancerInvoicesPage({
           value={formatEuros(receivables.outstandingCents)}
           hint={
             receivables.overdueCount > 0
-              ? `waarvan ${formatEuros(receivables.overdueCents)} te laat`
-              : "alles binnen termijn"
+              ? `incl. btw · waarvan ${formatEuros(receivables.overdueCents)} te laat`
+              : "incl. btw · alles binnen termijn"
           }
           tone={receivables.overdueCount > 0 ? "danger" : undefined}
         />
@@ -313,10 +313,18 @@ export default async function FreelancerInvoicesPage({
             tone="warn"
           />
         ) : null}
+        {/*
+          The basis, said on each figure.
+
+          "Openstaand" is what a facility owes — the invoice total, VAT included.
+          "Ingepland" is work not yet done, so there is no invoice and no VAT yet;
+          it is the freelancer's own turnover. Two amounts side by side on
+          different bases, both bare, invited exactly the wrong comparison.
+        */}
         <Stat
           label="Ingepland"
           value={formatEuros(earnings.bookedCents)}
-          hint="Aangenomen, nog niet gewerkt"
+          hint="Aangenomen, nog niet gewerkt · excl. btw"
         />
       </div>
 

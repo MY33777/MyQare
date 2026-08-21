@@ -74,7 +74,55 @@ export default function TarievenPage() {
         uren verrekend met wat je werkelijk gewerkt hebt.
       </p>
 
-      <div className="card overflow-x-auto mb-4">
+      {/*
+        Cards on a phone, the full table from 768px up.
+
+        Eight columns, and the two a reader is actually here for — "Totaal
+        kosten" and "Je houdt over" — are the seventh and eighth. At 375px both
+        sat off the right edge of a scroll container, so the pricing page
+        answered every question except the one somebody came with. Reordering the
+        table would have helped the phone and hurt the desktop reading, where the
+        left-to-right arithmetic is the point.
+      */}
+      <div className="grid gap-3 mb-4 md:hidden">
+        {EXAMPLES.map((example) => (
+          <div key={example.label} className="card p-4">
+            <p className="font-semibold">{example.label}</p>
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+              {formatEuros(example.rateCents)} per uur · {formatMinutes(example.minutes)}
+            </p>
+
+            <div className="flex items-baseline justify-between gap-4 mt-3">
+              <span className="text-sm" style={{ color: "var(--text-muted)" }}>
+                Je houdt over
+              </span>
+              <span className="text-2xl font-bold tnum">
+                {formatEuros(example.fee.assignmentValueCents - example.fee.feeTotalCents)}
+              </span>
+            </div>
+
+            <dl
+              className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm mt-3 pt-3"
+              style={{ borderTop: "1px solid var(--border)", color: "var(--text-muted)" }}
+            >
+              <dt>Opdrachtwaarde</dt>
+              <dd className="tnum text-right">{formatEuros(example.fee.assignmentValueCents)}</dd>
+              <dt>MyQare</dt>
+              <dd className="tnum text-right">{formatEuros(example.fee.feeExVatCents)}</dd>
+              <dt>Btw</dt>
+              <dd className="tnum text-right">{formatEuros(example.fee.feeVatCents)}</dd>
+              <dt className="font-medium" style={{ color: "var(--text)" }}>
+                Totaal kosten
+              </dt>
+              <dd className="tnum text-right font-medium" style={{ color: "var(--text)" }}>
+                {formatEuros(example.fee.feeTotalCents)}
+              </dd>
+            </dl>
+          </div>
+        ))}
+      </div>
+
+      <div className="card table-scroll mb-4 hidden md:block" tabIndex={0} role="region" aria-label="Rekenvoorbeeld, horizontaal scrollbaar">
         <table className="table">
           <thead>
             <tr>

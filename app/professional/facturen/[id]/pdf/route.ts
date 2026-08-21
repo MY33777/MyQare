@@ -40,15 +40,25 @@ export async function GET(
     .eq("id", id)
     .maybeSingle<{ id: string; freelancer_id: string; pdf_path: string | null }>();
 
-  if (!invoice || invoice.freelancer_id !== freelancer.userId) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
-  }
-  if (!invoice.pdf_path) {
-    return NextResponse.json({ error: "no_pdf" }, { status: 404 });
-  }
+  /*
+   * Back to the list with a code, not a JSON body.
+   *
+   * This is reached by tapping "Pdf" in the invoice list, so the reader is a
+   * person, and a failure handed them {"error":"no_pdf"} on a blank page with no
+   * way back. lib/authErrors.ts already exists for exactly this — a route handler
+   * reached from a button in the UI should return to that UI with an ?error=,
+   * never render JSON to a human.
+   */
+  const back = (code: string) =>
+    NextResponse.redirect(new URL(`/professional/facturen?error=${code}`, SITE_URL));
+
+  if (!invoice || invoice.freelancer_id !== freelancer.userId) return back("unknown");
+
+  // No document yet — the list offers a re-render for exactly this state.
+  if (!invoice.pdf_path) return back("pdf_failed");
 
   const url = await invoiceDownloadUrl(invoice.pdf_path);
-  if (!url) return NextResponse.json({ error: "no_pdf" }, { status: 404 });
+  if (!url) return back("pdf_failed");
 
   return NextResponse.redirect(url);
 }

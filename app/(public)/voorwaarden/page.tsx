@@ -177,7 +177,25 @@ export default function VoorwaardenPage() {
 
         <h2 id="beeindigen">10. Beëindigen</h2>
         <ul>
-          <li>Je kunt je account op elk moment opzeggen. Lopende opdrachten maak je eerst af.</li>
+          {/*
+            Says how, because there is no button.
+
+            "Je kunt je account op elk moment opzeggen" described a self-service
+            flow that does not exist anywhere in the product — and it cannot be a
+            simple delete: a Dutch invoice is retained seven years, so
+            invoices.freelancer_id has ON DELETE RESTRICT and deleting an account
+            that has ever been invoiced fails outright. The AVG answer is
+            anonymise-and-retain, which is a process, not a button.
+
+            Until that process is built, the honest statement is the one that
+            tells somebody what actually happens when they ask.
+          */}
+          <li>
+            Je kunt je account op elk moment opzeggen door ons een bericht te sturen. Lopende
+            opdrachten maak je eerst af. We verwijderen dan je profielgegevens; facturen en
+            dossierrecords blijven bewaard zolang de wet dat vraagt, met je naam vervangen door een
+            aanduiding die niet naar jou herleidbaar is.
+          </li>
           <li>
             Wij kunnen een account opschorten of beëindigen bij misbruik, bij vervalste documenten,
             of als iemand de veiligheid van anderen in gevaar brengt.

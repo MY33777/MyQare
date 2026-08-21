@@ -68,7 +68,7 @@ const STEPS = [
       "Er is geen knop 'dossier aanmaken'. Elk van de stappen hierboven schreef zijn eigen deel weg op het moment dat het gebeurde, met een kopie van de gegevens zoals die er toen uitzagen.",
       "Dat laatste is het punt: als een zorgprofessional twee jaar later zijn profiel aanpast, verandert er niets aan wat er in het dossier staat over een opdracht uit 2026.",
     ],
-    records: "Te exporteren als pdf, per periode of per zorgprofessional, vanaf het dossieroverzicht van de instelling.",
+    records: "Te exporteren als pdf, per periode of per zorgprofessional, vanaf het dossieroverzicht van de instelling. Een vraag gaat meestal over één samenwerking, dus dat is ook de vorm waarin je hem kunt opvragen.",
   },
 ];
 

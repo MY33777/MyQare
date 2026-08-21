@@ -39,6 +39,7 @@ type DossierRow = {
     id: string;
     agreed_rate_cents: number;
     status: string;
+    freelancer_id: string;
     profiles: { full_name: string } | null;
     shifts: { profession: string; starts_at: string; ends_at: string } | null;
     timesheets: { minutes_claimed: number; break_minutes: number } | null;
@@ -58,12 +59,43 @@ export default async function DossierPage() {
   const { data: records } = await supabase
     .from("compliance_records")
     .select(
-      "assignment_id, model_agreement_version, offered_at, accepted_at, could_decline, substitution_allowed, rate_set_by, declined_other_offers, snapshot, assignments!inner(id, agreed_rate_cents, status, org_id, profiles!assignments_freelancer_id_fkey(full_name), shifts(profession, starts_at, ends_at), timesheets(minutes_claimed, break_minutes))",
+      "assignment_id, model_agreement_version, offered_at, accepted_at, could_decline, substitution_allowed, rate_set_by, declined_other_offers, snapshot, assignments!inner(id, freelancer_id, agreed_rate_cents, status, org_id, profiles!assignments_freelancer_id_fkey(full_name), shifts(profession, starts_at, ends_at), timesheets(minutes_claimed, break_minutes))",
     )
     .eq("assignments.org_id", org.id)
     .order("accepted_at", { ascending: false })
     .limit(DOSSIER_PAGE_CAP)
     .returns<DossierRow[]>();
+
+  /*
+   * Everybody who appears in this dossier, once each.
+   *
+   * Built from the records already on screen rather than from a second query:
+   * the point of the filter is to narrow THIS document, so offering a name that
+   * has no records in it would produce an empty pdf and no explanation. Snapshot
+   * name first, for the same reason the table below uses it — an anonymised
+   * profile must not turn a historical entry into "Onbekend".
+   */
+  const people = [
+    ...new Map(
+      (records ?? [])
+        .map((record) => {
+          const snap = record.snapshot as { freelancer?: { full_name?: string | null } } | null;
+          const id = record.assignments?.freelancer_id;
+          if (!id) return null;
+          return [
+            id,
+            {
+              id,
+              name:
+                snap?.freelancer?.full_name ??
+                record.assignments?.profiles?.full_name ??
+                "Onbekend",
+            },
+          ] as const;
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null),
+    ).values(),
+  ].sort((a, b) => a.name.localeCompare(b.name, "nl"));
 
   return (
     <>
@@ -90,6 +122,26 @@ export default async function DossierPage() {
               Tot en met
             </label>
             <input className="input" id="to" name="to" type="date" />
+          </div>
+          <div>
+            <label className="label" htmlFor="freelancer_id">
+              Zorgprofessional
+            </label>
+            {/*
+              /hoe-het-werkt has promised "per periode of per zorgprofessional"
+              since it was written, and only the period existed. It is also the
+              shape the document is usually needed in: a question is about ONE
+              working relationship, and a dossier covering forty other people is
+              both harder to read and more personal data than was asked for.
+            */}
+            <select className="select" id="freelancer_id" name="freelancer_id" defaultValue="">
+              <option value="">Iedereen</option>
+              {people.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.name}
+                </option>
+              ))}
+            </select>
           </div>
           <button className="btn btn-primary" type="submit">
             Exporteer als pdf

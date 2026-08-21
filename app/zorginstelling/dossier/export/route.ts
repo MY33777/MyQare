@@ -45,6 +45,22 @@ export async function GET(request: NextRequest) {
   const from = request.nextUrl.searchParams.get("from");
   const to = request.nextUrl.searchParams.get("to");
 
+  /*
+   * One person, if asked for.
+   *
+   * /hoe-het-werkt has promised "te exporteren per periode of per
+   * zorgprofessional" since the page was written, and only the period existed.
+   * It is also the shape the document is most often needed in: an inspector or
+   * the Belastingdienst asks about ONE working relationship, and handing over a
+   * dossier covering forty other people is both more work to read and more
+   * personal data than the question called for.
+   *
+   * Filtered through the caller's own client, so RLS still scopes it to this
+   * facility's own assignments — an id from a query string cannot reach another
+   * organisation's records.
+   */
+  const freelancerId = request.nextUrl.searchParams.get("freelancer_id");
+
   // Read with the caller's own client so RLS scopes the rows, rather than
   // trusting a filter written by hand against the service role.
   const supabase = await createClient();
@@ -75,6 +91,19 @@ export async function GET(request: NextRequest) {
    * was filed under August — and a dossier that omits assignments inside its own
    * declared period is worse than no dossier at all.
    */
+  /*
+   * A uuid or nothing. An unparseable value would make PostgREST raise 22P02 and
+   * turn a mistyped URL into a 500; refusing to filter on nonsense and returning
+   * the full dossier would be worse — the reader asked for one person and would
+   * silently receive everybody.
+   */
+  if (freelancerId) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(freelancerId)) {
+      return NextResponse.json({ error: "bad_freelancer_id" }, { status: 400 });
+    }
+    query = query.eq("assignments.freelancer_id", freelancerId);
+  }
+
   if (from) {
     const fromIso = localInputToIso(`${from}T00:00`);
     if (fromIso) query = query.gte("accepted_at", fromIso);

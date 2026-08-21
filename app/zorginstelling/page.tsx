@@ -19,7 +19,30 @@ type ShiftRow = {
   ends_at: string;
   hourly_rate_cents: number;
   status: string;
+  /*
+   * An ARRAY, because a shift can carry a cancelled assignment plus its
+   * replacement — migration 008 replaced the unique constraint with a partial
+   * index so a cancelled one stops reserving its shift, and PostgREST infers
+   * cardinality from that constraint. See the long note in
+   * app/zorginstelling/diensten/[id]/page.tsx, where typing this as an object
+   * made every shift render a card naming nobody.
+   */
+  assignments: { status: string; profiles: { full_name: string } | null }[] | null;
 };
+
+/**
+ * The name of whoever took the shift, if anybody has.
+ *
+ * A shift can carry a cancelled assignment plus its replacement — see migration
+ * 008 — so this picks the live one rather than [0], which would name last week's
+ * withdrawal as the person turning up tomorrow.
+ */
+function filledBy(shift: {
+  assignments?: { status: string; profiles: { full_name: string } | null }[] | null;
+}): string | null {
+  const live = (shift.assignments ?? []).find((row) => row.status !== "cancelled");
+  return live?.profiles?.full_name ?? null;
+}
 
 export default async function FacilityDashboard() {
   const { org } = await requireFacilityAdmin("/zorginstelling");
@@ -31,7 +54,10 @@ export default async function FacilityDashboard() {
     await Promise.all([
     supabase
       .from("shifts")
-      .select("id, profession, department, starts_at, ends_at, hourly_rate_cents, status")
+      .select(
+        "id, profession, department, starts_at, ends_at, hourly_rate_cents, status, " +
+          "assignments(status, profiles!assignments_freelancer_id_fkey(full_name))",
+      )
       .eq("org_id", org.id)
       .gte("starts_at", now)
       .order("starts_at", { ascending: true })
@@ -130,6 +156,7 @@ export default async function FacilityDashboard() {
                 <th>Afdeling</th>
                 <th>Tarief</th>
                 <th>Status</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -157,6 +184,28 @@ export default async function FacilityDashboard() {
                             ? "Geannuleerd"
                             : "Verlopen"}
                     </span>
+                    {/*
+                      Who is coming, not merely that somebody is.
+
+                      "Ingevuld" answered the smaller half of the question. A
+                      coordinator looking at tomorrow needs the name — to ring
+                      them, to know whether it is somebody the ward has had
+                      before — and getting it meant opening the shift.
+                    */}
+                    {filledBy(shift) ? (
+                      <span className="block text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                        {filledBy(shift)}
+                      </span>
+                    ) : null}
+                  </td>
+                  <td>
+                    {/*
+                      The row was not a link at all, so the dashboard listed the
+                      week and gave no way into any of it.
+                    */}
+                    <Link className="text-sm" href={`/zorginstelling/diensten/${shift.id}`}>
+                      Bekijken
+                    </Link>
                   </td>
                 </tr>
               ))}

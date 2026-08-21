@@ -8,6 +8,7 @@ import { formatDate } from "@/lib/hours";
 import { qualificationLabel } from "@/lib/qualifications";
 import { verifyBigAction, verifyOrganisationAction } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { authErrorMessage } from "@/lib/authErrors";
 
 export const metadata: Metadata = { title: "Beheer" };
 
@@ -89,7 +90,9 @@ export default async function StaffDashboard({
       />
 
       {params.saved ? <FormMessage kind="ok">Opgeslagen.</FormMessage> : null}
-      {params.error ? <FormMessage kind="error">Er ging iets mis.</FormMessage> : null}
+      {params.error ? (
+        <FormMessage kind="error">{authErrorMessage(params.error)}</FormMessage>
+      ) : null}
 
       {/*
         Hidden when this admin cannot act on it.
@@ -238,13 +241,36 @@ export default async function StaffDashboard({
                     <td className="tnum">{org.kvk ?? "—"}</td>
                     <td className="tnum">{org.verified_at ? formatDate(org.verified_at) : "—"}</td>
                     <td>
-                      <form action={verifyOrganisationAction}>
-                        <input type="hidden" name="org_id" value={org.id} />
-                        <input type="hidden" name="approve" value="false" />
-                        <SubmitButton className="btn btn-danger">
+                      {/*
+                        A second click, and what it actually does.
+
+                        "Intrekken" was one tap on a red button in a table row.
+                        Withdrawing verification stops a facility posting work
+                        immediately — mid-week, with a roster half filled — and
+                        closes the document access their pool gave them. That is
+                        the right power to have and the wrong one to have by
+                        mis-tapping a row.
+                      */}
+                      <details>
+                        <summary
+                          className="cursor-pointer text-sm font-semibold"
+                          style={{ color: "var(--danger)" }}
+                        >
                           Intrekken
-                        </SubmitButton>
-                      </form>
+                        </summary>
+                        <p className="text-sm mt-2 mb-3" style={{ color: "var(--text-muted)" }}>
+                          {org.name} kan daarna geen diensten meer plaatsen en krijgt geen
+                          documentgegevens van zorgprofessionals meer te zien. Al geplaatste
+                          diensten en lopende opdrachten blijven staan.
+                        </p>
+                        <form action={verifyOrganisationAction}>
+                          <input type="hidden" name="org_id" value={org.id} />
+                          <input type="hidden" name="approve" value="false" />
+                          <SubmitButton className="btn btn-danger">
+                            Ja, verificatie intrekken
+                          </SubmitButton>
+                        </form>
+                      </details>
                     </td>
                   </tr>
                 ))}

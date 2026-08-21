@@ -178,12 +178,36 @@ export default async function AdminsPage({
                   </div>
 
                   {!isMe ? (
-                    <form action={removeAdminAction}>
-                      <input type="hidden" name="profile_id" value={person.id} />
-                      <SubmitButton className="btn btn-danger">
+                    /*
+                      A second click, and a sentence saying what it does.
+
+                      Removing an admin was one tap on a red button next to their
+                      name — no confirmation, no statement of consequence, and no
+                      undo anywhere in the product: putting somebody back means
+                      appointing them again and re-granting every capability by
+                      hand. The <details> pattern is already used for cancelling
+                      an assignment, which is a smaller act than this one.
+
+                      Deliberately not a confirmation on every action. A dialog in
+                      front of something harmless is what teaches people to click
+                      through the one that matters.
+                    */
+                    <details>
+                      <summary className="cursor-pointer text-sm font-semibold" style={{ color: "var(--danger)" }}>
                         Verwijderen als beheerder
-                      </SubmitButton>
-                    </form>
+                      </summary>
+                      <p className="text-sm mt-2 mb-3" style={{ color: "var(--text-muted)" }}>
+                        {person.full_name} verliest direct alle toegang tot /beheer en al hun
+                        rechten worden ingetrokken. Terugdraaien betekent opnieuw benoemen en elk
+                        recht opnieuw toekennen. Het account zelf blijft bestaan.
+                      </p>
+                      <form action={removeAdminAction}>
+                        <input type="hidden" name="profile_id" value={person.id} />
+                        <SubmitButton className="btn btn-danger">
+                          Ja, verwijderen als beheerder
+                        </SubmitButton>
+                      </form>
+                    </details>
                   ) : null}
                 </div>
 

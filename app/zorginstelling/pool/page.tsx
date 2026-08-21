@@ -78,6 +78,32 @@ export default async function PoolPage({
         </SubmitButton>
       </form>
 
+      {/*
+        What the three states actually DO, said on the screen that sets them.
+
+        "Favoriet" and "Verbergen" were two buttons with no consequence attached
+        to either. A coordinator could not tell whether hiding somebody was a
+        note to themselves or something that person would notice — and it is
+        neither: it silently removes them from every offer, including a
+        region-wide one they would otherwise have received as a stranger. That is
+        a real consequence for somebody's income and it was unlabelled.
+      */}
+      <div className="card p-4 mb-6 text-sm" style={{ color: "var(--text-muted)" }}>
+        <p>
+          <strong style={{ color: "var(--text)" }}>Lid</strong> — krijgt elke dienst die je aan je
+          pool aanbiedt.
+        </p>
+        <p className="mt-1">
+          <strong style={{ color: "var(--text)" }}>Favoriet</strong> — krijgt daarnaast de diensten
+          die je alleen aan favorieten aanbiedt.
+        </p>
+        <p className="mt-1">
+          <strong style={{ color: "var(--text)" }}>Verborgen</strong> — krijgt niets meer van je te
+          zien, ook geen regio-aanbod. De zorgprofessional krijgt hier geen bericht over en merkt
+          alleen dat er geen diensten meer binnenkomen.
+        </p>
+      </div>
+
       {active.length === 0 ? (
         <EmptyState
           title="Je pool is nog leeg"

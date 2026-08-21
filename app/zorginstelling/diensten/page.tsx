@@ -57,7 +57,13 @@ export default async function ShiftsPage({
     <>
       <PageHeader
         title="Diensten"
-        description="Alles wat je hebt geplaatst, nieuwste eerst."
+        /*
+          It sorts on starts_at descending, which is "latest shift first" — not
+          "nieuwste eerst", which reads as most-recently-created. For a
+          coordinator those differ by exactly the thing they care about: a shift
+          posted this morning for next month sat above tonight's gap.
+        */
+        description="Alles wat je hebt geplaatst, de laatste dienst in de tijd bovenaan."
         action={
           org.verified_at ? (
             <Link className="btn btn-primary" href="/zorginstelling/diensten/nieuw">
@@ -92,9 +98,13 @@ export default async function ShiftsPage({
            * fails silently — the shift exists, nobody hears about it. Worth saying
            * out loud rather than showing a cheerful success message.
            */
-          <FormMessage kind="error">
-            Dienst geplaatst, maar aan niemand aangeboden. Er zitten nog geen passende
-            zorgprofessionals in je pool — voeg ze toe via <Link href="/zorginstelling/pool">Mijn pool</Link>.
+          <FormMessage kind="warn">
+            Dienst geplaatst, maar aan niemand aangeboden — er is niemand gevonden die past. Dat
+            komt door één van drie dingen: er zit nog niemand met deze kwalificatie in je{" "}
+            <Link href="/zorginstelling/pool">pool</Link>, je koos &quot;alleen favorieten&quot; en
+            die zijn er nog niet, of je plaatste een regio-aanbod voor een regio waar nog niemand
+            werkt. De dienst staat gewoon open: pas je pool aan of plaats hem opnieuw met een
+            andere zichtbaarheid.
           </FormMessage>
         )
       ) : null}

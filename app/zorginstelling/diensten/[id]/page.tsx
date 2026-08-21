@@ -66,6 +66,16 @@ type ShiftDetail = {
      * number was one PostgREST call away for any pool facility.
      */
     profiles: { full_name: string; profile_contact: { phone: string | null } | null } | null;
+    freelancer_id: string;
+    /*
+     * The Wkkgz answer, on the screen where the question is asked.
+     *
+     * This card told a coordinator who was coming and gave them a phone number,
+     * and said nothing about whether that person's papers were in order — which
+     * is the facility's own legal duty, not the freelancer's, and the reason the
+     * dossier exists at all. Checking it meant leaving this page for the pool.
+     */
+    freelancers: { big_number: string | null; big_verified_at: string | null } | null;
   }[];
 };
 
@@ -94,7 +104,7 @@ export default async function FacilityShiftDetailPage({
   const { data: shift } = await supabase
     .from("shifts")
     .select(
-      "id, profession, department, location, region, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, visibility, respond_by, shift_offers(id, response, responded_at, viewed_at, profiles(full_name)), assignments(id, status, accepted_at, cancelled_at, cancelled_by, cancel_reason, timesheets(claimed_at), profiles!assignments_freelancer_id_fkey(full_name, profile_contact(phone)))",
+      "id, profession, department, location, region, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, visibility, respond_by, shift_offers(id, response, responded_at, viewed_at, profiles(full_name)), assignments(id, status, accepted_at, cancelled_at, cancelled_by, cancel_reason, freelancer_id, timesheets(claimed_at), freelancers!assignments_freelancer_id_fkey(big_number, big_verified_at), profiles!assignments_freelancer_id_fkey(full_name, profile_contact(phone)))",
     )
     .eq("id", id)
     .eq("org_id", org.id)
@@ -242,6 +252,25 @@ export default async function FacilityShiftDetailPage({
           <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
             Aangenomen op {formatDateTime(assignment.accepted_at)}
           </p>
+
+          {/*
+            Papers, at a glance. Verifying that somebody is qualified before they
+            work is the facility's duty under Wkkgz, and this page — the one open
+            the evening before a shift — required leaving it to find out.
+          */}
+          <div className="flex flex-wrap gap-2 mt-3">
+            {assignment.freelancers?.big_verified_at ? (
+              <span className="badge badge-ok">BIG gecontroleerd</span>
+            ) : assignment.freelancers?.big_number ? (
+              <span className="badge badge-warn">BIG nog niet gecontroleerd</span>
+            ) : null}
+            <Link
+              className="badge badge-neutral no-underline"
+              href={`/zorginstelling/pool/${assignment.freelancer_id}`}
+            >
+              Documenten bekijken
+            </Link>
+          </div>
 
           {/*
             Gone once hours are in. Cancelling then took the shift out of the

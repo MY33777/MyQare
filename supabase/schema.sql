@@ -160,6 +160,19 @@ create table if not exists freelancers (
   -- has actually looked the number up in the register.
   big_number text,
   big_verified_at timestamptz,
+  /*
+   * When a human last LOOKED, whatever the answer.
+   *
+   * big_verified_at records only a successful check, so a number looked up and
+   * not found had nowhere to be recorded: the review queue filters on
+   * big_verified_at being null, the row never moved, and the same number came
+   * back to be looked up again the next day. The one outcome the check exists to
+   * detect was the one the product could not store. See migration 021.
+   */
+  big_checked_at timestamptz,
+  -- Why a check failed, shown to the freelancer. Almost always a typo — eleven
+  -- digits from memory — which nobody could tell them before this existed.
+  big_check_note text,
   profession text not null default '',
   specialisations text[] not null default '{}',
   -- Province or region they will travel to. Free text in v1 — a controlled

@@ -70,9 +70,28 @@ export async function verifyBigAction(formData: FormData) {
   const approve = String(formData.get("approve") ?? "") === "true";
   if (!freelancerId) redirect("/beheer?error=unknown");
 
+  const now = new Date().toISOString();
+  const note = String(formData.get("note") ?? "").trim() || null;
+
+  /*
+   * Both outcomes are recorded, and that is the whole point of this change.
+   *
+   * "Niet gevonden" used to set big_verified_at to null — the value it already
+   * had — so the row did not move. The queue filters on that column, so the one
+   * answer this check exists to produce was the one it could not store: the
+   * number came back tomorrow and the next reviewer looked it up again.
+   *
+   * big_checked_at says a human looked, whatever they found. big_verified_at
+   * stays the narrower claim, because that is what a facility leans on for its
+   * own Wkkgz duty and it must never mean "somebody clicked something".
+   */
   const { error: bigError } = await getSupabaseAdmin()
     .from("freelancers")
-    .update({ big_verified_at: approve ? new Date().toISOString() : null })
+    .update({
+      big_verified_at: approve ? now : null,
+      big_checked_at: now,
+      big_check_note: approve ? null : note,
+    })
     .eq("profile_id", freelancerId);
 
   // Facilities lean on this badge for their own Wkkgz duty. A silent failure here

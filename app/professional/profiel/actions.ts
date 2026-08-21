@@ -94,7 +94,19 @@ export async function updateProfileAction(formData: FormData) {
        * A trigger enforces this in the database as well (migration 008); this
        * stays so the intent is visible where the write happens.
        */
-      ...(bigNumber && bigNumber === current?.big_number ? {} : { big_verified_at: null }),
+      /*
+       * A changed number is a NEW claim, so it clears both the badge and the
+       * record that anyone looked.
+       *
+       * big_checked_at is what keeps a checked-and-not-found number out of the
+       * review queue (migration 021). Clearing only big_verified_at would leave a
+       * corrected number invisible to reviewers forever — which is the opposite
+       * of the point, since a typo is the likeliest reason it failed and this is
+       * exactly the moment somebody is fixing it.
+       */
+      ...(bigNumber && bigNumber === current?.big_number
+        ? {}
+        : { big_verified_at: null, big_checked_at: null, big_check_note: null }),
     })
     .eq("profile_id", freelancer.userId);
 

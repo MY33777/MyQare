@@ -29,12 +29,14 @@ export default async function ProfilePage({
 
   const { data: freelancer } = await supabase
     .from("freelancers")
-    .select("kvk, big_number, big_verified_at, profession, region, bio, hourly_rate_min_cents, vat_exempt")
+    .select("kvk, big_number, big_verified_at, profession, region, bio, hourly_rate_min_cents, vat_exempt, big_check_note")
     .eq("profile_id", userId)
     .maybeSingle<{
       kvk: string | null;
       big_number: string | null;
       big_verified_at: string | null;
+      /** Why the last register lookup failed, if it did. See migration 021. */
+      big_check_note: string | null;
       profession: string;
       region: string | null;
       bio: string | null;
@@ -144,6 +146,21 @@ export default async function ProfilePage({
                 ? "Gecontroleerd in het BIG-register."
                 : "We controleren dit in het BIG-register voordat instellingen het zien."}
             </p>
+            {/*
+              Why the last check failed, said where the number is typed.
+
+              A reviewer looking the number up and not finding it used to be
+              invisible: no badge changed, no message appeared, and the
+              freelancer went on believing it was fine while facilities saw
+              "niet gecontroleerd" against their name. Almost always a typo.
+            */}
+            {freelancer?.big_check_note ? (
+              <p className="hint" style={{ color: "var(--danger)" }}>
+                Dit nummer is opgezocht in het BIG-register en niet gevonden:{" "}
+                {freelancer.big_check_note} Corrigeer het hier — daarna kijkt iemand er opnieuw
+                naar.
+              </p>
+            ) : null}
           </div>
         </div>
 

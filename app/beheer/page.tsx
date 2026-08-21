@@ -75,6 +75,14 @@ export default async function StaffDashboard({
       .select("profile_id, big_number, big_verified_at, profession, profiles(full_name)")
       .not("big_number", "is", null)
       .is("big_verified_at", null)
+      /*
+       * And not already looked at. Without this a number checked and NOT found
+       * sat in the queue forever, because "not found" writes null to
+       * big_verified_at — the value it already had. It returns only when the
+       * freelancer edits the number, which clears big_checked_at: a new number is
+       * a new claim.
+       */
+      .is("big_checked_at", null)
       .limit(100)
       .returns<FreelancerRow[]>(),
   ]);
@@ -212,13 +220,53 @@ export default async function StaffDashboard({
                     </a>
                   </td>
                   <td>
-                    <form action={verifyBigAction}>
-                      <input type="hidden" name="freelancer_id" value={row.profile_id} />
-                      <input type="hidden" name="approve" value="true" />
-                      <SubmitButton className="btn btn-primary">
-                        Gecontroleerd
-                      </SubmitButton>
-                    </form>
+                    {/*
+                      Two outcomes, because a lookup has two.
+
+                      There was one button: "Gecontroleerd". A reviewer who
+                      searched bigregister.nl and did NOT find the number could
+                      only approve it or leave the row — so the answer this check
+                      exists to produce had nowhere to go, the row came back
+                      tomorrow, and the next person looked it up again. Meanwhile
+                      the freelancer was never told, so a typo — eleven digits
+                      from memory, by far the likeliest cause — stayed a typo.
+                    */}
+                    <div className="flex flex-col gap-2 items-end">
+                      <form action={verifyBigAction}>
+                        <input type="hidden" name="freelancer_id" value={row.profile_id} />
+                        <input type="hidden" name="approve" value="true" />
+                        <SubmitButton className="btn btn-primary">
+                          Gevonden in register
+                        </SubmitButton>
+                      </form>
+
+                      <details>
+                        <summary className="cursor-pointer text-sm font-semibold">
+                          Niet gevonden
+                        </summary>
+                        <form action={verifyBigAction} className="mt-2 flex flex-col gap-2">
+                          <input type="hidden" name="freelancer_id" value={row.profile_id} />
+                          <input type="hidden" name="approve" value="false" />
+                          <label className="label" htmlFor={`big-note-${row.profile_id}`}>
+                            Wat klopt er niet?
+                          </label>
+                          <input
+                            className="input"
+                            id={`big-note-${row.profile_id}`}
+                            name="note"
+                            type="text"
+                            placeholder="bijv. nummer bestaat niet, of staat op een andere naam"
+                          />
+                          <p className="hint">
+                            De zorgprofessional ziet dit en kan het nummer aanpassen. Daarna komt
+                            het hier opnieuw langs.
+                          </p>
+                          <SubmitButton className="btn btn-secondary">
+                            Vastleggen als niet gevonden
+                          </SubmitButton>
+                        </form>
+                      </details>
+                    </div>
                   </td>
                 </tr>
               ))}

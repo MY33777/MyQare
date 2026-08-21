@@ -82,6 +82,8 @@ const MESSAGES: Record<string, string> = {
   topup_too_high:
     "Je kunt maximaal € 5.000,00 per keer opwaarderen. Meer nodig? Doe het in twee keer.",
   invalid_amount: "Vul een geldig bedrag in, bijvoorbeeld 50,00.",
+  document_unavailable:
+    "Dit bestand staat niet meer in de opslag. Vraag de zorgprofessional het opnieuw te uploaden.",
   bad_kind: "Kies een geldig soort document.",
   finish_onboarding_first:
     "Rond eerst je profiel af. Zonder een compleet profiel kunnen we een betaling " +

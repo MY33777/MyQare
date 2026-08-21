@@ -6,7 +6,6 @@ import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import {
   DOCUMENT_KIND_LABELS,
   KINDS_NEEDING_EXPIRY,
-  documentUrl,
   expiryState,
   type DocumentKind,
 } from "@/lib/documents";
@@ -14,6 +13,7 @@ import { formatDate } from "@/lib/hours";
 import { qualificationLabel } from "@/lib/qualifications";
 import { reviewDocumentAction } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { authErrorMessage } from "@/lib/authErrors";
 
 export const metadata: Metadata = { title: "Documenten beoordelen" };
 
@@ -65,27 +65,46 @@ export default async function ReviewDocumentsPage({
     .returns<PendingDocument[]>();
 
   /*
-   * Signed links minted per render, valid five minutes. The bucket is private, so
-   * a path is not a URL — and a short expiry means a link left in a tab or pasted
-   * into a chat stops working rather than becoming a standing disclosure of
-   * someone's identity document.
+   * NO LINKS MINTED HERE ANY MORE.
+   *
+   * This used to create a signed URL for every pending document as the page
+   * rendered — up to fifty live five-minute bearer tokens for VOGs, diplomas and
+   * insurance certificates, generated every time anybody loaded the queue, of
+   * which a reviewer opens perhaps one. Each one sat in the HTML, in the browser
+   * cache, and in whatever the page was shared through.
+   *
+   * Each row now links to app/beheer/documenten/[id]/route.ts, which re-checks
+   * the capability and mints exactly the link that was asked for. That second
+   * check matters on its own: a queue page can sit open for an hour after
+   * somebody's access was withdrawn.
    */
-  const withLinks = await Promise.all(
-    (documents ?? []).map(async (document) => ({
-      ...document,
-      url: await documentUrl(document.file_path),
-    })),
-  );
+  const withLinks = documents ?? [];
 
   return (
     <>
+      {/*
+        The size of the queue, said out loud.
+
+        After each decision the row leaves the list and the page returns to the
+        top, with no indication of whether this is the second of three or the
+        second of forty. A reviewer working through a backlog needs to know
+        whether to keep going, and counting cards is not that.
+      */}
       <PageHeader
         title="Documenten beoordelen"
-        description="Oudste eerst. Controleer of het document echt is, bij deze persoon hoort, en nog geldig is."
+        description={
+          withLinks.length === 0
+            ? "Controleer of een document echt is, bij deze persoon hoort, en nog geldig is."
+            : "Nog " +
+              withLinks.length +
+              " te beoordelen, oudste eerst. Controleer of het document echt is, bij deze persoon hoort, en nog geldig is."
+        }
       />
 
       {params.saved ? <FormMessage kind="ok">Beoordeling opgeslagen.</FormMessage> : null}
-      {params.error ? <FormMessage kind="error">Er ging iets mis.</FormMessage> : null}
+      {params.error ? (
+        <FormMessage kind="error">{authErrorMessage(params.error)}</FormMessage>
+      ) : null}
 
       {withLinks.length === 0 ? (
         <EmptyState
@@ -157,25 +176,19 @@ export default async function ReviewDocumentsPage({
                 </div>
               </div>
 
-              {document.url ? (
-                <p className="mb-4">
-                  <a
-                    className="btn btn-secondary"
-                    href={document.url}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                  >
-                    Document openen
-                  </a>
-                  <span className="text-xs ml-3" style={{ color: "var(--text-muted)" }}>
-                    Link verloopt na 5 minuten.
-                  </span>
-                </p>
-              ) : (
-                <p className="mb-4 text-sm" style={{ color: "var(--danger)" }}>
-                  Bestand niet gevonden in opslag.
-                </p>
-              )}
+              <p className="mb-4">
+                <a
+                  className="btn btn-secondary"
+                  href={`/beheer/documenten/${document.id}`}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  Document openen
+                </a>
+                <span className="text-xs ml-3" style={{ color: "var(--text-muted)" }}>
+                  De link wordt bij het openen aangemaakt en verloopt na 5 minuten.
+                </span>
+              </p>
 
               <div className="flex flex-wrap gap-3 items-end">
                 <form action={reviewDocumentAction}>

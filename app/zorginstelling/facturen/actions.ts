@@ -52,5 +52,8 @@ export async function markInvoicePaidAction(formData: FormData) {
   }
 
   revalidatePath("/zorginstelling/facturen");
-  redirect("/zorginstelling/facturen");
+  // Confirmed, now that the page renders a result. Marking an invoice paid is
+  // irreversible from the product — there is no counterpart action — so the one
+  // thing it owes the coordinator is an unambiguous "that landed".
+  redirect("/zorginstelling/facturen?paid=1");
 }

@@ -7,6 +7,8 @@ import { formatDate } from "@/lib/hours";
 import { amsterdamDateKey } from "@/lib/timezone";
 import { markInvoicePaidAction } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { FormMessage } from "@/components/AuthShell";
+import { authErrorMessage } from "@/lib/authErrors";
 
 export const metadata: Metadata = { title: "Facturen" };
 
@@ -39,7 +41,20 @@ type InvoiceRow = {
  */
 const INVOICE_CAP = 2000;
 
-export default async function FacilityInvoicesPage() {
+export default async function FacilityInvoicesPage({
+  searchParams,
+}: {
+  /*
+   * This page took no searchParams at all.
+   *
+   * markInvoicePaidAction and the CSV export both redirect back here with a
+   * result, and nothing rendered any of it — a failed "markeer betaald" looked
+   * exactly like a successful one, and the button was still there inviting a
+   * retry. Same shape as the freelancer's invoice page before round 6.
+   */
+  searchParams: Promise<{ error?: string; paid?: string }>;
+}) {
+  const params = await searchParams;
   const { org } = await requireFacilityAdmin("/zorginstelling/facturen");
   const supabase = await createClient();
 
@@ -82,6 +97,11 @@ export default async function FacilityInvoicesPage() {
         title="Facturen"
         description="Facturen van zorgprofessionals, automatisch opgemaakt na goedkeuring van de uren."
       />
+
+      {params.error ? (
+        <FormMessage kind="error">{authErrorMessage(params.error)}</FormMessage>
+      ) : null}
+      {params.paid ? <FormMessage kind="ok">Factuur op betaald gezet.</FormMessage> : null}
 
       <div className="card p-4 mb-6 inline-block">
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>

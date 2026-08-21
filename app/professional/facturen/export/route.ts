@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getFreelancer } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { csvEuros, csvFilename, csvHours, toCsv } from "@/lib/csv";
+import { SITE_URL } from "@/lib/site";
+import { amsterdamDateKey } from "@/lib/timezone";
 
 /*
  * A freelancer's invoices as a spreadsheet.
@@ -78,7 +80,17 @@ export async function GET(request: NextRequest) {
       invoice.number,
       invoice.issued_on,
       invoice.due_on,
-      invoice.paid_at ? invoice.paid_at.slice(0, 10) : "",
+      /*
+       * The Amsterdam day, not the UTC one.
+       *
+       * paid_at is a timestamptz and slicing the ISO string takes the UTC date —
+       * so a payment recorded at 00:30 Amsterdam landed on the previous day here
+       * while the facility's own export (which already converts) put it on the
+       * right one. Two parties booking the same invoice into different months is
+       * the kind of discrepancy an accountant finds in March and nobody can
+       * explain.
+       */
+      invoice.paid_at ? amsterdamDateKey(new Date(invoice.paid_at)) : "",
       invoice.organisations?.name ?? "",
       invoice.organisations?.kvk ?? "",
       csvHours(invoice.minutes_billed),
@@ -92,6 +104,18 @@ export async function GET(request: NextRequest) {
       csvEuros(invoice.total_cents),
     ]),
   );
+
+  /*
+   * An empty range says so, rather than downloading a file with only headers.
+   *
+   * A CSV containing one header row opens as a blank sheet, which reads as "I
+   * have no invoices" — not as "the dates I picked caught nothing". On a phone
+   * it is worse: the download happens silently and there is nothing to open at
+   * all, so the button appears to have done nothing.
+   */
+  if ((data ?? []).length === 0) {
+    return NextResponse.redirect(new URL("/professional/facturen?error=empty_export", SITE_URL));
+  }
 
   return new NextResponse(csv, {
     headers: {

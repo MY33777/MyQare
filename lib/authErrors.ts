@@ -84,6 +84,9 @@ const MESSAGES: Record<string, string> = {
   invalid_amount: "Vul een geldig bedrag in, bijvoorbeeld 50,00.",
   document_unavailable:
     "Dit bestand staat niet meer in de opslag. Vraag de zorgprofessional het opnieuw te uploaden.",
+  empty_export:
+    "Er zijn geen facturen in die periode. Pas het datumbereik aan, of laat de " +
+    "velden leeg om alles te exporteren.",
   bad_kind: "Kies een geldig soort document.",
   finish_onboarding_first:
     "Rond eerst je profiel af. Zonder een compleet profiel kunnen we een betaling " +

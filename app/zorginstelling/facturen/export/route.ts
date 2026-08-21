@@ -3,6 +3,7 @@ import { getFacilityAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { csvEuros, csvFilename, csvHours, toCsv } from "@/lib/csv";
 import { amsterdamDateKey } from "@/lib/timezone";
+import { SITE_URL } from "@/lib/site";
 
 /*
  * A facility's incoming invoices as a spreadsheet, for reconciliation against the
@@ -98,6 +99,18 @@ export async function GET(request: NextRequest) {
       invoice.paid_at ? csvEuros(0) : csvEuros(invoice.total_cents),
     ]),
   );
+
+  /*
+   * An empty range says so, rather than downloading a file with only headers.
+   *
+   * A CSV containing one header row opens as a blank sheet, which reads as "I
+   * have no invoices" — not as "the dates I picked caught nothing". On a phone
+   * it is worse: the download happens silently and there is nothing to open at
+   * all, so the button appears to have done nothing.
+   */
+  if ((data ?? []).length === 0) {
+    return NextResponse.redirect(new URL("/zorginstelling/facturen?error=empty_export", SITE_URL));
+  }
 
   return new NextResponse(csv, {
     headers: {

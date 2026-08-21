@@ -81,3 +81,19 @@ export function parseEurosToCents(input: string): number | null {
   if (!Number.isFinite(euros)) return null;
   return Math.round(euros * 100);
 }
+
+/**
+ * Cents as a bare Dutch amount, for prefilling a form field.
+ *
+ * formatEuros renders "€ 42,50", which is right on a screen and wrong in an
+ * <input>: parseEurosToCents would have to strip a currency symbol back off, and
+ * the field would look pre-formatted rather than editable. This gives "42,50".
+ *
+ * Comma, not a point. It is what a Dutch user types and what parseEurosToCents
+ * reads back, so a copied shift round-trips to the same rate rather than to
+ * four thousand two hundred and fifty euros.
+ */
+export function centsToEuroInput(cents: number): string {
+  if (!Number.isFinite(cents)) return "";
+  return (cents / 100).toFixed(2).replace(".", ",");
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyRate, formatEuros, parseEurosToCents } from "@/lib/money";
+import { applyRate, centsToEuroInput, formatEuros, parseEurosToCents } from "@/lib/money";
 
 describe("applyRate", () => {
   it("applies a basis-point rate", () => {
@@ -75,5 +75,40 @@ describe("parseEurosToCents", () => {
     expect(parseEurosToCents("42,5o")).toBeNull();
     expect(parseEurosToCents(".")).toBeNull();
     expect(parseEurosToCents("-")).toBeNull();
+  });
+});
+
+describe("centsToEuroInput", () => {
+  /*
+   * Prefills a form field rather than a screen, so it round-trips through
+   * parseEurosToCents. A point instead of a comma there would turn € 42,50 into
+   * four thousand two hundred and fifty euros on a copied shift.
+   */
+  it.each([
+    [4250, "42,50"],
+    [4200, "42,00"],
+    [100, "1,00"],
+    [5, "0,05"],
+    [0, "0,00"],
+    [123456, "1234,56"],
+  ])("renders %i cents as %s", (cents, expected) => {
+    expect(centsToEuroInput(cents)).toBe(expected);
+  });
+
+  it("round-trips through parseEurosToCents", () => {
+    for (const cents of [4250, 100, 5, 999999]) {
+      expect(parseEurosToCents(centsToEuroInput(cents))).toBe(cents);
+    }
+  });
+
+  it("gives an empty string for nonsense rather than NaN in a form field", () => {
+    expect(centsToEuroInput(Number.NaN)).toBe("");
+    expect(centsToEuroInput(Number.POSITIVE_INFINITY)).toBe("");
+  });
+
+  it("carries no currency symbol", () => {
+    // formatEuros renders "€ 42,50", which is right on a screen and wrong in an
+    // input: the parser would have to strip it back off.
+    expect(centsToEuroInput(4250)).not.toContain("€");
   });
 });

@@ -152,9 +152,31 @@ export default async function ShiftsPage({
                       </span>
                     </td>
                     <td>
-                      <Link className="btn btn-secondary" href={`/zorginstelling/diensten/${shift.id}`}>
-                        Openen
-                      </Link>
+                      <div className="flex gap-2 justify-end">
+                        <Link
+                          className="btn btn-secondary"
+                          href={`/zorginstelling/diensten/${shift.id}`}
+                        >
+                          Openen
+                        </Link>
+                        {/*
+                          The same shift again, next week.
+
+                          A ward that needed a night nurse this Tuesday usually
+                          needed one last Tuesday too — same qualification, same
+                          ward, same rate, same break, same visibility. Retyping
+                          thirteen fields for a difference of one date is the
+                          friction that ends with somebody phoning an agency
+                          instead. The form copies everything except the times,
+                          which are the one thing genuinely different each time.
+                        */}
+                        <Link
+                          className="btn btn-secondary"
+                          href={`/zorginstelling/diensten/nieuw?from=${shift.id}`}
+                        >
+                          Opnieuw plaatsen
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 );

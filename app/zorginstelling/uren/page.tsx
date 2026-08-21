@@ -46,6 +46,9 @@ export default async function TimesheetsPage({
     error?: string;
     approved?: string;
     failed?: string;
+    /** How many of the approved rows produced no invoice. Bulk path only. */
+    uninvoiced?: string;
+    invoiced?: string;
     disputed?: string;
     rated?: string;
     invoice?: string;
@@ -128,6 +131,19 @@ export default async function TimesheetsPage({
         <FormMessage kind="warn">
           {params.approved} van de {Number(params.approved) + Number(params.failed)} urenbriefjes
           goedgekeurd. De rest staat nog in de lijst hieronder.
+        </FormMessage>
+      ) : params.approved && params.uninvoiced ? (
+        /*
+          Approved but not invoiced, said as its own outcome.
+
+          This banner used to claim "goedgekeurd en gefactureerd" for every bulk
+          run, and the bulk path did not invoice at all — so the facility was told
+          an invoice existed for work that had none, and never chased it.
+        */
+        <FormMessage kind="warn">
+          {params.approved} urenbriefjes goedgekeurd, maar voor {params.uninvoiced} daarvan kon nog
+          geen factuur worden opgemaakt. De zorgprofessional heeft bericht gekregen en kan het zelf
+          alsnog laten uitgaan; de uren en de vergoeding staan vast.
         </FormMessage>
       ) : params.approved && !params.invoice ? (
         <FormMessage kind="ok">

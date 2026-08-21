@@ -271,14 +271,61 @@ export async function approveTimesheetsAction(formData: FormData) {
    * number allocator against itself — it retries on the unique index, so the
    * result would still be correct, but it would burn attempts for no reason and
    * the failure mode is an uninvoiced completed assignment.
+   *
+   * That was true of the single-row action and false of this loop until the
+   * ninth audit: this justified sequential ordering by an invoice number it
+   * never allocated, and produced the exact failure it names. The invoicing is
+   * in the loop now.
    */
   let approved = 0;
+  let invoiced = 0;
   const failed: string[] = [];
+  const uninvoiced: string[] = [];
 
   for (const id of approvable) {
     const result = await approveTimesheet(id, admin.userId);
-    if (result.ok) approved++;
-    else failed.push(result.reason);
+
+    if (!result.ok) {
+      failed.push(result.reason);
+      continue;
+    }
+
+    approved++;
+
+    /*
+     * AND THE INVOICE. This loop did not have this, and that was the defect.
+     *
+     * approveTimesheet settles the fee and sets the assignment to 'completed'
+     * (settle_timesheet in functions.sql), so the work was finished and paid for
+     * by the freelancer — and no invoice existed. The single-row action a few
+     * lines up has always invoiced immediately; the bulk path stopped at the
+     * approval. Nothing else in the codebase retries: there is no cron and no
+     * trigger, and the only route back was the freelancer noticing the
+     * "nog niet gefactureerd" list on her own page.
+     *
+     * The comment that used to sit above this loop justified running the
+     * approvals sequentially because "each approval allocates an invoice number
+     * from a per-freelancer series", and named "an uninvoiced completed
+     * assignment" as the failure it was avoiding. It allocated none, and produced
+     * exactly that.
+     */
+    const invoice = await createInvoiceForAssignment(id);
+
+    if (invoice.ok) {
+      invoiced++;
+      continue;
+    }
+
+    uninvoiced.push(invoice.reason);
+
+    /*
+     * Same as the single-row path: the freelancer is the only person who can
+     * unblock a missing VAT status or missing invoice details, so she is told.
+     * Best effort — the approval and the fee stand either way.
+     */
+    if (invoice.reason === "invoice_details_missing" || invoice.reason === "vat_undetermined") {
+      await notifyFreelancerInvoiceBlocked(id, invoice.reason, invoice.missing ?? []);
+    }
   }
 
   revalidatePath(UREN_PATH);
@@ -294,5 +341,16 @@ export async function approveTimesheetsAction(formData: FormData) {
     redirect(`${UREN_PATH}?approved=${approved}&failed=${failed.length}&error=${failed[0]}`);
   }
 
-  redirect(`${UREN_PATH}?approved=${approved}`);
+  /*
+   * Approved but not invoiced is its own outcome, and it must not be reported as
+   * success. The banner used to say "N urenbriefjes goedgekeurd en gefactureerd"
+   * for every bulk run, which was false for all of them.
+   */
+  if (uninvoiced.length > 0) {
+    redirect(
+      `${UREN_PATH}?approved=${approved}&uninvoiced=${uninvoiced.length}&invoice=${uninvoiced[0]}`,
+    );
+  }
+
+  redirect(`${UREN_PATH}?approved=${approved}&invoiced=${invoiced}`);
 }

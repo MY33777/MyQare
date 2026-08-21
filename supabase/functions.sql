@@ -149,9 +149,21 @@ begin
   from shift_offers
   where shift_id = p_shift_id and freelancer_id <> p_freelancer_id;
 
-  -- Everyone else's outstanding offer is now moot.
+  /*
+   * Everyone else's outstanding offer is now moot — but that is not a refusal.
+   *
+   * This wrote response = 'decline', so the platform recorded "geweigerd" against
+   * people who had not answered and mostly had not even opened the offer. Both
+   * facility screens showed them under Geweigerd and their own offer page said
+   * "Je hebt deze dienst geweigerd". The Wet DBA position rests on refusal being
+   * real and freely made; a refusal record the person did not create is the
+   * opposite of what the dossier is for. See migration 023.
+   *
+   * decline_reason stays 'shift_filled' because cancel_assignment reopens exactly
+   * these rows by matching on it.
+   */
   update shift_offers
-  set responded_at = now(), response = 'decline', decline_reason = 'shift_filled'
+  set responded_at = now(), response = 'expired', decline_reason = 'shift_filled'
   where shift_id = p_shift_id
     and freelancer_id <> p_freelancer_id
     and responded_at is null;

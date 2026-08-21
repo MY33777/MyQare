@@ -138,7 +138,16 @@ export default async function FacilityShiftDetailPage({
   const offers = shift.shift_offers ?? [];
 
   const accepted = offers.filter((offer) => offer.response === "accept");
+  /*
+   * Only actual refusals.
+   *
+   * This counted 'decline', which accept_shift also wrote against everybody whose
+   * offer it closed when somebody else was faster — so the tally read as eleven
+   * refusals for a shift taken in four minutes that nobody had turned down. See
+   * migration 023.
+   */
   const declined = offers.filter((offer) => offer.response === "decline");
+  const expired = offers.filter((offer) => offer.response === "expired");
   const silent = offers.filter((offer) => !offer.response);
 
   return (
@@ -343,6 +352,13 @@ export default async function FacilityShiftDetailPage({
                       <span className="badge badge-ok">Aangenomen</span>
                     ) : offer.response === "decline" ? (
                       <span className="badge badge-neutral">Niet beschikbaar</span>
+                    ) : offer.response === "expired" ? (
+                      /*
+                        Not a refusal, and it must not read as one. This person
+                        never answered — usually never even opened it, because the
+                        shift was taken within minutes.
+                      */
+                      <span className="badge badge-neutral">Vergeven aan een ander</span>
                     ) : offer.viewed_at ? (
                       <span className="badge badge-warn">Bekeken</span>
                     ) : (
@@ -366,8 +382,9 @@ export default async function FacilityShiftDetailPage({
       */}
       {offers.length > 0 ? (
         <p className="text-sm mt-3" style={{ color: "var(--text-muted)" }}>
-          {accepted.length} aangenomen · {declined.length} niet beschikbaar · {silent.length} nog geen
-          reactie. Dit wordt vastgelegd in het dossier.
+          {accepted.length} aangenomen · {declined.length} niet beschikbaar
+          {expired.length > 0 ? ` · ${expired.length} vergeven aan een ander` : ""} ·{" "}
+          {silent.length} nog geen reactie. Dit wordt vastgelegd in het dossier.
         </p>
       ) : null}
     </div>

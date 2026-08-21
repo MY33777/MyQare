@@ -235,7 +235,16 @@ export default async function OfferDetailPage({
           <FormMessage kind={offer.response === "accept" ? "ok" : "warn"}>
             {offer.response === "accept"
               ? "Je hebt deze dienst aangenomen."
-              : "Je hebt deze dienst geweigerd."}
+              : offer.response === "expired"
+                ? /*
+                    Said as what it is. This used to read "Je hebt deze dienst
+                    geweigerd" to somebody who had not answered and often had not
+                    opened it — the platform telling her she made a choice she
+                    never made, on the one thing the whole legal position rests
+                    on being freely hers. See migration 023.
+                  */
+                  "Iemand anders was eerder. Er is niets van je saldo afgeschreven, en dit telt niet mee als weigering."
+                : "Je hebt deze dienst geweigerd."}
           </FormMessage>
         ) : shift.status !== "open" ? (
           <FormMessage kind="error">Deze dienst is inmiddels door iemand anders aangenomen.</FormMessage>

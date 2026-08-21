@@ -341,7 +341,19 @@ create table if not exists shift_offers (
   notified_at timestamptz,
   viewed_at timestamptz,
   responded_at timestamptz,
-  response text check (response in ('accept', 'decline')),
+  /*
+   * accept and decline are the freelancer's OWN answers. expired is written by
+   * accept_shift when somebody else took the shift first.
+   *
+   * That third state exists because the second was being used for it: everyone
+   * else's outstanding offer was closed as 'decline', so the platform recorded a
+   * refusal against people who had not answered — most of whom never opened the
+   * offer, because it was gone within minutes. The whole Wet DBA position rests
+   * on refusal being real and visible, and a refusal record the person did not
+   * create is the opposite of the evidence the dossier exists to give. See
+   * migration 023.
+   */
+  response text check (response in ('accept', 'decline', 'expired')),
   decline_reason text,
   created_at timestamptz not null default now(),
   unique (shift_id, freelancer_id)

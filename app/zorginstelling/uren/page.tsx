@@ -9,7 +9,11 @@ import { formatEuros } from "@/lib/money";
 import { qualificationLabel } from "@/lib/qualifications";
 import { RatingForm } from "@/components/RatingForm";
 import { submitRatingAction } from "@/lib/ratingActions";
-import { approveTimesheetAction, disputeTimesheetAction } from "./actions";
+import {
+  approveTimesheetAction,
+  approveTimesheetsAction,
+  disputeTimesheetAction,
+} from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Uren goedkeuren" };
@@ -41,6 +45,7 @@ export default async function TimesheetsPage({
   searchParams: Promise<{
     error?: string;
     approved?: string;
+    failed?: string;
     disputed?: string;
     rated?: string;
     invoice?: string;
@@ -112,8 +117,24 @@ export default async function TimesheetsPage({
       />
 
       {params.error ? <FormMessage kind="error">{authErrorMessage(params.error)}</FormMessage> : null}
-      {params.approved && !params.invoice ? (
-        <FormMessage kind="ok">Uren goedgekeurd en factuur opgemaakt.</FormMessage>
+      {/*
+        The bulk result, with BOTH halves.
+
+        A partial success that names only the successes leaves the failed rows
+        sitting in the queue looking untouched — the shape three audits have
+        caught in this codebase. `failed` is only ever set by the bulk action.
+      */}
+      {params.approved && params.failed ? (
+        <FormMessage kind="warn">
+          {params.approved} van de {Number(params.approved) + Number(params.failed)} urenbriefjes
+          goedgekeurd. De rest staat nog in de lijst hieronder.
+        </FormMessage>
+      ) : params.approved && !params.invoice ? (
+        <FormMessage kind="ok">
+          {Number(params.approved) > 1
+            ? `${params.approved} urenbriefjes goedgekeurd en gefactureerd.`
+            : "Uren goedgekeurd en factuur opgemaakt."}
+        </FormMessage>
       ) : null}
       {params.approved && params.invoice === "vat_undetermined" ? (
         <FormMessage kind="error">
@@ -165,6 +186,15 @@ export default async function TimesheetsPage({
         />
       ) : pending.length === 0 ? null : (
         <div className="grid gap-4">
+          {/*
+            The checkboxes belong to this form, which is not wrapped around the
+            list — each card already contains its own forms, and HTML forbids
+            nesting one form inside another. The `form` attribute associates an
+            input with a form elsewhere in the document, which is exactly the
+            case this attribute exists for.
+          */}
+          <form id="bulk-approve" action={approveTimesheetsAction} />
+
           {pending.map((row) => {
             const sheet = row.timesheets!;
             const scheduled = row.shifts
@@ -230,6 +260,30 @@ export default async function TimesheetsPage({
                   </p>
                 ) : null}
 
+                {/*
+                  Bulk approval is offered only for rows that match their
+                  schedule.
+
+                  A normal week is five to fifteen shifts that ran exactly as
+                  planned, and confirming each one separately is how approving
+                  stops being a check and becomes a rhythm — at which point the
+                  one row that DIFFERS gets waved through with the rest. So a
+                  differing row keeps its own button and its own decision, which
+                  is the only place the attention is worth spending.
+                */}
+                {!differs ? (
+                  <label className="flex items-center gap-2 text-sm mb-3">
+                    <input
+                      type="checkbox"
+                      name="assignment_id"
+                      value={row.id}
+                      form="bulk-approve"
+                      className="w-4 h-4"
+                    />
+                    Meenemen in &quot;alles goedkeuren&quot;
+                  </label>
+                ) : null}
+
                 <div className="flex flex-wrap gap-3 items-end">
                   <form action={approveTimesheetAction}>
                     <input type="hidden" name="assignment_id" value={row.id} />
@@ -259,6 +313,28 @@ export default async function TimesheetsPage({
               </div>
             );
           })}
+          {/*
+            Sits at the end, so it is reached after the rows rather than before
+            them. A bulk button above an unread list is an invitation to approve
+            without reading it.
+          */}
+          {pending.some((row) => {
+            const sheet = row.timesheets!;
+            const scheduled = row.shifts
+              ? billableMinutes(row.shifts.starts_at, row.shifts.ends_at, row.agreed_break_minutes)
+              : 0;
+            return Math.max(0, sheet.minutes_claimed - sheet.break_minutes) === scheduled;
+          }) ? (
+            <div className="card p-4 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                Aangevinkte urenbriefjes goedkeuren. Elk goedgekeurd briefje verrekent de
+                bemiddelingsvergoeding en maakt de factuur op.
+              </p>
+              <SubmitButton className="btn btn-primary" form="bulk-approve">
+                Aangevinkte goedkeuren
+              </SubmitButton>
+            </div>
+          ) : null}
         </div>
       )}
 

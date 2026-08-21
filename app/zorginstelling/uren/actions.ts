@@ -221,3 +221,78 @@ async function notifyFreelancerInvoiceBlocked(
     missing: missing.map((field) => MISSING_FIELD_LABELS[field]),
   });
 }
+
+/**
+ * Approves several timesheets in one go.
+ *
+ * A normal week is five to fifteen shifts running exactly as scheduled, and the
+ * queue made a coordinator confirm each one separately — read, click, wait for
+ * the page, find your place again, repeat. That is not just slow: it is how
+ * approving stops being a check and becomes a rhythm, and the one row that
+ * differs from its schedule gets waved through with the rest.
+ *
+ * So bulk approval is deliberately limited to the rows the screen has marked as
+ * matching their schedule. Anything where the claimed hours differ keeps its own
+ * button and its own decision, which is the only place the coordinator's
+ * attention is actually worth spending.
+ */
+export async function approveTimesheetsAction(formData: FormData) {
+  const admin = await getFacilityAdmin();
+  if (!admin) redirect("/login?next=%2Fzorginstelling%2Furen");
+
+  const ids = formData.getAll("assignment_id").map(String).filter(Boolean);
+  if (ids.length === 0) redirect(`${UREN_PATH}?error=nothing_selected`);
+
+  const service = getSupabaseAdmin();
+
+  /*
+   * Ownership for all of them at once, then one approval at a time.
+   *
+   * The ids come from checkboxes in a form, so they are caller-supplied — the
+   * admin client bypasses RLS and this is the only thing establishing that these
+   * assignments belong to this facility.
+   */
+  const { data: owned } = await service
+    .from("assignments")
+    .select("id, org_id, status")
+    .in("id", ids)
+    .eq("org_id", admin.org.id)
+    .neq("status", "cancelled")
+    .returns<{ id: string; org_id: string; status: string }[]>();
+
+  const approvable = (owned ?? []).map((row) => row.id);
+  if (approvable.length === 0) redirect(`${UREN_PATH}?error=unknown`);
+
+  /*
+   * Sequentially, not in parallel.
+   *
+   * Each approval settles a fee, writes a ledger row and allocates an invoice
+   * number from a per-freelancer series. Running them at once would race the
+   * number allocator against itself — it retries on the unique index, so the
+   * result would still be correct, but it would burn attempts for no reason and
+   * the failure mode is an uninvoiced completed assignment.
+   */
+  let approved = 0;
+  const failed: string[] = [];
+
+  for (const id of approvable) {
+    const result = await approveTimesheet(id, admin.userId);
+    if (result.ok) approved++;
+    else failed.push(result.reason);
+  }
+
+  revalidatePath(UREN_PATH);
+  revalidatePath("/zorginstelling");
+  revalidatePath("/zorginstelling/facturen");
+
+  /*
+   * Both numbers reported. A partial success that reports only the successes is
+   * the shape three audits have caught in this codebase: the screen goes quiet
+   * and the rows that failed sit in the queue looking untouched.
+   */
+  if (failed.length > 0) {
+    redirect(`${UREN_PATH}?approved=${approved}&failed=${failed.length}&error=${failed[0]}`);
+  }
+
+  redirect(`${UREN_PATH}?approved=${approved}`);
+}

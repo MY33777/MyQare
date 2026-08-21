@@ -62,6 +62,7 @@ const MESSAGES: Record<string, string> = {
     "maar er is geen enkel gevolg voor toekomstig aanbod.",
   invalid_minutes:
     "Vul de gewerkte tijd in als een aantal minuten, bijvoorbeeld 480 voor acht uur.",
+  nothing_selected: "Vink eerst de urenbriefjes aan die je wilt goedkeuren.",
   timesheet_missing:
     "Er zijn nog geen uren ingediend voor deze opdracht. De zorgprofessional dient " +
     "ze in zodra de dienst voorbij is.",

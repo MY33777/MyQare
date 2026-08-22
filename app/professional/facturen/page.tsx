@@ -113,7 +113,11 @@ export default async function FreelancerInvoicesPage({
 
   const now = new Date();
 
-  const [{ data: invoices }, { data: upcoming }, { data: blocked }] = await Promise.all([
+  const [
+    { data: invoices, error: invoicesError },
+    { data: upcoming, error: upcomingError },
+    { data: blocked, error: blockedError },
+  ] = await Promise.all([
     supabase
       .from("invoices")
       .select(
@@ -121,9 +125,14 @@ export default async function FreelancerInvoicesPage({
       )
       .eq("freelancer_id", userId)
       .order("issued_on", { ascending: false })
-      // Turnover, the per-quarter VAT table and the receivables are all summed
-      // from this list, so a cap here silently understates every one of them.
-      // Raised well past a plausible year and reported below when reached.
+      /*
+       * Turnover, the per-quarter VAT table and the receivables are all summed
+       * from this list, so a cap here silently understates every one of them.
+       * Raised well past a plausible year — and now actually reported, on screen,
+       * when the returned count reaches it. The previous "reported when reached"
+       * was a console.error that a person reading their own aangifte figures
+       * would never see.
+       */
       .limit(INVOICE_CAP)
       .returns<InvoiceRow[]>(),
     // Accepted but not yet invoiced — an expectation, not a receivable.
@@ -193,6 +202,25 @@ export default async function FreelancerInvoicesPage({
       rateCents: row.agreed_rate_cents,
     }));
 
+  /*
+   * A failed read is not a year with no turnover.
+   *
+   * All three selects discarded their error, so every figure on this page —
+   * turnover ex VAT, VAT charged, receivables, and the per-quarter taxed/exempt
+   * split somebody files their aangifte from — was summed from `?? []`. A
+   * database blip produced a complete, confident, all-zero screen with nothing
+   * saying the data could not be loaded. /zorginstelling/uren guards the
+   * identical shape explicitly; this page did not.
+   *
+   * A cap that was HIT is a different problem with the same effect: PostgREST
+   * returns fewer rows than requested when the project's max-rows is lower, with
+   * no error, so the old guard — invoices.length >= INVOICE_CAP — could not fire
+   * in exactly the case it was written for. Both are reported as "incomplete"
+   * rather than silently summed.
+   */
+  const loadFailed = Boolean(invoicesError || upcomingError || blockedError);
+  const possiblyTruncated = (invoices ?? []).length >= INVOICE_CAP;
+
   const earnings = summariseEarnings(invoices ?? [], booked);
   const receivables = summariseReceivables(invoices ?? [], now);
   const quarters = byQuarter(invoices ?? []);
@@ -216,6 +244,19 @@ export default async function FreelancerInvoicesPage({
           alleen die op — gebruik de export voor een volledig overzicht.
         </FormMessage>
       ) : null}
+      {loadFailed ? (
+        <FormMessage kind="error">
+          Je facturen konden niet volledig worden geladen, dus de bedragen hieronder kloppen op dit
+          moment niet. Ververs de pagina — gebruik deze cijfers niet voor je aangifte tot ze weer
+          compleet zijn.
+        </FormMessage>
+      ) : possiblyTruncated ? (
+        <FormMessage kind="warn">
+          Er zijn meer facturen dan deze pagina toont, dus de totalen hieronder zijn niet compleet.
+          Gebruik de CSV-export voor je aangifte.
+        </FormMessage>
+      ) : null}
+
       {params.sent ? <FormMessage kind="ok">Factuur verstuurd.</FormMessage> : null}
       {params.pdf ? (
         <FormMessage kind="ok">Pdf gemaakt. Je kunt de factuur nu downloaden.</FormMessage>

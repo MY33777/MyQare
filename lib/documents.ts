@@ -12,8 +12,17 @@ import { amsterdamDateKey } from "@/lib/timezone";
 
 export const DOCUMENT_BUCKET = "documents";
 
-/** 5MB. A phone photo of a diploma is ~2-4MB; a 40-page PDF is not a diploma. */
-export const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
+/**
+ * 4MB. A phone photo of a diploma is ~2-4MB; a 40-page PDF is not a diploma.
+ *
+ * Was 5MB, which the upload form advertised and this check enforced — and which
+ * Vercel Functions cannot deliver: any request body over 4.5MB is rejected at
+ * the platform edge before the function runs. The 4.5–5MB band was therefore
+ * offered by the UI, allowed by this constant, and answered with a raw 413 that
+ * no code here could turn into a sentence. 4MB is under the cap with room for
+ * the multipart overhead that also counts against it.
+ */
+export const MAX_DOCUMENT_BYTES = 4 * 1024 * 1024;
 
 /*
  * Allow-list, not a block-list. The set is small and known, so anything outside it

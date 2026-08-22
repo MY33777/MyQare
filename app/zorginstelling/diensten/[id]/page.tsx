@@ -12,6 +12,7 @@ import { qualificationLabel } from "@/lib/qualifications";
 import { SHIFT_STATUS_LABELS, VISIBILITY_LABELS, type ShiftVisibility } from "@/lib/shifts";
 import { cancelAssignmentAction } from "@/lib/cancelActions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { regionLabel } from "@/lib/regions";
 
 export const metadata: Metadata = { title: "Dienst" };
 
@@ -21,6 +22,8 @@ type ShiftDetail = {
   department: string | null;
   location: string | null;
   region: string | null;
+  /** The code the fan-out actually matched on. Migration 022. */
+  region_code: string | null;
   starts_at: string;
   ends_at: string;
   hourly_rate_cents: number;
@@ -104,7 +107,7 @@ export default async function FacilityShiftDetailPage({
   const { data: shift } = await supabase
     .from("shifts")
     .select(
-      "id, profession, department, location, region, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, visibility, respond_by, shift_offers(id, response, responded_at, viewed_at, profiles(full_name)), assignments(id, status, accepted_at, cancelled_at, cancelled_by, cancel_reason, freelancer_id, timesheets(claimed_at), freelancers!assignments_freelancer_id_fkey(big_number, big_verified_at), profiles!assignments_freelancer_id_fkey(full_name, profile_contact(phone)))",
+      "id, profession, department, location, region, region_code, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, visibility, respond_by, shift_offers(id, response, responded_at, viewed_at, profiles(full_name)), assignments(id, status, accepted_at, cancelled_at, cancelled_by, cancel_reason, freelancer_id, timesheets(claimed_at), freelancers!assignments_freelancer_id_fkey(big_number, big_verified_at), profiles!assignments_freelancer_id_fkey(full_name, profile_contact(phone)))",
     )
     .eq("id", id)
     .eq("org_id", org.id)
@@ -214,7 +217,18 @@ export default async function FacilityShiftDetailPage({
             </dt>
             <dd className="font-semibold">
               {VISIBILITY_LABELS[shift.visibility as ShiftVisibility] ?? shift.visibility}
-              {shift.visibility === "region" && shift.region ? ` (${shift.region})` : ""}
+              {/*
+                The CODE's label, not the old free-text column.
+
+                shifts.region still holds whatever the organisation's city was at
+                posting time; shifts.region_code is what the fan-out actually
+                matched on (migration 022). Rendering the first as "the region
+                this was offered to" told a coordinator something other than what
+                the platform did.
+              */}
+              {shift.visibility === "region" && shift.region_code
+                ? ` (${regionLabel(shift.region_code)})`
+                : ""}
             </dd>
           </div>
           <div>

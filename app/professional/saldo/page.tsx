@@ -80,7 +80,7 @@ export default async function BalancePage({
         title="Saldo"
         description={
           `Hiervan wordt de bemiddelingsvergoeding afgeschreven zodra je een dienst aanneemt: ` +
-          `${FEE_PERCENT_LABEL} van de opdrachtwaarde plus ${VAT_PERCENT_LABEL} btw.`
+          `${FEE_PERCENT_LABEL}% van de opdrachtwaarde plus ${VAT_PERCENT_LABEL}% btw.`
         }
       />
 

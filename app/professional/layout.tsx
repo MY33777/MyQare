@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
-import { FEE_PERCENT_LABEL } from "@/lib/fees";
 import { requireFreelancer } from "@/lib/auth";
 import { creditBalanceCents } from "@/lib/credits";
 import { createClient } from "@/lib/supabase/server";

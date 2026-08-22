@@ -17,6 +17,7 @@ import {
 } from "@/lib/documents";
 import { setPoolStatusAction } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { regionLabel } from "@/lib/regions";
 
 export const metadata: Metadata = { title: "Zorgprofessional" };
 
@@ -25,6 +26,8 @@ type FreelancerDetail = {
   profession: string;
   specialisations: string[] | null;
   region: string | null;
+  /** The regions she chose. Migration 022; freelancers.region is no longer written. */
+  region_codes: string[] | null;
   bio: string | null;
   kvk: string | null;
   big_number: string | null;
@@ -54,7 +57,7 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
       supabase
         .from("freelancers")
         .select(
-          "profile_id, profession, specialisations, region, bio, kvk, big_number, big_verified_at, hourly_rate_min_cents, profiles(full_name, profile_contact(phone))",
+          "profile_id, profession, specialisations, region, region_codes, bio, kvk, big_number, big_verified_at, hourly_rate_min_cents, profiles(full_name, profile_contact(phone))",
         )
         .eq("profile_id", id)
         .maybeSingle<FreelancerDetail>(),
@@ -172,7 +175,18 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
             <dt className="text-sm" style={{ color: "var(--text-muted)" }}>
               Regio
             </dt>
-            <dd className="font-semibold">{freelancer.region ?? "—"}</dd>
+            {/*
+              The regions she actually chose, not the free text nobody writes any
+              more. No code path has written freelancers.region since migration
+              022, so for anyone who joined after it this rendered an empty dash
+              while she had regions selected — and for anyone before it, a stale
+              answer that no longer decides anything.
+            */}
+            <dd className="font-semibold">
+              {freelancer.region_codes && freelancer.region_codes.length > 0
+                ? freelancer.region_codes.map((code) => regionLabel(code)).join(", ")
+                : (freelancer.region ?? "—")}
+            </dd>
           </div>
           <div>
             <dt className="text-sm" style={{ color: "var(--text-muted)" }}>

@@ -154,8 +154,8 @@ export default async function FreelancerDashboard() {
           */}
           <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
             {balance <= 0
-              ? `Nodig om een dienst aan te nemen: hiervan wordt ${FEE_PERCENT_LABEL} van de opdrachtwaarde plus btw afgeschreven. Weigeren kan altijd, ook zonder saldo.`
-              : `Hiervan gaat ${FEE_PERCENT_LABEL} plus btw af zodra je een dienst aanneemt.`}
+              ? `Nodig om een dienst aan te nemen: hiervan wordt ${FEE_PERCENT_LABEL}% van de opdrachtwaarde plus btw afgeschreven. Weigeren kan altijd, ook zonder saldo.`
+              : `Hiervan gaat ${FEE_PERCENT_LABEL}% plus btw af zodra je een dienst aanneemt.`}
           </p>
           <Link className="text-sm" href="/professional/saldo">
             Saldo opwaarderen

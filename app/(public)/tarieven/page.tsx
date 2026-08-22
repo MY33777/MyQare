@@ -7,7 +7,7 @@ import { formatMinutes } from "@/lib/hours";
 export const metadata: Metadata = {
   title: "Tarieven",
   description:
-    `Gratis voor zorginstellingen. Zorgprofessionals betalen ${FEE_PERCENT_LABEL} van de opdrachtwaarde plus btw per aangenomen dienst. Met rekenvoorbeeld.`,
+    `Gratis voor zorginstellingen. Zorgprofessionals betalen ${FEE_PERCENT_LABEL}% van de opdrachtwaarde plus btw per aangenomen dienst. Met rekenvoorbeeld.`,
 };
 
 

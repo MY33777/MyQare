@@ -203,14 +203,12 @@ export default async function TimesheetsPage({
       ) : pending.length === 0 ? null : (
         <div className="grid gap-4">
           {/*
-            The checkboxes belong to this form, which is not wrapped around the
-            list — each card already contains its own forms, and HTML forbids
-            nesting one form inside another. The `form` attribute associates an
-            input with a form elsewhere in the document, which is exactly the
-            case this attribute exists for.
+            The checkboxes are associated with the bulk form by the HTML `form`
+            attribute, because each card already contains its own forms and HTML
+            forbids nesting one form inside another. The form itself is declared
+            at the END of the list, wrapped around the submit button — see the
+            note there.
           */}
-          <form id="bulk-approve" action={approveTimesheetsAction} />
-
           {pending.map((row) => {
             const sheet = row.timesheets!;
             const scheduled = row.shifts
@@ -341,15 +339,35 @@ export default async function TimesheetsPage({
               : 0;
             return Math.max(0, sheet.minutes_claimed - sheet.break_minutes) === scheduled;
           }) ? (
-            <div className="card p-4 flex flex-wrap items-center justify-between gap-3">
+            /*
+              The form WRAPS the button, and that is the whole point.
+
+              This was a self-closing <form id="bulk-approve" /> further up with
+              the button associated to it by the HTML form attribute. That
+              submits fine, and useFormStatus reports nothing: the hook reads the
+              status of a form the component is rendered INSIDE, in the React
+              tree — association by attribute does not count. SubmitButton's own
+              docstring says exactly that. So the one button in the product that
+              runs an unbounded loop of fee settlements and invoice creations was
+              the only one with no pending state at all, and a coordinator with
+              twelve rows ticked saw nothing happen for ten seconds.
+
+              The checkboxes stay associated by attribute, which is what that
+              attribute is for; only the button had to move.
+            */
+            <form
+              id="bulk-approve"
+              action={approveTimesheetsAction}
+              className="card p-4 flex flex-wrap items-center justify-between gap-3"
+            >
               <p className="text-sm" style={{ color: "var(--text-muted)" }}>
                 Aangevinkte urenbriefjes goedkeuren. Elk goedgekeurd briefje verrekent de
                 bemiddelingsvergoeding en maakt de factuur op.
               </p>
-              <SubmitButton className="btn btn-primary" form="bulk-approve">
+              <SubmitButton className="btn btn-primary" pending="Bezig met goedkeuren…">
                 Aangevinkte goedkeuren
               </SubmitButton>
-            </div>
+            </form>
           ) : null}
         </div>
       )}

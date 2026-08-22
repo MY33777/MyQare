@@ -215,7 +215,7 @@ export default async function OfferDetailPage({
               deducted.
             */}
             <span>
-              Bemiddelingsvergoeding {FEE_PERCENT_LABEL} + {VAT_PERCENT_LABEL} btw
+              Bemiddelingsvergoeding {FEE_PERCENT_LABEL}% + {VAT_PERCENT_LABEL}% btw
             </span>
             <span className="tnum">− {formatEuros(fee.feeTotalCents)}</span>
           </div>

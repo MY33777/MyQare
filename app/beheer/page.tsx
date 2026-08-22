@@ -63,11 +63,28 @@ export default async function StaffDashboard({
   // is exactly what RLS is built to prevent.
   const admin = getSupabaseAdmin();
 
-  const [{ data: orgs }, { data: freelancers }] = await Promise.all([
+  const [{ data: pending }, { data: verified }, { data: freelancers }] = await Promise.all([
     admin
       .from("organisations")
       .select("id, name, kvk, billing_email, verified_at, created_at")
+      /*
+       * Filtered in the QUERY, not afterwards.
+       *
+       * This took the hundred newest organisations and only then kept the
+       * unverified ones in TypeScript — so past a hundred registrations the
+       * queue silently stopped showing facilities that were waiting, and a
+       * facility that signed up early would never be verified. The BIG queue
+       * directly below has always done it the other way round.
+       */
+      .is("verified_at", null)
       .order("created_at", { ascending: false })
+      .limit(100)
+      .returns<OrgRow[]>(),
+    admin
+      .from("organisations")
+      .select("id, name, kvk, billing_email, verified_at, created_at")
+      .not("verified_at", "is", null)
+      .order("verified_at", { ascending: false })
       .limit(100)
       .returns<OrgRow[]>(),
     admin
@@ -87,8 +104,8 @@ export default async function StaffDashboard({
       .returns<FreelancerRow[]>(),
   ]);
 
-  const pendingOrgs = (orgs ?? []).filter((org) => !org.verified_at);
-  const verifiedOrgs = (orgs ?? []).filter((org) => org.verified_at);
+  const pendingOrgs = pending ?? [];
+  const verifiedOrgs = verified ?? [];
 
   return (
     <>
@@ -176,6 +193,69 @@ export default async function StaffDashboard({
         </div>
       )}
 
+
+      {/*
+        Withdrawing verification belongs to verify_organisations.
+
+        This block — the only place a verification can be withdrawn — was nested
+        inside the canVerifyBig branch, which inverted the separation the comment
+        further up claims to have just established: the capability that owns
+        verification could not reach the revoke control, and the one that only
+        checks BIG numbers saw every organisation's name, KvK and verification
+        date. Moved by the ninth audit.
+      */}
+      {verifiedOrgs.length > 0 ? (
+        <details>
+          <summary className="cursor-pointer font-bold mb-3">
+            Geverifieerde zorginstellingen ({verifiedOrgs.length})
+          </summary>
+          <div className="card table-scroll mt-3" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
+            <table className="table">
+              <tbody>
+                {verifiedOrgs.map((org) => (
+                  <tr key={org.id}>
+                    <td className="font-medium">{org.name}</td>
+                    <td className="tnum">{org.kvk ?? "—"}</td>
+                    <td className="tnum">{org.verified_at ? formatDate(org.verified_at) : "—"}</td>
+                    <td>
+                      {/*
+                        A second click, and what it actually does.
+
+                        "Intrekken" was one tap on a red button in a table row.
+                        Withdrawing verification stops a facility posting work
+                        immediately — mid-week, with a roster half filled — and
+                        closes the document access their pool gave them. That is
+                        the right power to have and the wrong one to have by
+                        mis-tapping a row.
+                      */}
+                      <details>
+                        <summary
+                          className="cursor-pointer text-sm font-semibold"
+                          style={{ color: "var(--danger)" }}
+                        >
+                          Intrekken
+                        </summary>
+                        <p className="text-sm mt-2 mb-3" style={{ color: "var(--text-muted)" }}>
+                          {org.name} kan daarna geen diensten meer plaatsen en krijgt geen
+                          documentgegevens van zorgprofessionals meer te zien. Al geplaatste
+                          diensten en lopende opdrachten blijven staan.
+                        </p>
+                        <form action={verifyOrganisationAction}>
+                          <input type="hidden" name="org_id" value={org.id} />
+                          <input type="hidden" name="approve" value="false" />
+                          <SubmitButton className="btn btn-danger">
+                            Ja, verificatie intrekken
+                          </SubmitButton>
+                        </form>
+                      </details>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      ) : null}
         </>
       ) : null}
 
@@ -234,6 +314,15 @@ export default async function StaffDashboard({
                     <div className="flex flex-col gap-2 items-end">
                       <form action={verifyBigAction}>
                         <input type="hidden" name="freelancer_id" value={row.profile_id} />
+                        {/*
+                          The number the reviewer just looked up, carried along.
+                          Without it the write is bound to nothing: it stamped
+                          "checked in the register" against whatever the column
+                          held at the moment of the click, so a freelancer
+                          correcting a typo while this page sat open got the NEW
+                          number verified by a review of the OLD one.
+                        */}
+                        <input type="hidden" name="big_number" value={row.big_number ?? ""} />
                         <input type="hidden" name="approve" value="true" />
                         <SubmitButton className="btn btn-primary">
                           Gevonden in register
@@ -246,6 +335,7 @@ export default async function StaffDashboard({
                         </summary>
                         <form action={verifyBigAction} className="mt-2 flex flex-col gap-2">
                           <input type="hidden" name="freelancer_id" value={row.profile_id} />
+                          <input type="hidden" name="big_number" value={row.big_number ?? ""} />
                           <input type="hidden" name="approve" value="false" />
                           <label className="label" htmlFor={`big-note-${row.profile_id}`}>
                             Wat klopt er niet?
@@ -275,58 +365,6 @@ export default async function StaffDashboard({
         </div>
       )}
 
-      {verifiedOrgs.length > 0 ? (
-        <details>
-          <summary className="cursor-pointer font-bold mb-3">
-            Geverifieerde zorginstellingen ({verifiedOrgs.length})
-          </summary>
-          <div className="card table-scroll mt-3" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
-            <table className="table">
-              <tbody>
-                {verifiedOrgs.map((org) => (
-                  <tr key={org.id}>
-                    <td className="font-medium">{org.name}</td>
-                    <td className="tnum">{org.kvk ?? "—"}</td>
-                    <td className="tnum">{org.verified_at ? formatDate(org.verified_at) : "—"}</td>
-                    <td>
-                      {/*
-                        A second click, and what it actually does.
-
-                        "Intrekken" was one tap on a red button in a table row.
-                        Withdrawing verification stops a facility posting work
-                        immediately — mid-week, with a roster half filled — and
-                        closes the document access their pool gave them. That is
-                        the right power to have and the wrong one to have by
-                        mis-tapping a row.
-                      */}
-                      <details>
-                        <summary
-                          className="cursor-pointer text-sm font-semibold"
-                          style={{ color: "var(--danger)" }}
-                        >
-                          Intrekken
-                        </summary>
-                        <p className="text-sm mt-2 mb-3" style={{ color: "var(--text-muted)" }}>
-                          {org.name} kan daarna geen diensten meer plaatsen en krijgt geen
-                          documentgegevens van zorgprofessionals meer te zien. Al geplaatste
-                          diensten en lopende opdrachten blijven staan.
-                        </p>
-                        <form action={verifyOrganisationAction}>
-                          <input type="hidden" name="org_id" value={org.id} />
-                          <input type="hidden" name="approve" value="false" />
-                          <SubmitButton className="btn btn-danger">
-                            Ja, verificatie intrekken
-                          </SubmitButton>
-                        </form>
-                      </details>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-      ) : null}
         </>
       ) : null}
     </>

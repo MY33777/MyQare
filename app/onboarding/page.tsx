@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { QualificationSelect } from "@/components/QualificationSelect";
 import { completeOnboardingAction } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
-import { readFormDraft } from "@/lib/formDraft";
+import { draftValue, draftValues, readFormDraft } from "@/lib/formDraft";
 import { RegionSelect } from "@/components/RegionSelect";
 
 export const metadata: Metadata = { title: "Gegevens aanvullen" };
@@ -68,7 +68,7 @@ export default async function OnboardingPage({
             name="full_name"
             type="text"
             /* The draft is what they just typed; the metadata is from signup. */
-            defaultValue={draft.full_name ?? String(metadata.full_name ?? "")}
+            defaultValue={draftValue(draft, "full_name") ?? String(metadata.full_name ?? "")}
             required
           />
         </div>
@@ -83,7 +83,7 @@ export default async function OnboardingPage({
             name="phone"
             type="tel"
             autoComplete="tel"
-            defaultValue={draft.phone ?? ""}
+            defaultValue={draftValue(draft, "phone") ?? ""}
           />
           <p className="hint">
             {isFacility
@@ -103,7 +103,7 @@ export default async function OnboardingPage({
                 id="org_name"
                 name="org_name"
                 type="text"
-                defaultValue={draft.org_name ?? String(metadata.org_name ?? "")}
+                defaultValue={draftValue(draft, "org_name") ?? String(metadata.org_name ?? "")}
                 required
               />
             </div>
@@ -117,7 +117,7 @@ export default async function OnboardingPage({
                 name="kvk"
                 type="text"
                 inputMode="numeric"
-                defaultValue={draft.kvk ?? ""}
+                defaultValue={draftValue(draft, "kvk") ?? ""}
               />
               <p className="hint">
                 We controleren dit voordat je diensten kunt plaatsen. Dat duurt meestal één werkdag.
@@ -138,7 +138,7 @@ export default async function OnboardingPage({
               shift, silently, on both sides. Two write paths for one column need
               one control.
             */}
-            <QualificationSelect name="profession" id="profession" defaultValue={draft.profession} />
+            <QualificationSelect name="profession" id="profession" defaultValue={draftValue(draft, "profession")} />
             <p className="hint">Je kunt later specialisaties en documenten toevoegen.</p>
 
             {/*
@@ -159,7 +159,7 @@ export default async function OnboardingPage({
                 name="region_codes"
                 id="region"
                 multiple
-                defaultValue={draft.region_codes ? draft.region_codes.split(",") : undefined}
+                defaultValue={draftValues(draft, "region_codes")}
                 required
               />
               <p className="hint">

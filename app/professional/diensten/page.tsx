@@ -21,7 +21,17 @@ type AssignmentRow = {
     ends_at: string;
     organisations: { name: string } | null;
   } | null;
-  timesheets: { minutes_claimed: number; approved_at: string | null; disputed_at: string | null } | null;
+  timesheets: {
+    minutes_claimed: number;
+    /*
+     * The unpaid break, which this page did not fetch and therefore did not
+     * subtract. minutes_claimed is the GROSS worked duration; every other path
+     * in the product takes the break off it before pricing. See below.
+     */
+    break_minutes: number;
+    approved_at: string | null;
+    disputed_at: string | null;
+  } | null;
 };
 
 function timesheetBadge(row: AssignmentRow) {
@@ -42,7 +52,7 @@ export default async function MyAssignmentsPage() {
   const { data: assignments } = await supabase
     .from("assignments")
     .select(
-      "id, agreed_rate_cents, agreed_break_minutes, status, shifts(profession, department, starts_at, ends_at, organisations(name)), timesheets(minutes_claimed, approved_at, disputed_at)",
+      "id, agreed_rate_cents, agreed_break_minutes, status, shifts(profession, department, starts_at, ends_at, organisations(name)), timesheets(minutes_claimed, break_minutes, approved_at, disputed_at)",
     )
     .eq("freelancer_id", userId)
     .order("accepted_at", { ascending: false })
@@ -77,7 +87,23 @@ export default async function MyAssignmentsPage() {
                 const scheduled = row.shifts
                   ? billableMinutes(row.shifts.starts_at, row.shifts.ends_at, row.agreed_break_minutes)
                   : 0;
-                const minutes = row.timesheets?.minutes_claimed ?? scheduled;
+                /*
+                 * The break comes off, as it does everywhere else.
+                 *
+                 * minutes_claimed is gross — the freelancer submits when she
+                 * arrived and left — and break_minutes is a separate column that
+                 * lib/invoices.ts, approveTimesheet, the approval queue and the
+                 * assignment detail page all subtract. This page did not even
+                 * fetch it, so the moment hours were submitted the "Opbrengst"
+                 * column jumped by half an hour's pay and then disagreed with the
+                 * invoice that followed.
+                 *
+                 * Clamped at zero for the same reason billableMinutes clamps: a
+                 * break longer than the shift is a typo, not negative earnings.
+                 */
+                const minutes = row.timesheets
+                  ? Math.max(0, row.timesheets.minutes_claimed - row.timesheets.break_minutes)
+                  : scheduled;
                 return (
                   <tr key={row.id}>
                     <td className="tnum">

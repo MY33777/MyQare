@@ -59,7 +59,8 @@ export default async function AccountsPage({
           </li>
           <li>
             <strong style={{ color: "var(--text)" }}>De naam</strong> wordt overal vervangen door
-            &quot;Verwijderd account&quot;, en het e-mailadres komt weer vrij.
+            &quot;Verwijderd account&quot;. Het e-mailadres wordt losgekoppeld en komt weer vrij
+            voor een nieuwe registratie; inloggen op het oude account kan daarna niet meer.
           </li>
         </ul>
 

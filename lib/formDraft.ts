@@ -60,12 +60,31 @@ function isStorable(name: string, value: FormDataEntryValue): value is string {
  */
 export async function saveFormDraft(key: string, formData: FormData, path: string): Promise<void> {
   try {
-    const draft: Record<string, string> = {};
+    /*
+     * A repeated field keeps ALL its values.
+     *
+     * This was `draft[name] = value`, so a control submitting several entries
+     * under one name collapsed to the last one — and the only such control in
+     * the product is the region multi-select on onboarding, where losing the
+     * extras silently narrows where somebody receives work. The page then read
+     * it back with split(","), an encoding this function never produced, so the
+     * restore was broken in both directions at once and no test touched it.
+     *
+     * Stored as an array only when there IS more than one, so every existing
+     * single-value caller keeps reading a plain string.
+     */
+    const collected = new Map<string, string[]>();
 
     for (const [name, value] of formData.entries()) {
       if (!isStorable(name, value)) continue;
       if (!value) continue;
-      draft[name] = value.slice(0, MAX_VALUE_LENGTH);
+      if (!collected.has(name)) collected.set(name, []);
+      collected.get(name)!.push(value.slice(0, MAX_VALUE_LENGTH));
+    }
+
+    const draft: Record<string, string | string[]> = {};
+    for (const [name, values] of collected) {
+      draft[name] = values.length === 1 ? values[0] : values;
     }
 
     const encoded = JSON.stringify(draft);
@@ -102,7 +121,7 @@ export async function saveFormDraft(key: string, formData: FormData, path: strin
 export async function readFormDraft(
   key: string,
   onlyWhenErrored: boolean,
-): Promise<Record<string, string>> {
+): Promise<Record<string, string | string[]>> {
   if (!onlyWhenErrored) return {};
 
   try {
@@ -112,11 +131,17 @@ export async function readFormDraft(
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
 
-    // Values only, and strings only: the cookie is ours, but a corrupted one must
-    // not put an object into a defaultValue.
-    const out: Record<string, string> = {};
+    /*
+     * Strings and arrays-of-strings only. The cookie is ours, but a corrupted one
+     * must not put an object into a defaultValue, and an array of anything else
+     * must not reach a multi-select.
+     */
+    const out: Record<string, string | string[]> = {};
     for (const [name, value] of Object.entries(parsed as Record<string, unknown>)) {
       if (typeof value === "string") out[name] = value;
+      else if (Array.isArray(value) && value.every((v) => typeof v === "string")) {
+        out[name] = value as string[];
+      }
     }
     return out;
   } catch {
@@ -135,4 +160,34 @@ export async function clearFormDraft(key: string, path: string): Promise<void> {
 
 function draftName(key: string): string {
   return `myqare_draft_${key}`;
+}
+
+
+/**
+ * One value from a draft, for a single-value control.
+ *
+ * Drafts now hold arrays for repeated fields, and every caller that feeds a
+ * plain input needs a string. Takes the first entry rather than joining: a
+ * single-value control that somehow received two should show one of them, not
+ * "a,b" in a text box.
+ */
+export function draftValue(
+  draft: Record<string, string | string[]>,
+  name: string,
+): string | undefined {
+  const value = draft[name];
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value[0];
+  return undefined;
+}
+
+/** Every value from a draft, for a multi-select. */
+export function draftValues(
+  draft: Record<string, string | string[]>,
+  name: string,
+): string[] | undefined {
+  const value = draft[name];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") return [value];
+  return undefined;
 }

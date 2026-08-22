@@ -9,7 +9,7 @@ import { VISIBILITY_LABELS } from "@/lib/shifts";
 import { MAX_OCCURRENCES, RECURRENCE_LABELS } from "@/lib/recurrence";
 import { createShiftAction } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
-import { readFormDraft } from "@/lib/formDraft";
+import { draftValue, draftValues, readFormDraft } from "@/lib/formDraft";
 import { ShiftCostPreview } from "@/components/ShiftCostPreview";
 import { createClient } from "@/lib/supabase/server";
 import { RegionSelect } from "@/components/RegionSelect";
@@ -170,7 +170,7 @@ export default async function NewShiftPage({
           <label className="label" htmlFor="qualification">
             Welke kwalificatie vraagt deze dienst?
           </label>
-          <QualificationSelect defaultValue={draft.qualification || copyFrom?.profession} />
+          <QualificationSelect defaultValue={draftValue(draft, "qualification") || copyFrom?.profession} />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -183,7 +183,7 @@ export default async function NewShiftPage({
               id="starts_at"
               name="starts_at"
               type="datetime-local"
-              defaultValue={draft.starts_at ?? ""}
+              defaultValue={draftValue(draft, "starts_at") ?? ""}
               required
               {...fieldProps("starts_at")}
             />
@@ -197,7 +197,7 @@ export default async function NewShiftPage({
               id="ends_at"
               name="ends_at"
               type="datetime-local"
-              defaultValue={draft.ends_at ?? ""}
+              defaultValue={draftValue(draft, "ends_at") ?? ""}
               required
               {...fieldProps("ends_at")}
             />
@@ -213,7 +213,7 @@ export default async function NewShiftPage({
               className="input"
               id="hourly_rate"
               name="hourly_rate"
-              defaultValue={prefill(draft.hourly_rate, copyFrom ? centsToEuroInput(copyFrom.hourly_rate_cents) : null, "")}
+              defaultValue={prefill(draftValue(draft, "hourly_rate"), copyFrom ? centsToEuroInput(copyFrom.hourly_rate_cents) : null, "")}
               {...fieldProps("hourly_rate")}
               type="text"
               inputMode="decimal"
@@ -236,7 +236,7 @@ export default async function NewShiftPage({
               type="number"
               min={0}
               step={5}
-              defaultValue={prefill(draft.break_minutes, copyFrom?.break_minutes, 30)}
+              defaultValue={prefill(draftValue(draft, "break_minutes"), copyFrom?.break_minutes, 30)}
               {...fieldProps("break_minutes")}
             />
           </div>
@@ -261,7 +261,7 @@ export default async function NewShiftPage({
               id="department"
               name="department"
               type="text"
-              defaultValue={prefill(draft.department, copyFrom?.department, "")}
+              defaultValue={prefill(draftValue(draft, "department"), copyFrom?.department, "")}
             />
           </div>
           <div>
@@ -273,7 +273,7 @@ export default async function NewShiftPage({
               id="location"
               name="location"
               type="text"
-              defaultValue={prefill(draft.location, copyFrom?.location, org.name)}
+              defaultValue={prefill(draftValue(draft, "location"), copyFrom?.location, org.name)}
             />
           </div>
         </div>
@@ -286,7 +286,7 @@ export default async function NewShiftPage({
             className="select"
             id="visibility"
             name="visibility"
-            defaultValue={prefill(draft.visibility, copyFrom?.visibility, "pool")}
+            defaultValue={prefill(draftValue(draft, "visibility"), copyFrom?.visibility, "pool")}
           >
             {Object.entries(VISIBILITY_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
@@ -332,7 +332,7 @@ export default async function NewShiftPage({
               className="select"
               id="repeat_pattern"
               name="repeat_pattern"
-              defaultValue={draft.repeat_pattern ?? "none"}
+              defaultValue={draftValue(draft, "repeat_pattern") ?? "none"}
             >
               {Object.entries(RECURRENCE_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>
@@ -352,7 +352,7 @@ export default async function NewShiftPage({
               type="number"
               min={1}
               max={MAX_OCCURRENCES}
-              defaultValue={draft.repeat_count ?? 1}
+              defaultValue={draftValue(draft, "repeat_count") ?? 1}
             />
             {/*
               Says that this field does nothing without a pattern.
@@ -376,7 +376,7 @@ export default async function NewShiftPage({
           <RegionSelect
             name="region_code"
             id="region"
-            defaultValue={draft.region_code || copyFrom?.region_code || matchLegacyRegion(org.city)}
+            defaultValue={draftValue(draft, "region_code") || copyFrom?.region_code || matchLegacyRegion(org.city)}
           />
           <p className="hint">
             Alleen gebruikt bij een regio-aanbod. De regio&apos;s zijn de CBS-indeling naar
@@ -394,7 +394,7 @@ export default async function NewShiftPage({
             id="respond_by"
             name="respond_by"
             type="datetime-local"
-            defaultValue={draft.respond_by ?? ""}
+            defaultValue={draftValue(draft, "respond_by") ?? ""}
             {...fieldProps("respond_by")}
           />
           {/*
@@ -422,7 +422,7 @@ export default async function NewShiftPage({
             id="description"
             name="description"
             rows={3}
-            defaultValue={prefill(draft.description, copyFrom?.description, "")}
+            defaultValue={prefill(draftValue(draft, "description"), copyFrom?.description, "")}
           />
         </div>
 

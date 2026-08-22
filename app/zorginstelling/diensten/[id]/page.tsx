@@ -344,7 +344,17 @@ export default async function FacilityShiftDetailPage({
                 </td>
               </tr>
             ) : (
-              [...accepted, ...silent, ...declined].map((offer) => (
+              /*
+                expired belongs in this list too.
+
+                Migration 023 moved offers closed by a fill from 'decline' to
+                'expired'. Before that they appeared here under declined; the new
+                value was added to the bucket list and to the badge branch below,
+                and never to the rows actually rendered — so they vanished from
+                the table entirely, and the badge branch for them was unreachable.
+                The dossier counts them; this screen stopped showing them.
+              */
+              [...accepted, ...silent, ...declined, ...expired].map((offer) => (
                 <tr key={offer.id}>
                   <td className="font-medium">{offer.profiles?.full_name ?? "—"}</td>
                   <td>

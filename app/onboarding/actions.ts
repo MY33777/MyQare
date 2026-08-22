@@ -51,8 +51,29 @@ export async function completeOnboardingAction(formData: FormData) {
     .eq("id", user.id)
     .maybeSingle<{ id: string; role: string }>();
 
+  /*
+   * A profile alone does not mean onboarding finished.
+   *
+   * The writes here are not in a transaction: profiles goes in first and
+   * freelancers last. So a failure in between left an account with a profile and
+   * no freelancers row — and this guard then sent every retry straight to
+   * /professional, which needs that row. The account was stranded permanently,
+   * and the hazard is named one statement further down for the phone write.
+   *
+   * A facility_admin is complete once the profile exists. A freelancer is not.
+   */
   if (existing) {
-    redirect(existing.role === "facility_admin" ? "/zorginstelling" : "/professional");
+    if (existing.role === "facility_admin") redirect("/zorginstelling");
+
+    const { data: freelancerRow } = await admin
+      .from("freelancers")
+      .select("profile_id")
+      .eq("profile_id", user.id)
+      .maybeSingle<{ profile_id: string }>();
+
+    if (freelancerRow) redirect("/professional");
+
+    // Otherwise fall through and let this submission finish the job.
   }
 
   // The form is pre-filled from user_metadata but the user may correct it, so the
@@ -132,14 +153,40 @@ export async function completeOnboardingAction(formData: FormData) {
      */
     const email = (user.email ?? "").trim().toLowerCase();
 
-    const { data: invite } = email
+    /*
+     * NOT maybeSingle(), and the error is not discarded.
+     *
+     * organisation_invites is unique on (org_id, email) — not on email — so two
+     * organisations inviting the same address is a permitted, unremarkable state.
+     * maybeSingle() returns data:null plus a PGRST116 error when more than one
+     * row matches, and this destructured only `data`: two open invites therefore
+     * behaved exactly like none, control fell through, and the colleague founded
+     * the duplicate organisation migration 024 exists to prevent. Both guards on
+     * this path failed open in precisely the case they were written for.
+     *
+     * Ordered oldest-first and limited to one: whoever invited them first is the
+     * organisation they are joining, and it is a deterministic answer rather than
+     * whichever row Postgres happened to return.
+     */
+    const { data: invites, error: inviteError } = email
       ? await admin
           .from("organisation_invites")
           .select("id, org_id")
           .eq("email", email)
           .is("accepted_at", null)
-          .maybeSingle<{ id: string; org_id: string }>()
-      : { data: null };
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .returns<{ id: string; org_id: string }[]>()
+      : { data: [], error: null };
+
+    /*
+     * A read that failed is not "no invite". Refused rather than falling through,
+     * because falling through creates an organisation that cannot be merged
+     * afterwards — and asking somebody to try again costs a minute.
+     */
+    if (inviteError) redirect("/onboarding?error=unknown");
+
+    const invite = invites?.[0] ?? null;
 
     if (invite) {
       orgId = invite.org_id;
@@ -161,13 +208,23 @@ export async function completeOnboardingAction(formData: FormData) {
      * its freelancers' document metadata and its invoices.
      */
     if (!orgId && kvk) {
-      const { data: existing } = await admin
+      /*
+       * Same correction as the invite lookup above. organisations.kvk has no
+       * unique constraint, so maybeSingle() returns null-plus-error exactly when
+       * a duplicate ALREADY exists — which is the one case this guard is here to
+       * catch. It failed open at precisely the moment it mattered.
+       */
+      const { data: existing, error: kvkError } = await admin
         .from("organisations")
         .select("id")
         .eq("kvk", kvk)
-        .maybeSingle<{ id: string }>();
+        .limit(1)
+        .returns<{ id: string }[]>();
 
-      if (existing) redirect("/onboarding?error=org_already_registered");
+      if (kvkError) redirect("/onboarding?error=unknown");
+      if (existing && existing.length > 0) {
+        redirect("/onboarding?error=org_already_registered");
+      }
     }
   }
 
@@ -225,18 +282,33 @@ export async function completeOnboardingAction(formData: FormData) {
   }
 
   if (role === "freelancer") {
-    const { error: freelancerError } = await admin.from("freelancers").insert({
-      profile_id: user.id,
-      profession,
-      region_codes: regionCodes,
-      // vat_exempt stays null on purpose: undetermined is the honest starting
-      // state, and lib/vat.ts refuses to issue an invoice until someone decides.
-      vat_exempt: null,
-    });
-    if (freelancerError && freelancerError.code !== "23505") {
-      redirect("/onboarding?error=unknown");
-    }
+    /*
+     * upsert, so a retry after a half-finished onboarding completes rather than
+     * colliding. The guard above now lets such a retry through; without this it
+     * would arrive here and fail on the primary key.
+     */
+    const { error: freelancerError } = await admin.from("freelancers").upsert(
+      {
+        profile_id: user.id,
+        profession,
+        region_codes: regionCodes,
+        // vat_exempt stays null on purpose: undetermined is the honest starting
+        // state, and lib/vat.ts refuses to issue an invoice until someone decides.
+        vat_exempt: null,
+      },
+      { onConflict: "profile_id" },
+    );
+
+    if (freelancerError) redirect("/onboarding?error=unknown");
   }
+
+  /*
+   * Onboarding succeeded, so the draft is now a half-filled form belonging to
+   * somebody who has finished — waiting on a shared ward workstation for whoever
+   * opens the browser next. clearFormDraft was imported into this file and never
+   * called; the module's own contract says every success path clears.
+   */
+  await clearFormDraft(DRAFT_KEY, DRAFT_PATH);
 
   redirect(role === "facility_admin" ? "/zorginstelling" : "/professional");
 }

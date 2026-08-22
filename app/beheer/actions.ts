@@ -68,7 +68,14 @@ export async function verifyBigAction(formData: FormData) {
 
   const freelancerId = String(formData.get("freelancer_id") ?? "");
   const approve = String(formData.get("approve") ?? "") === "true";
-  if (!freelancerId) redirect("/beheer?error=unknown");
+
+  /*
+   * The number the reviewer saw, carried on the form. Without it the write is
+   * bound to nothing — see the note on the update below.
+   */
+  const bigNumber = String(formData.get("big_number") ?? "").trim();
+
+  if (!freelancerId || !bigNumber) redirect("/beheer?error=unknown");
 
   const now = new Date().toISOString();
   const note = String(formData.get("note") ?? "").trim() || null;
@@ -85,19 +92,43 @@ export async function verifyBigAction(formData: FormData) {
    * stays the narrower claim, because that is what a facility leans on for its
    * own Wkkgz duty and it must never mean "somebody clicked something".
    */
-  const { error: bigError } = await getSupabaseAdmin()
+  /*
+   * Bound to the number that was actually on screen.
+   *
+   * The form posted only freelancer_id and approve, and the update was scoped by
+   * profile_id alone — so it stamped "a human checked this in the register"
+   * against whatever value happened to be in the column at the moment of the
+   * click. A freelancer editing her BIG number while the queue page sits open,
+   * which is exactly what somebody does after being told hers was not found,
+   * would have the NEW number verified by a review of the OLD one.
+   *
+   * A facility leans on that stamp for its own Wkkgz duty, so it has to mean
+   * what it says. Matching on big_number makes the update hit zero rows if the
+   * number changed, and zero rows is reported below rather than swallowed.
+   */
+  const { data: updated, error: bigError } = await getSupabaseAdmin()
     .from("freelancers")
     .update({
       big_verified_at: approve ? now : null,
       big_checked_at: now,
       big_check_note: approve ? null : note,
     })
-    .eq("profile_id", freelancerId);
+    .eq("profile_id", freelancerId)
+    .eq("big_number", bigNumber)
+    .select("profile_id");
 
   // Facilities lean on this badge for their own Wkkgz duty. A silent failure here
   // means a number stays in the queue that a human has already looked up — or
   // worse, that the queue keeps showing work that was in fact done.
   if (bigError) redirect("/beheer?error=unknown");
+
+  /*
+   * Zero rows means the number changed between the lookup and the click, so the
+   * check that was performed was of a value that is no longer claimed. Reported,
+   * not swallowed: the row stays in the queue and the next reviewer looks up the
+   * number that is actually there now.
+   */
+  if (!updated || updated.length === 0) redirect("/beheer?error=big_number_changed");
 
   revalidatePath("/beheer");
   redirect("/beheer?saved=1");

@@ -20,7 +20,9 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
-const { saveFormDraft, readFormDraft, clearFormDraft } = await import("@/lib/formDraft");
+const { saveFormDraft, readFormDraft, clearFormDraft, draftValue, draftValues } = await import(
+  "@/lib/formDraft"
+);
 
 const form = (entries: Record<string, string>) => {
   const data = new FormData();
@@ -137,5 +139,69 @@ describe("clearFormDraft", () => {
     await saveFormDraft("shift", form({ a: "1" }), "/x");
     await clearFormDraft("shift", "/x");
     expect(await readFormDraft("shift", true)).toEqual({});
+  });
+});
+
+describe("a field that submits more than one value", () => {
+  /*
+   * The ninth audit's finding, and the one no test touched: saveFormDraft wrote
+   * `draft[name] = value` while iterating entries(), so a multi-select collapsed
+   * to its last option — and onboarding read it back with split(","), an encoding
+   * this module never produced. Broken in both directions at once, on the one
+   * field that decides where somebody receives work.
+   */
+  const multi = (name: string, values: string[]) => {
+    const data = new FormData();
+    for (const value of values) data.append(name, value);
+    return data;
+  };
+
+  it("keeps every value", async () => {
+    await saveFormDraft("onb", multi("region_codes", ["groot-rijnmond", "delft-westland"]), "/x");
+    expect(await readFormDraft("onb", true)).toEqual({
+      region_codes: ["groot-rijnmond", "delft-westland"],
+    });
+  });
+
+  it("stores a single value as a plain string, so existing readers are unchanged", async () => {
+    await saveFormDraft("onb", multi("region_codes", ["twente"]), "/x");
+    expect(await readFormDraft("onb", true)).toEqual({ region_codes: "twente" });
+  });
+
+  it("draftValues reads both shapes", async () => {
+    await saveFormDraft("onb", multi("region_codes", ["twente"]), "/x");
+    expect(draftValues(await readFormDraft("onb", true), "region_codes")).toEqual(["twente"]);
+
+    await saveFormDraft("onb", multi("region_codes", ["twente", "veluwe"]), "/x");
+    expect(draftValues(await readFormDraft("onb", true), "region_codes")).toEqual([
+      "twente",
+      "veluwe",
+    ]);
+  });
+
+  it("draftValue never hands an array to a plain input", async () => {
+    await saveFormDraft("onb", multi("region_codes", ["twente", "veluwe"]), "/x");
+    const value = draftValue(await readFormDraft("onb", true), "region_codes");
+    expect(typeof value).toBe("string");
+    expect(value).toBe("twente");
+  });
+
+  it("still drops a password that was submitted twice", async () => {
+    const data = multi("password", ["hunter2", "hunter2"]);
+    data.append("email", "a@b.nl");
+    await saveFormDraft("reg", data, "/x");
+
+    const draft = await readFormDraft("reg", true);
+    expect(JSON.stringify(draft)).not.toContain("hunter2");
+    expect(draft.email).toBe("a@b.nl");
+  });
+
+  it("ignores an array holding anything that is not a string", async () => {
+    // The cookie is ours, but a corrupted one must not reach a multi-select.
+    store.set("myqare_draft_onb", {
+      value: JSON.stringify({ region_codes: ["twente", 42], ok: "yes" }),
+      options: {},
+    });
+    expect(await readFormDraft("onb", true)).toEqual({ ok: "yes" });
   });
 });

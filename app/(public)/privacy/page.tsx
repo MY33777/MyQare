@@ -115,7 +115,11 @@ export default function PrivacyPage() {
           <li>
             Technische gegevens om misbruik tegen te gaan: een teller per e-mailadres van het aantal
             inlogpogingen, wachtwoordherstel-verzoeken en contactformulieren binnen een kort
-            tijdvenster. Er wordt geen IP-adres vastgelegd.
+            tijdvenster. Bij inloggen, wachtwoordherstel en het contactformulier tellen we ook per IP-adres,
+            zodat één machine die adressen afgaat niet iedereen achter hetzelfde adres kan
+            buitensluiten. Zowel het e-mailadres als het IP-adres worden daarbij eerst door een
+            eenrichtingsfunctie gehaald: in de tabel staat een onleesbare code, geen adres. Die
+            tellers worden na twee dagen verwijderd.
           </li>
         </ul>
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { DOCUMENT_BUCKET } from "@/lib/documents";
 
@@ -27,15 +28,18 @@ import { DOCUMENT_BUCKET } from "@/lib/documents";
  * That is the one outcome an erasure request must not produce, and it is exactly
  * the bug round 8 found in deleteDocument.
  *
- * The auth account is deleted LAST, because it is the only step that frees the
- * email address, and doing it first would leave somebody able to register again
+ * The auth account is scrambled LAST — not deleted, because a delete cannot
+ * succeed here: profiles.id cascades from auth.users, and migration 025 made the
+ * financial tables RESTRICT against profiles precisely so that cascade is
+ * blocked. Replacing the address and banning the account achieves what the
+ * delete was for, and doing it first would leave somebody able to register again
  * onto a half-anonymised profile.
  */
 export type AnonymiseResult =
   | { ok: true; documentsRemoved: number }
   | {
       ok: false;
-      reason: "not_found" | "is_staff" | "storage_failed" | "unknown";
+      reason: "not_found" | "is_staff" | "storage_failed" | "auth_not_scrambled" | "unknown";
       detail?: string;
     };
 
@@ -96,18 +100,46 @@ export async function anonymiseAccount(profileId: string): Promise<AnonymiseResu
   if (rpcError) return { ok: false, reason: "unknown", detail: rpcError.message };
 
   /*
-   * The auth account last, which frees the email address.
+   * THE AUTH ACCOUNT IS SCRAMBLED, NOT DELETED.
    *
-   * Not fatal if it fails: the personal data is already gone, and an auth row
-   * that can no longer sign in to anything meaningful is a smaller problem than
-   * reporting failure for a request that was in fact honoured. Logged loudly so
-   * somebody can finish it.
+   * It used to call deleteUser here, under a comment saying that frees the email
+   * address. It cannot: profiles.id references auth.users(id) ON DELETE CASCADE,
+   * and migration 025 made credit_ledger and assignments RESTRICT against
+   * profiles — which is the whole point of 025. So the cascade is blocked, the
+   * delete fails for exactly the population this function exists for, and the
+   * result was the worst of both: personal data gone, and the "deleted" person
+   * still holding a working email address and password for an account now called
+   * "Verwijderd account". They could still sign in.
+   *
+   * Scrambling achieves what the delete was for. The address is replaced with a
+   * unique unroutable one, so the original is free to register again; the
+   * password becomes a value nobody knows; and the account is banned so the
+   * session cannot be resumed. The row survives only because the financial
+   * records point at it, which is the same reason profiles survives.
    */
-  const { error: authError } = await admin.auth.admin.deleteUser(profileId);
+  const scrambledEmail = `anon-${profileId}@removed.myqare.invalid`;
+
+  const { error: authError } = await admin.auth.admin.updateUserById(profileId, {
+    email: scrambledEmail,
+    // Not derived from anything, and never returned to the caller.
+    password: randomUUID() + randomUUID(),
+    // A century. Supabase has no "disabled" flag; a ban is how an account is
+    // stopped from signing in without removing the row the invoices need.
+    ban_duration: "876000h",
+    email_confirm: true,
+    user_metadata: {},
+  });
+
   if (authError) {
+    /*
+     * Loud, and reported. The personal data is already gone by this point so the
+     * request has been substantially honoured — but the person can still sign in
+     * until somebody finishes this, and that is not something to log and forget.
+     */
     console.error(
-      `[anonymise] profile ${profileId} anonymised but the auth account remains: ${authError.message}`,
+      `[anonymise] profile ${profileId} anonymised but the auth account is STILL USABLE: ${authError.message}`,
     );
+    return { ok: false, reason: "auth_not_scrambled", detail: authError.message };
   }
 
   return { ok: true, documentsRemoved: paths.length };

@@ -5,7 +5,7 @@ import { authErrorMessage } from "@/lib/authErrors";
 import { RoleFields } from "./RoleFields";
 import { signUpAction } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
-import { readFormDraft } from "@/lib/formDraft";
+import { draftValue, draftValues, readFormDraft } from "@/lib/formDraft";
 
 export const metadata: Metadata = { title: "Account aanmaken" };
 
@@ -38,7 +38,7 @@ export default async function RegisterPage({
 
       <form action={signUpAction} className="space-y-4">
         {/* Role choice reveals the organisation field, so it needs client state. */}
-        <RoleFields defaultRole={draft.role} defaultOrgName={draft.org_name} />
+        <RoleFields defaultRole={draftValue(draft, "role")} defaultOrgName={draftValue(draft, "org_name")} />
 
         <div>
           <label className="label" htmlFor="full_name">
@@ -48,7 +48,7 @@ export default async function RegisterPage({
             className="input"
             id="full_name"
             name="full_name"
-            defaultValue={draft.full_name ?? ""}
+            defaultValue={draftValue(draft, "full_name") ?? ""}
             type="text"
             autoComplete="name"
             required
@@ -63,7 +63,7 @@ export default async function RegisterPage({
             className="input"
             id="email"
             name="email"
-            defaultValue={draft.email ?? ""}
+            defaultValue={draftValue(draft, "email") ?? ""}
             type="email"
             autoComplete="email"
             required

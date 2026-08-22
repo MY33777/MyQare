@@ -25,6 +25,7 @@ type OfferRow = {
     ends_at: string;
     hourly_rate_cents: number;
     status: string;
+    respond_by: string | null;
     organisations: { name: string } | null;
   } | null;
 };
@@ -53,7 +54,7 @@ export default async function FreelancerDashboard() {
     supabase
       .from("shift_offers")
       .select(
-        "id, shift_id, responded_at, shifts(profession, department, starts_at, ends_at, hourly_rate_cents, status, organisations(name))",
+        "id, shift_id, responded_at, shifts(profession, department, starts_at, ends_at, hourly_rate_cents, status, respond_by, organisations(name))",
       )
       .eq("freelancer_id", userId)
       .is("responded_at", null)
@@ -96,7 +97,24 @@ export default async function FreelancerDashboard() {
 
   // Only offers whose shift is still open are actionable — a shift someone else
   // already claimed should not sit in the list looking available.
-  const openOffers = (offers ?? []).filter((offer) => offer.shifts?.status === "open");
+  /*
+   * The same three conditions /professional/aanbod uses.
+   *
+   * This applied only the status check, so the dashboard counted and listed
+   * offers for shifts that had already started or whose respond_by had lapsed —
+   * the exact rows the offer list stopped showing precisely because they render
+   * an Aannemen button that accept_shift() then refuses. Nothing ever moves an
+   * unfilled shift out of status 'open', so a shift from last month sat here
+   * forever as "Open aanbod: 3".
+   */
+  const now = new Date();
+  const openOffers = (offers ?? []).filter((offer) => {
+    const shift = offer.shifts;
+    if (!shift || shift.status !== "open") return false;
+    if (new Date(shift.starts_at) <= now) return false;
+    if (shift.respond_by && new Date(shift.respond_by) < now) return false;
+    return true;
+  });
 
   return (
     <>

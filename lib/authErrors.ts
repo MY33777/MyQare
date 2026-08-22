@@ -99,12 +99,18 @@ const MESSAGES: Record<string, string> = {
   is_staff:
     "Dit is een beheerdersaccount. Verwijder deze persoon eerst als beheerder, " +
     "daarna kan het account worden geanonimiseerd.",
+  auth_not_scrambled:
+    "De gegevens zijn verwijderd, maar het inlogaccount kon niet worden afgesloten " +
+    "— diegene kan dus nog inloggen. Probeer het opnieuw en meld het als het blijft misgaan.",
   storage_failed:
     "De documenten konden niet uit de opslag worden verwijderd, dus er is niets " +
     "gewijzigd. Probeer het opnieuw — half anonimiseren is erger dan niet.",
   account_not_found:
     "Geen account gevonden met dit e-mailadres. Controleer het adres waarmee het " +
     "verzoek is gedaan.",
+  big_number_changed:
+    "Het BIG-nummer is aangepast sinds je het opzocht, dus er is niets vastgelegd. " +
+    "Zoek het nieuwe nummer op — het staat weer in de lijst.",
   bad_kind: "Kies een geldig soort document.",
   finish_onboarding_first:
     "Rond eerst je profiel af. Zonder een compleet profiel kunnen we een betaling " +

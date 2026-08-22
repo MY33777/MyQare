@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/hours";
 import { addBlockAction, removeBlockAction } from "./actions";
 import { SubmitButton } from "@/components/SubmitButton";
+import { amsterdamDateKey } from "@/lib/timezone";
 
 export const metadata: Metadata = { title: "Beschikbaarheid" };
 
@@ -26,7 +27,19 @@ export default async function AvailabilityPage({
   const params = await searchParams;
   const supabase = await createClient();
 
-  const today = new Date().toISOString().slice(0, 10);
+  /*
+   * The Amsterdam day, not the UTC one.
+   *
+   * `new Date().toISOString().slice(0, 10)` is the exact expression
+   * lib/timezone.ts exists to replace — its own docblock names it verbatim. In
+   * summer the UTC date is still yesterday until 02:00 local, so a block that
+   * ended yesterday stayed in the list all evening and a freelancer checking her
+   * availability at midnight saw a period she had already worked through.
+   *
+   * Every other date-versus-now comparison in this codebase goes through
+   * amsterdamDateKey; this one was missed.
+   */
+  const today = amsterdamDateKey();
 
   const { data: blocks } = await supabase
     .from("availability_blocks")

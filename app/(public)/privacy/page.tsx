@@ -247,11 +247,14 @@ export default function PrivacyPage() {
           </li>
         </ul>
         <p>
-          Omdat facturen bewaard moeten blijven, kan een account met opdrachten niet zomaar worden
-          gewist. In plaats daarvan hoort je profiel geanonimiseerd te worden en blijven de
-          financiële gegevens staan. <strong>Nog te bouwen:</strong> dat proces bestaat nog niet.
-          Zolang dat zo is, moet een verwijderverzoek met de hand worden afgehandeld — neem daarvoor{" "}
-          <Link href="/contact">contact</Link> op.
+          Omdat facturen zeven jaar bewaard moeten blijven, kan een account met opdrachten niet
+          zomaar worden gewist. In plaats daarvan anonimiseren we je profiel: je documenten worden
+          uit de opslag verwijderd, net als je telefoonnummer, adres, IBAN, beschikbaarheid en
+          poollidmaatschappen; je naam wordt overal vervangen door &quot;Verwijderd account&quot; en
+          je e-mailadres wordt losgekoppeld, zodat inloggen niet meer kan. Facturen, opdrachten en
+          dossierrecords blijven staan met de gegevens zoals ze destijds zijn vastgelegd.
+          Er is geen knop voor: je vraagt het aan via{" "}
+          <Link href="/contact">contact</Link>, en wij voeren het uit.
         </p>
 
         <h2 id="rechten">6. Je rechten</h2>

@@ -8,6 +8,7 @@ import { renderDossierPdf, type DossierEntry } from "@/lib/dossierPdf";
 import { billableMinutes } from "@/lib/hours";
 import { qualificationLabel } from "@/lib/qualifications";
 import { localInputToIso } from "@/lib/timezone";
+import { amsterdamDateKey } from "@/lib/timezone";
 
 /*
  * Downloads the compliance dossier as a PDF.
@@ -231,7 +232,9 @@ type Snapshot = {
     entries,
   });
 
-  const stamp = new Date().toISOString().slice(0, 10);
+  // Amsterdam, not UTC: a dossier exported at 00:30 was named with yesterday's
+  // date while declaring its own period in local days. See lib/timezone.ts.
+  const stamp = amsterdamDateKey();
   const safeName = admin.org.name.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "");
 
   return new NextResponse(new Uint8Array(pdf), {

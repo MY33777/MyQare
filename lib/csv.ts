@@ -1,3 +1,4 @@
+import { amsterdamDateKey } from "@/lib/timezone";
 /*
  * CSV generation for bookkeeping exports.
  *
@@ -80,5 +81,12 @@ export function csvFilename(prefix: string, name: string): string {
     .replace(/[^a-zA-Z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .toLowerCase();
-  return `${prefix}-${slug}-${new Date().toISOString().slice(0, 10)}.csv`;
+  /*
+   * The Amsterdam day, like every other date this product shows a person.
+   *
+   * toISOString() gives the UTC date, so an export run at 00:30 in summer was
+   * named with yesterday's — and the filename is what somebody files it under
+   * and later searches for. lib/timezone.ts exists for exactly this expression.
+   */
+  return `${prefix}-${slug}-${amsterdamDateKey()}.csv`;
 }

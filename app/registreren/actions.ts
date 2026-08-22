@@ -47,8 +47,42 @@ export async function signUpAction(formData: FormData) {
   if (password.length < MIN_PASSWORD_LENGTH) redirect(backTo("weak_password"));
   if (role === "facility_admin" && !orgName) redirect(backTo("org_name_required"));
 
-  const allowed = await checkRateLimit(bucketKey("signup", email.toLowerCase()), 5, 3600);
-  if (!allowed) redirect(backTo("rate_limited"));
+  /*
+   * Keyed on the CLIENT, not on the address, per the rule written in
+   * lib/rateLimit.ts: a bucket keyed on something a stranger shares with the
+   * victim may count and be logged, but must not GATE an action whose refusal
+   * harms the person who did not spend it.
+   *
+   * This gated on the email alone, so five attempts against any address blocked
+   * that address from registering for an hour — renewable, from a script,
+   * against somebody who has not signed up yet and cannot tell why it will not
+   * work. That is the same shape as the sign-in lockout the login action was
+   * rewritten to remove, in the file whose own comment forbids it.
+   *
+   * The address still gets a ceiling because signing up sends mail, and mail to
+   * an address the caller typed is a way to fill somebody's inbox — but tripping
+   * it now reports the same "check your email" as success, so nothing is
+   * confirmed and nobody is told their address is blocked.
+   */
+  const ip = await clientIp();
+  const clientBucket = ip ? bucketKey("signup_ip", ip) : null;
+  const addressBucket = bucketKey("signup", email.toLowerCase());
+
+  if (clientBucket && (await isRateLimited(clientBucket, 20, 3600))) {
+    redirect(backTo("rate_limited"));
+  }
+
+  const mailBudgetLeft = !(await isRateLimited(addressBucket, 5, 3600));
+
+  await recordRateLimitHit(addressBucket);
+  if (clientBucket) await recordRateLimitHit(clientBucket);
+
+  /*
+   * Out of mail budget: report the same thing a successful signup reports and
+   * send nothing. Saying "too many attempts" about an address somebody merely
+   * typed confirms it exists.
+   */
+  if (!mailBudgetLeft) redirect("/registreren/bevestig?email=" + encodeURIComponent(email));
 
   const supabase = await createClient();
 

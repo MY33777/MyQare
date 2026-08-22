@@ -29,6 +29,7 @@ const ERROR_FIELD: Record<string, string> = {
   starts_in_past: "starts_at",
   invalid_rate: "hourly_rate",
   invalid_break: "break_minutes",
+  break_exceeds_shift: "break_minutes",
   invalid_visibility: "visibility",
   repeat_without_pattern: "repeat_pattern",
   respond_by_after_start: "respond_by",

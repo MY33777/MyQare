@@ -77,6 +77,22 @@ export async function createShiftAction(formData: FormData) {
   if (!Number.isFinite(breakMinutes) || breakMinutes < 0) {
     redirect(`${NEW_SHIFT_PATH}?error=invalid_break`);
   }
+
+  /*
+   * And the break cannot exceed the shift.
+   *
+   * Only a NEGATIVE break was rejected, so 480 minutes of break on an eight-hour
+   * shift posted: billableMinutes clamps at zero, so the shift was offered at
+   * nothing, and accept_shift would charge a fee of nothing on an assignment
+   * worth nothing. The preview warns about it in the form; this is the control.
+   */
+  const shiftMinutes = Math.round(
+    (new Date(endsAt).getTime() - new Date(startsAt).getTime()) / 60_000,
+  );
+
+  if (Math.round(breakMinutes) >= shiftMinutes) {
+    redirect(`${NEW_SHIFT_PATH}?error=break_exceeds_shift`);
+  }
   if (!["pool", "stars", "region"].includes(visibility)) {
     redirect(`${NEW_SHIFT_PATH}?error=invalid_visibility`);
   }

@@ -337,12 +337,26 @@ begin
         respond_by = case when respond_by < now() then null else respond_by end
     where id = v_shift.id and status = 'filled';
 
-    -- Only the offers closed BY the fill. A genuine decline stays declined —
-    -- somebody who said no is not asked again because the person who said yes
-    -- dropped out.
+    /*
+     * The offers closed by the fill, AND the acceptance that caused the fill.
+     *
+     * This matched only decline_reason = 'shift_filled'. The accepting
+     * freelancer's own row has response = 'accept' with a null decline_reason, so
+     * it was left standing on a shift that had just gone back to 'open' — a stale
+     * acceptance nobody could act on, and a second acceptance by the same person
+     * then produced two 'accept' rows for one shift. The facility's offer table
+     * counts those, so it read as two people having taken the same night.
+     *
+     * A genuine decline still stays declined: somebody who said no is not asked
+     * again because the person who said yes dropped out.
+     */
     update shift_offers
     set responded_at = null, response = null, decline_reason = null
-    where shift_id = v_shift.id and decline_reason = 'shift_filled';
+    where shift_id = v_shift.id
+      and (
+        decline_reason = 'shift_filled'
+        or (freelancer_id = v_assignment.freelancer_id and response = 'accept')
+      );
   else
     /*
      * Already started or over. This is the common case: most cancellations after

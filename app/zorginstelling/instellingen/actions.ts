@@ -79,6 +79,23 @@ export async function inviteColleagueAction(formData: FormData) {
   if (!email) redirect(`${SETTINGS_PATH}?error=missing_fields`);
 
   /*
+   * A verified facility only.
+   *
+   * There was no gate here at all, and onboarding claims an invite purely on the
+   * signed-in address, before the KvK branch, with no confirmation. So any
+   * account — unverified, seconds old, created with any email — could pre-claim
+   * somebody else's work address, and when that person later registered and
+   * completed onboarding they would silently land inside the stranger's
+   * organisation. Their typed organisation name and KvK were discarded, and
+   * everything they then did — their pool, their shifts, their invoices —
+   * belonged to whoever had claimed them.
+   *
+   * Verification is a human checking a KvK extract. It is exactly the bar that
+   * belongs in front of "you may absorb an account".
+   */
+  if (!admin.org.verified_at) redirect(`${SETTINGS_PATH}?error=not_verified`);
+
+  /*
    * Rate limited, because this sends mail to an address the caller typed and is
    * reachable by anybody with a facility account. Keyed on the organisation
    * rather than the address: the thing being protected is our sender, and an
@@ -164,14 +181,28 @@ export async function revokeInviteAction(formData: FormData) {
    * Accepted invites are left alone: revoking one would not remove the colleague
    * and would only erase the record of who let them in.
    */
-  const { error } = await getSupabaseAdmin()
+  const { data: removed, error } = await getSupabaseAdmin()
     .from("organisation_invites")
     .delete()
     .eq("id", inviteId)
     .eq("org_id", admin.org.id)
-    .is("accepted_at", null);
+    .is("accepted_at", null)
+    .select("id");
 
   if (error) redirect(`${SETTINGS_PATH}?error=unknown`);
+
+  /*
+   * Zero rows is not a revoke.
+   *
+   * supabase-js returns error:null for a delete that matched nothing, so this
+   * reported "Uitnodiging ingetrokken" for an invite that had already been
+   * accepted — the colleague is inside, the access was not withdrawn, and the
+   * coordinator was told it had been. The sibling in
+   * app/beheer/beheerders/actions.ts has done it this way since round 6.
+   */
+  if (!removed || removed.length === 0) {
+    redirect(`${SETTINGS_PATH}?error=invite_already_accepted`);
+  }
 
   revalidatePath(SETTINGS_PATH);
   redirect(`${SETTINGS_PATH}?revoked=1`);

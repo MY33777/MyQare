@@ -242,7 +242,7 @@ async function findRecipients(input: NewShift): Promise<string[]> {
 
   const poolStatuses = input.visibility === "stars" ? ["star"] : ["member", "star"];
 
-  const { data: poolRows } = await admin
+  const { data: poolRows, error: poolError } = await admin
     .from("pools")
     .select("freelancer_id, freelancers(profession, specialisations)")
     .eq("org_id", input.orgId)
@@ -270,6 +270,24 @@ async function findRecipients(input: NewShift): Promise<string[]> {
    * pool has already been vetted by them, and a pool member who moved house should
    * not silently stop hearing from a client they work with.
    */
+  /*
+   * A read that FAILED is not an empty pool.
+   *
+   * This discarded the error, so poolRows became null, ids ended up empty, and
+   * createShiftWithOffers returned offeredTo: 0 — which the shift list renders as
+   * a message naming three causes, all of them facts about the facility's own
+   * configuration, for what was actually a failure on our side. The coordinator
+   * goes and checks a pool that is fine.
+   *
+   * Thrown rather than returned: the shift has not been created yet at this
+   * point, so the caller can still report a failure instead of a shift that
+   * reached nobody. The neighbouring branch on the same page was corrected for
+   * exactly this reason.
+   */
+  if (poolError) {
+    throw new Error(`Kon de pool niet lezen: ${poolError.message}`);
+  }
+
   const ids = new Set(
     (poolRows ?? [])
       .filter((row) =>

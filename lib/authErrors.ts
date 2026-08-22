@@ -54,6 +54,9 @@ const MESSAGES: Record<string, string> = {
     "De eindtijd ligt vóór de begintijd. Loopt de dienst door na middernacht? " +
     "Zet de einddatum dan op de volgende dag.",
   invalid_rate: "Vul een geldig uurtarief in, bijvoorbeeld 42,50.",
+  break_exceeds_shift:
+    "De pauze is even lang als of langer dan de dienst zelf, dus er blijft niets te " +
+    "declareren over. Controleer de pauze en de tijden.",
   invalid_break: "Vul de pauze in als een aantal minuten, bijvoorbeeld 30. Geen pauze? Vul 0 in.",
   repeat_without_pattern:
     "Je hebt een aantal diensten ingevuld maar geen herhaling gekozen. Kies een " +
@@ -111,6 +114,9 @@ const MESSAGES: Record<string, string> = {
   big_number_changed:
     "Het BIG-nummer is aangepast sinds je het opzocht, dus er is niets vastgelegd. " +
     "Zoek het nieuwe nummer op — het staat weer in de lijst.",
+  invite_already_accepted:
+    "Deze uitnodiging is niet ingetrokken — je collega heeft hem al gebruikt en " +
+    "heeft dus toegang. Wil je die toegang weghalen, neem dan contact met ons op.",
   bad_kind: "Kies een geldig soort document.",
   finish_onboarding_first:
     "Rond eerst je profiel af. Zonder een compleet profiel kunnen we een betaling " +

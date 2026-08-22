@@ -67,6 +67,22 @@ export function ShiftCostPreview() {
         return;
       }
 
+      /*
+       * Clamped, like lib/hours.ts billableMinutes does on the server.
+       *
+       * The guard above checks `total` — end minus start — while everything
+       * below formats `billable`, which is that minus the break. A break longer
+       * than the shift made billable negative, and Math.floor and % both keep the
+       * sign: the preview printed "-4 uur -30 min" and an Intl-formatted negative
+       * amount, for a form the server accepts (createShiftAction only rejects a
+       * NEGATIVE break, not one larger than the shift).
+       */
+      if (billable <= 0) {
+        setSummary(null);
+        setWarning("De pauze is langer dan de dienst zelf. Controleer de pauze.");
+        return;
+      }
+
       const hours = Math.floor(billable / 60);
       const minutes = billable % 60;
       const duration = minutes === 0 ? `${hours} uur` : `${hours} uur ${minutes} min`;

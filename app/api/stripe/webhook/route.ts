@@ -152,6 +152,35 @@ export async function POST(request: NextRequest) {
     }
     try {
       const restored = await restoreWonDispute(dispute);
+
+      /*
+       * "Nothing was reversed" can mean two different things, and answering 200
+       * to both loses money.
+       *
+       * Either the dispute began as an inquiry that withdrew nothing, so the
+       * creation was deliberately skipped and there is genuinely nothing to give
+       * back — or the reversal simply has not landed yet. The reversal path
+       * returns 500 on any transient failure precisely so Stripe WILL redeliver
+       * it, which means it can arrive after this event. Telling Stripe this one
+       * was handled ends its redelivery forever, and the reversal that lands
+       * afterwards is then permanent: money taken back from a freelancer who won.
+       *
+       * A young dispute gets a 500 so Stripe keeps trying; an old one is accepted
+       * as the inquiry case. Stripe retries for about three days, which
+       * comfortably outlasts a reversal delayed by an outage.
+       */
+      if (restored.skipped === "nothing_was_reversed") {
+        const ageSeconds = Math.floor(Date.now() / 1000) - (dispute.created ?? 0);
+
+        if (ageSeconds < 24 * 60 * 60) {
+          console.warn(
+            `[stripe] dispute ${dispute.id} closed as won with no reversal on the ledger yet; ` +
+              "returning 500 so Stripe redelivers after the reversal lands.",
+          );
+          return NextResponse.json({ error: "reversal_not_yet_recorded" }, { status: 500 });
+        }
+      }
+
       return NextResponse.json({ received: true, ...restored });
     } catch (error) {
       const message = error instanceof Error ? error.message : "restore failed";

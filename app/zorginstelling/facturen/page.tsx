@@ -23,7 +23,7 @@ type InvoiceRow = {
   vat_treatment: string;
   paid_at: string | null;
   pdf_path: string | null;
-  profiles: { full_name: string } | null;
+  freelancers: { profiles: { full_name: string } | null } | null;
 };
 
 /**
@@ -61,7 +61,7 @@ export default async function FacilityInvoicesPage({
   const { data: invoices } = await supabase
     .from("invoices")
     .select(
-      "id, number, issued_on, due_on, amount_ex_vat_cents, vat_amount_cents, total_cents, vat_treatment, paid_at, pdf_path, profiles!invoices_freelancer_id_fkey(full_name)",
+      "id, number, issued_on, due_on, amount_ex_vat_cents, vat_amount_cents, total_cents, vat_treatment, paid_at, pdf_path, freelancers(profiles(full_name))",
     )
     .eq("org_id", org.id)
     /*
@@ -153,7 +153,7 @@ export default async function FacilityInvoicesPage({
                 return (
                   <tr key={invoice.id}>
                     <td className="tnum font-medium">{invoice.number}</td>
-                    <td>{invoice.profiles?.full_name ?? "—"}</td>
+                    <td>{invoice.freelancers?.profiles?.full_name ?? "—"}</td>
                     <td className="tnum">{formatDate(invoice.issued_on)}</td>
                     <td className="tnum">
                       {formatDate(invoice.due_on)}

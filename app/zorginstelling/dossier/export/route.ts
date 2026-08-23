@@ -32,7 +32,7 @@ type Row = {
   assignments: {
     agreed_rate_cents: number;
     agreed_break_minutes: number;
-    profiles: { full_name: string } | null;
+    freelancers: { profiles: { full_name: string } | null } | null;
     shifts: { profession: string; starts_at: string; ends_at: string } | null;
   } | null;
 };
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from("compliance_records")
     .select(
-      "assignment_id, model_agreement_version, offered_at, accepted_at, could_decline, substitution_allowed, rate_set_by, declined_other_offers, snapshot, assignments!inner(agreed_rate_cents, agreed_break_minutes, org_id, profiles!assignments_freelancer_id_fkey(full_name), shifts(profession, starts_at, ends_at))",
+      "assignment_id, model_agreement_version, offered_at, accepted_at, could_decline, substitution_allowed, rate_set_by, declined_other_offers, snapshot, assignments!inner(agreed_rate_cents, agreed_break_minutes, org_id, freelancers(profiles(full_name)), shifts(profession, starts_at, ends_at))",
     )
     .eq("assignments.org_id", admin.org.id)
     .order("accepted_at", { ascending: true })
@@ -182,7 +182,7 @@ type Snapshot = {
 
       return {
         freelancerName:
-          snap?.freelancer?.full_name ?? assignment.profiles?.full_name ?? "Onbekend",
+          snap?.freelancer?.full_name ?? assignment.freelancers?.profiles?.full_name ?? "Onbekend",
         qualification: qualificationLabel(snap?.shift?.qualification ?? shift.profession),
         /*
          * Snapshot only, with no live fallback — unlike the fields above.

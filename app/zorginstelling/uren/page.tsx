@@ -23,7 +23,7 @@ type PendingRow = {
   agreed_rate_cents: number;
   agreed_break_minutes: number;
   status: string;
-  profiles: { full_name: string } | null;
+  freelancers: { profiles: { full_name: string } | null } | null;
   shifts: {
     profession: string;
     department: string | null;
@@ -48,6 +48,8 @@ export default async function TimesheetsPage({
     failed?: string;
     /** How many of the approved rows produced no invoice. Bulk path only. */
     uninvoiced?: string;
+    /** How many invoices were made and numbered but could not be sent. */
+    undelivered?: string;
     invoiced?: string;
     disputed?: string;
     rated?: string;
@@ -61,7 +63,7 @@ export default async function TimesheetsPage({
   const { data: rows, error: rowsError } = await supabase
     .from("assignments")
     .select(
-      "id, agreed_rate_cents, agreed_break_minutes, status, profiles!assignments_freelancer_id_fkey(full_name), shifts(profession, department, starts_at, ends_at), timesheets(minutes_claimed, break_minutes, note, approved_at, disputed_at)",
+      "id, agreed_rate_cents, agreed_break_minutes, status, freelancers(profiles(full_name)), shifts(profession, department, starts_at, ends_at), timesheets(minutes_claimed, break_minutes, note, approved_at, disputed_at)",
     )
     .eq("org_id", org.id)
     .neq("status", "cancelled")
@@ -166,6 +168,20 @@ export default async function TimesheetsPage({
           binnenkort.
         </FormMessage>
       ) : null}
+      {/*
+        Made, numbered, not sent. This used to render as the green "held for
+        review" message below, which told the facility somebody was checking it
+        and they would have it shortly — neither of which was true, and neither
+        of which anything in the product was going to make true.
+      */}
+      {params.approved && params.undelivered ? (
+        <FormMessage kind="warn">
+          {Number(params.undelivered) > 1
+            ? `Uren goedgekeurd. ${params.undelivered} facturen zijn opgemaakt maar konden niet worden verstuurd`
+            : "Uren goedgekeurd. De factuur is opgemaakt maar kon niet worden verstuurd"}
+          {" — controleer het factuuradres bij Instellingen. De factuur staat wel klaar bij Facturen."}
+        </FormMessage>
+      ) : null}
       {params.approved && params.invoice === "invoice_details_missing" ? (
         <FormMessage kind="error">
           Uren goedgekeurd, maar er is nog geen factuur: deze zorgprofessional heeft haar
@@ -222,7 +238,7 @@ export default async function TimesheetsPage({
                 <div className="flex flex-wrap justify-between gap-4 mb-3">
                   <div>
                     <p className="font-bold">
-                      {row.profiles?.full_name ?? "—"}
+                      {row.freelancers?.profiles?.full_name ?? "—"}
                       {/*
                         A timesheet that was sent back and resubmitted looked
                         exactly like one arriving for the first time. So the
@@ -384,7 +400,7 @@ export default async function TimesheetsPage({
             {toRate.map((row) => (
               <div key={row.id}>
                 <p className="font-semibold mb-2">
-                  {row.profiles?.full_name ?? "—"}
+                  {row.freelancers?.profiles?.full_name ?? "—"}
                   <span className="font-normal text-sm ml-2" style={{ color: "var(--text-muted)" }}>
                     {qualificationLabel(row.shifts?.profession)}
                     {row.shifts
@@ -396,7 +412,7 @@ export default async function TimesheetsPage({
                   action={submitRatingAction}
                   assignmentId={row.id}
                   direction="facility_to_freelancer"
-                  heading={`Hoe ging het met ${row.profiles?.full_name ?? "deze zorgprofessional"}?`}
+                  heading={`Hoe ging het met ${row.freelancers?.profiles?.full_name ?? "deze zorgprofessional"}?`}
                 />
               </div>
             ))}

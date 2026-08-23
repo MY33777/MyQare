@@ -25,8 +25,16 @@ export const INVOICE_BUCKET = "documents";
 const INVOICE_NUMBER_SCAN_LIMIT = 2000;
 
 export type InvoiceOutcome =
-  /** `held` means created and numbered but deliberately not sent — see auto_send. */
-  | { ok: true; invoiceId: string; number: string; held?: boolean }
+  /**
+   * `held` means created and numbered but deliberately not sent — see auto_send.
+   *
+   * `undelivered` means we TRIED to send it and could not, and carries why. The
+   * two were one flag, so a delivery that failed produced the same reassuring
+   * green "she is reviewing it first, you will receive it shortly" as a
+   * deliberate hold. Nobody was ever going to release it: the freelancer's list
+   * shows held invoices with a Versturen button, and this invoice was not held.
+   */
+  | { ok: true; invoiceId: string; number: string; held?: boolean; undelivered?: string }
   | {
       ok: false;
       reason:
@@ -309,15 +317,23 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
 
   /*
    * The invoice exists and is numbered either way — that is why this is not a
-   * failure of createInvoiceForAssignment. But the result was discarded, so a
-   * facility with no billing address, or a mail outage, produced "factuur
-   * opgemaakt en verstuurd" for a document nobody received. It now comes back as
-   * held, which is the truthful description: created, numbered, not delivered,
-   * and releasable from /professional/facturen.
+   * failure of createInvoiceForAssignment. But it is not "held" either.
+   *
+   * Reporting it as held told the facility the freelancer was reviewing it and
+   * they would have it shortly. Both halves are untrue: nobody is reviewing it,
+   * and nobody will send it — the release button on /professional/facturen only
+   * appears for invoices the freelancer chose to hold. A facility with no billing
+   * address got that message forever, for every invoice, and the only sign
+   * anything was wrong was a line in the server log.
    */
   if (!delivery.ok) {
     console.error(`[invoice] ${invoice.number} created but not delivered: ${delivery.reason}`);
-    return { ok: true, invoiceId: invoice.id, number: invoice.number, held: true };
+    return {
+      ok: true,
+      invoiceId: invoice.id,
+      number: invoice.number,
+      undelivered: delivery.reason,
+    };
   }
 
   return { ok: true, invoiceId: invoice.id, number: invoice.number };
@@ -336,10 +352,13 @@ async function deliverInvoice(
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const admin = getSupabaseAdmin();
 
-  const { data: invoice } = await admin
+  // The error is read. Discarded, an unresolvable embed or a dropped connection
+  // became `invoice === null`, which this function reports as "unknown" — a
+  // permanent failure indistinguishable from a missing row.
+  const { data: invoice, error: readError } = await admin
     .from("invoices")
     .select(
-      "id, number, total_cents, due_on, sent_at, freelancer_id, organisations(name, billing_email), profiles:freelancer_id(full_name)",
+      "id, number, total_cents, due_on, sent_at, freelancer_id, organisations(name, billing_email), freelancers(profiles(full_name))",
     )
     .eq("id", invoiceId)
     .maybeSingle<{
@@ -350,16 +369,17 @@ async function deliverInvoice(
       sent_at: string | null;
       freelancer_id: string;
       organisations: { name: string; billing_email: string | null } | null;
-      profiles: { full_name: string } | null;
+      freelancers: { profiles: { full_name: string } | null } | null;
     }>();
 
-  if (!invoice) return { ok: false, reason: "unknown" };
+  if (readError) return { ok: false, reason: `read_failed: ${readError.message}` };
+  if (!invoice) return { ok: false, reason: "not_found" };
   if (invoice.sent_at) return { ok: true }; // Idempotent: never mail the same invoice twice.
 
   const to = invoice.organisations?.billing_email;
   if (!to) return { ok: false, reason: "no_billing_email" };
 
-  const freelancerName = invoice.profiles?.full_name ?? "Zorgprofessional";
+  const freelancerName = invoice.freelancers?.profiles?.full_name ?? "Zorgprofessional";
 
   /*
    * To the facility's billing address, not to whoever approved the hours.
@@ -465,9 +485,8 @@ export async function renderAndStoreInvoicePdf(invoiceId: string): Promise<boole
         "id, number, issued_on, due_on, minutes_billed, rate_cents, amount_ex_vat_cents, " +
           "vat_rate_bp, vat_amount_cents, total_cents, vat_note, freelancer_id, org_id, " +
           "assignments(shifts(profession, starts_at)), " +
-          "freelancers!invoices_freelancer_id_fkey(kvk, big_number), " +
-          "organisations(name, kvk, address_line, postcode, city), " +
-          "profiles!invoices_freelancer_id_fkey(full_name)",
+          "freelancers!invoices_freelancer_id_fkey(kvk, big_number, profiles(full_name)), " +
+          "organisations(name, kvk, address_line, postcode, city)",
       )
       .eq("id", invoiceId)
       .maybeSingle<StoredInvoice>();
@@ -487,7 +506,7 @@ export async function renderAndStoreInvoicePdf(invoiceId: string): Promise<boole
       freelancer: {
         // The trading name if they gave one — a zzp'er often invoices under a
         // business name that is not their own — otherwise the person's name.
-        name: settings.businessName?.trim() || invoice.profiles?.full_name || "Zorgprofessional",
+        name: settings.businessName?.trim() || invoice.freelancers?.profiles?.full_name || "Zorgprofessional",
         kvk: invoice.freelancers?.kvk ?? null,
         bigNumber: invoice.freelancers?.big_number ?? null,
         email: null,
@@ -579,7 +598,11 @@ type StoredInvoice = {
   freelancer_id: string;
   org_id: string;
   assignments: { shifts: { profession: string; starts_at: string } | null } | null;
-  freelancers: { kvk: string | null; big_number: string | null } | null;
+  freelancers: {
+    kvk: string | null;
+    big_number: string | null;
+    profiles: { full_name: string } | null;
+  } | null;
   organisations: {
     name: string;
     kvk: string | null;
@@ -587,5 +610,4 @@ type StoredInvoice = {
     postcode: string | null;
     city: string | null;
   } | null;
-  profiles: { full_name: string } | null;
 };

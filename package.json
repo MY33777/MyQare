@@ -8,13 +8,14 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "npm run check:sql && npm run check:install && vitest run",
+    "test": "npm run check:sql && npm run check:embeds && npm run check:install && vitest run",
     "test:unit": "vitest run",
     "seed": "tsx scripts/seed.mts",
     "seed:reset": "tsx scripts/seed.mts --reset",
     "preview:invoice": "tsx scripts/preview-invoice.mts",
     "check:sql": "node scripts/check-sql.mjs",
-    "check:install": "node scripts/install-check.mjs"
+    "check:install": "node scripts/install-check.mjs",
+    "check:embeds": "node scripts/check-embeds.mjs"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^6.8.0",

@@ -136,7 +136,7 @@ export async function submitTimesheetAction(formData: FormData) {
   try {
     const { data: full } = await service
       .from("assignments")
-      .select("org_id, profiles!assignments_freelancer_id_fkey(full_name), organisations(name, billing_email)")
+      .select("org_id, freelancers(profiles(full_name)), organisations(name, billing_email)")
       .eq("id", assignmentId)
       .maybeSingle();
     const billingEmail = (full as { organisations?: { billing_email?: string | null } } | null)?.organisations?.billing_email;
@@ -144,7 +144,8 @@ export async function submitTimesheetAction(formData: FormData) {
       await sendTimesheetSubmittedEmail({
         to: billingEmail,
         facilityName: (full as { organisations?: { name?: string } } | null)?.organisations?.name ?? "",
-        freelancerName: (full as { profiles?: { full_name?: string } } | null)?.profiles?.full_name ?? "Een zorgprofessional",
+        freelancerName: (full as { freelancers?: { profiles?: { full_name?: string } | null } } | null)?.freelancers
+            ?.profiles?.full_name ?? "Een zorgprofessional",
         minutes: totalMinutes - Math.round(breakMinutes),
         assignmentId,
       });

@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from("invoices")
     .select(
-      "number, issued_on, due_on, paid_at, minutes_billed, rate_cents, amount_ex_vat_cents, vat_rate_bp, vat_amount_cents, total_cents, vat_treatment, profiles!invoices_freelancer_id_fkey(full_name), freelancers!invoices_freelancer_id_fkey(kvk, big_number)",
+      "number, issued_on, due_on, paid_at, minutes_billed, rate_cents, amount_ex_vat_cents, vat_rate_bp, vat_amount_cents, total_cents, vat_treatment, freelancers(kvk, big_number, profiles(full_name))",
     )
     .eq("org_id", admin.org.id)
     // Held invoices have not been issued to this facility yet. See the list page.
@@ -50,8 +50,11 @@ export async function GET(request: NextRequest) {
       vat_amount_cents: number;
       total_cents: number;
       vat_treatment: string;
-      profiles: { full_name: string } | null;
-      freelancers: { kvk: string | null; big_number: string | null } | null;
+      freelancers: {
+        kvk: string | null;
+        big_number: string | null;
+        profiles: { full_name: string } | null;
+      } | null;
     }[]
   >();
 
@@ -85,7 +88,7 @@ export async function GET(request: NextRequest) {
        * first of a month, the wrong period.
        */
       invoice.paid_at ? amsterdamDateKey(new Date(invoice.paid_at)) : "",
-      invoice.profiles?.full_name ?? "",
+      invoice.freelancers?.profiles?.full_name ?? "",
       invoice.freelancers?.kvk ?? "",
       invoice.freelancers?.big_number ?? "",
       csvHours(invoice.minutes_billed),

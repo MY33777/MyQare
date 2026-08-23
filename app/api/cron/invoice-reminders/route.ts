@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
   const { data: overdue, error } = await admin
     .from("invoices")
     .select(
-      "id, number, due_on, total_cents, reminders_sent, organisations(name, billing_email), profiles!invoices_freelancer_id_fkey(full_name)",
+      "id, number, due_on, total_cents, reminders_sent, organisations(name, billing_email), freelancers(profiles(full_name))",
     )
     .is("paid_at", null)
     /*
@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
         total_cents: number;
         reminders_sent: number;
         organisations: { name: string; billing_email: string | null } | null;
-        profiles: { full_name: string } | null;
+        freelancers: { profiles: { full_name: string } | null } | null;
       }[]
     >();
 
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
     const ok = await sendInvoiceReminderEmail({
       to,
       facilityName: invoice.organisations?.name ?? "",
-      freelancerName: invoice.profiles?.full_name ?? "Een zorgprofessional",
+      freelancerName: invoice.freelancers?.profiles?.full_name ?? "Een zorgprofessional",
       invoiceNumber: invoice.number,
       totalCents: invoice.total_cents,
       daysOverdue,

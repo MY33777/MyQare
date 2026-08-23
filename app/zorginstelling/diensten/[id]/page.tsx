@@ -37,7 +37,7 @@ type ShiftDetail = {
     response: string | null;
     responded_at: string | null;
     viewed_at: string | null;
-    profiles: { full_name: string } | null;
+    freelancers: { profiles: { full_name: string } | null } | null;
   }[];
   /*
    * An ARRAY, not an object.
@@ -63,12 +63,6 @@ type ShiftDetail = {
     // Present once the freelancer submitted hours, which is the point after which
     // cancelling would strand their pay. See lib/cancelActions.ts.
     timesheets: { claimed_at: string | null } | null;
-    /*
-     * Phone comes from profile_contact, whose policy requires an actual assignment
-     * with this facility (migration 004). The old rule lived only in JSX, so the
-     * number was one PostgREST call away for any pool facility.
-     */
-    profiles: { full_name: string; profile_contact: { phone: string | null } | null } | null;
     freelancer_id: string;
     /*
      * The Wkkgz answer, on the screen where the question is asked.
@@ -78,7 +72,24 @@ type ShiftDetail = {
      * is the facility's own legal duty, not the freelancer's, and the reason the
      * dossier exists at all. Checking it meant leaving this page for the pool.
      */
-    freelancers: { big_number: string | null; big_verified_at: string | null } | null;
+    freelancers: {
+      big_number: string | null;
+      big_verified_at: string | null;
+      /*
+       * Reached THROUGH freelancers, because that is where the foreign key goes.
+       *
+       * `assignments.freelancer_id` references `freelancers(profile_id)`, not
+       * `profiles`, so `profiles!assignments_freelancer_id_fkey(...)` names a
+       * relationship PostgREST cannot resolve — the whole query fails, not just
+       * this column. Twelve queries carried that embed; scripts/check-embeds.mjs
+       * now refuses any new one.
+       *
+       * Phone comes from profile_contact, whose policy requires an actual
+       * assignment with this facility (migration 004). The old rule lived only in
+       * JSX, so the number was one PostgREST call away for any pool facility.
+       */
+      profiles: { full_name: string; profile_contact: { phone: string | null } | null } | null;
+    } | null;
   }[];
 };
 
@@ -107,7 +118,7 @@ export default async function FacilityShiftDetailPage({
   const { data: shift } = await supabase
     .from("shifts")
     .select(
-      "id, profession, department, location, region, region_code, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, visibility, respond_by, shift_offers(id, response, responded_at, viewed_at, profiles(full_name)), assignments(id, status, accepted_at, cancelled_at, cancelled_by, cancel_reason, freelancer_id, timesheets(claimed_at), freelancers!assignments_freelancer_id_fkey(big_number, big_verified_at), profiles!assignments_freelancer_id_fkey(full_name, profile_contact(phone)))",
+      "id, profession, department, location, region, region_code, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, visibility, respond_by, shift_offers(id, response, responded_at, viewed_at, freelancers(profiles(full_name))), assignments(id, status, accepted_at, cancelled_at, cancelled_by, cancel_reason, freelancer_id, timesheets(claimed_at), freelancers!assignments_freelancer_id_fkey(big_number, big_verified_at, profiles(full_name, profile_contact(phone))))",
     )
     .eq("id", id)
     .eq("org_id", org.id)
@@ -266,10 +277,12 @@ export default async function FacilityShiftDetailPage({
       {assignment ? (
         <div className="card p-6 mb-6" style={{ borderColor: "var(--ok)" }}>
           <h2 className="font-bold mb-2">Wie komt er</h2>
-          <p className="text-lg font-semibold">{assignment.profiles?.full_name ?? "—"}</p>
-          {assignment.profiles?.profile_contact?.phone ? (
+          <p className="text-lg font-semibold">{assignment.freelancers?.profiles?.full_name ?? "—"}</p>
+          {assignment.freelancers?.profiles?.profile_contact?.phone ? (
             <p className="text-sm tnum" style={{ color: "var(--text-muted)" }}>
-              <a href={`tel:${assignment.profiles.profile_contact?.phone}`}>{assignment.profiles.profile_contact?.phone}</a>
+              <a href={`tel:${assignment.freelancers.profiles?.profile_contact?.phone}`}>
+                {assignment.freelancers.profiles?.profile_contact?.phone}
+              </a>
             </p>
           ) : null}
           <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
@@ -370,7 +383,7 @@ export default async function FacilityShiftDetailPage({
               */
               [...accepted, ...silent, ...declined, ...expired].map((offer) => (
                 <tr key={offer.id}>
-                  <td className="font-medium">{offer.profiles?.full_name ?? "—"}</td>
+                  <td className="font-medium">{offer.freelancers?.profiles?.full_name ?? "—"}</td>
                   <td>
                     {offer.response === "accept" ? (
                       <span className="badge badge-ok">Aangenomen</span>

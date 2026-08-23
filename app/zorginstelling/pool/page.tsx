@@ -15,8 +15,12 @@ type PoolRow = {
   freelancer_id: string;
   status: string;
   note: string | null;
-  profiles: { full_name: string } | null;
-  freelancers: { profession: string; big_number: string | null; big_verified_at: string | null } | null;
+  freelancers: {
+    profession: string;
+    big_number: string | null;
+    big_verified_at: string | null;
+    profiles: { full_name: string } | null;
+  } | null;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -37,7 +41,7 @@ export default async function PoolPage({
   const { data: pool } = await supabase
     .from("pools")
     .select(
-      "freelancer_id, status, note, profiles(full_name), freelancers(profession, big_number, big_verified_at)",
+      "freelancer_id, status, note, freelancers(profession, big_number, big_verified_at, profiles(full_name))",
     )
     .eq("org_id", org.id)
     .returns<PoolRow[]>();
@@ -126,7 +130,7 @@ export default async function PoolPage({
                 <tr key={row.freelancer_id}>
                   <td className="font-medium">
                     <Link href={`/zorginstelling/pool/${row.freelancer_id}`}>
-                      {row.profiles?.full_name ?? "—"}
+                      {row.freelancers?.profiles?.full_name ?? "—"}
                     </Link>
                   </td>
                   <td>{qualificationLabel(row.freelancers?.profession)}</td>
@@ -185,7 +189,7 @@ export default async function PoolPage({
               <tbody>
                 {hidden.map((row) => (
                   <tr key={row.freelancer_id}>
-                    <td className="font-medium">{row.profiles?.full_name ?? "—"}</td>
+                    <td className="font-medium">{row.freelancers?.profiles?.full_name ?? "—"}</td>
                     <td>{qualificationLabel(row.freelancers?.profession)}</td>
                     <td>
                       <form action={setPoolStatusAction}>

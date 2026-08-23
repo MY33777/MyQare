@@ -94,6 +94,16 @@ export async function approveTimesheetAction(formData: FormData) {
   if (invoice.held) {
     redirect(`${UREN_PATH}?approved=1&invoice=held`);
   }
+  /*
+   * Made but not delivered — a mail failure, or no billing address on file. Not
+   * "held": nobody is reviewing it and nobody is going to release it, because the
+   * release button on the freelancer's list only appears for invoices she chose
+   * to hold. Saying "je ontvangt hem binnenkort" here was a promise the product
+   * could not keep.
+   */
+  if (invoice.undelivered) {
+    redirect(`${UREN_PATH}?approved=1&undelivered=1`);
+  }
   redirect(`${UREN_PATH}?approved=1`);
 }
 
@@ -199,12 +209,12 @@ async function notifyFreelancerInvoiceBlocked(
 
   const { data: assignment } = await service
     .from("assignments")
-    .select("freelancer_id, organisations(name), profiles!assignments_freelancer_id_fkey(full_name)")
+    .select("freelancer_id, organisations(name), freelancers(profiles(full_name))")
     .eq("id", assignmentId)
     .maybeSingle<{
       freelancer_id: string;
       organisations: { name: string } | null;
-      profiles: { full_name: string } | null;
+      freelancers: { profiles: { full_name: string } | null } | null;
     }>();
 
   if (!assignment) return;
@@ -215,7 +225,7 @@ async function notifyFreelancerInvoiceBlocked(
 
   await sendInvoiceBlockedEmail({
     to,
-    freelancerName: assignment.profiles?.full_name ?? "",
+    freelancerName: assignment.freelancers?.profiles?.full_name ?? "",
     facilityName: assignment.organisations?.name ?? "De zorginstelling",
     reason,
     missing: missing.map((field) => MISSING_FIELD_LABELS[field]),
@@ -281,6 +291,14 @@ export async function approveTimesheetsAction(formData: FormData) {
   let invoiced = 0;
   const failed: string[] = [];
   const uninvoiced: string[] = [];
+  /*
+   * Made but not delivered. Counted apart from `invoiced` because it is apart:
+   * the invoice exists and is numbered, and the facility does not have it. That
+   * used to arrive here as `ok` and was counted as invoiced, which is how a mail
+   * outage produced a run reporting "12 goedgekeurd en gefactureerd" for twelve
+   * documents nobody received.
+   */
+  const undelivered: string[] = [];
 
   for (const id of approvable) {
     const result = await approveTimesheet(id, admin.userId);
@@ -312,7 +330,8 @@ export async function approveTimesheetsAction(formData: FormData) {
     const invoice = await createInvoiceForAssignment(id);
 
     if (invoice.ok) {
-      invoiced++;
+      if (invoice.undelivered) undelivered.push(invoice.undelivered);
+      else invoiced++;
       continue;
     }
 
@@ -349,6 +368,14 @@ export async function approveTimesheetsAction(formData: FormData) {
   if (uninvoiced.length > 0) {
     redirect(
       `${UREN_PATH}?approved=${approved}&uninvoiced=${uninvoiced.length}&invoice=${uninvoiced[0]}`,
+    );
+  }
+
+  // Made, numbered, not sent. Reported before the plain success, because a
+  // facility that is told to expect an invoice and never receives one chases us.
+  if (undelivered.length > 0) {
+    redirect(
+      `${UREN_PATH}?approved=${approved}&invoiced=${invoiced}&undelivered=${undelivered.length}`,
     );
   }
 

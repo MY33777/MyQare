@@ -27,7 +27,9 @@ type ShiftRow = {
    * app/zorginstelling/diensten/[id]/page.tsx, where typing this as an object
    * made every shift render a card naming nobody.
    */
-  assignments: { status: string; profiles: { full_name: string } | null }[] | null;
+  assignments:
+    | { status: string; freelancers: { profiles: { full_name: string } | null } | null }[]
+    | null;
 };
 
 /**
@@ -38,10 +40,12 @@ type ShiftRow = {
  * withdrawal as the person turning up tomorrow.
  */
 function filledBy(shift: {
-  assignments?: { status: string; profiles: { full_name: string } | null }[] | null;
+  assignments?:
+    | { status: string; freelancers: { profiles: { full_name: string } | null } | null }[]
+    | null;
 }): string | null {
   const live = (shift.assignments ?? []).find((row) => row.status !== "cancelled");
-  return live?.profiles?.full_name ?? null;
+  return live?.freelancers?.profiles?.full_name ?? null;
 }
 
 export default async function FacilityDashboard() {
@@ -56,7 +60,7 @@ export default async function FacilityDashboard() {
       .from("shifts")
       .select(
         "id, profession, department, starts_at, ends_at, hourly_rate_cents, status, " +
-          "assignments(status, profiles!assignments_freelancer_id_fkey(full_name))",
+          "assignments(status, freelancers(profiles(full_name)))",
       )
       .eq("org_id", org.id)
       .gte("starts_at", now)

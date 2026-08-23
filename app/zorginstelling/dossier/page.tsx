@@ -40,7 +40,7 @@ type DossierRow = {
     agreed_rate_cents: number;
     status: string;
     freelancer_id: string;
-    profiles: { full_name: string } | null;
+    freelancers: { profiles: { full_name: string } | null } | null;
     shifts: { profession: string; starts_at: string; ends_at: string } | null;
     timesheets: { minutes_claimed: number; break_minutes: number } | null;
   } | null;
@@ -59,7 +59,7 @@ export default async function DossierPage() {
   const { data: records } = await supabase
     .from("compliance_records")
     .select(
-      "assignment_id, model_agreement_version, offered_at, accepted_at, could_decline, substitution_allowed, rate_set_by, declined_other_offers, snapshot, assignments!inner(id, freelancer_id, agreed_rate_cents, status, org_id, profiles!assignments_freelancer_id_fkey(full_name), shifts(profession, starts_at, ends_at), timesheets(minutes_claimed, break_minutes))",
+      "assignment_id, model_agreement_version, offered_at, accepted_at, could_decline, substitution_allowed, rate_set_by, declined_other_offers, snapshot, assignments!inner(id, freelancer_id, agreed_rate_cents, status, org_id, freelancers(profiles(full_name)), shifts(profession, starts_at, ends_at), timesheets(minutes_claimed, break_minutes))",
     )
     .eq("assignments.org_id", org.id)
     .order("accepted_at", { ascending: false })
@@ -88,7 +88,7 @@ export default async function DossierPage() {
               id,
               name:
                 snap?.freelancer?.full_name ??
-                record.assignments?.profiles?.full_name ??
+                record.assignments?.freelancers?.profiles?.full_name ??
                 "Onbekend",
             },
           ] as const;
@@ -214,7 +214,7 @@ export default async function DossierPage() {
                 return (
                   <tr key={record.assignment_id}>
                     <td className="font-medium">
-                      {snap?.freelancer?.full_name ?? assignment?.profiles?.full_name ?? "—"}
+                      {snap?.freelancer?.full_name ?? assignment?.freelancers?.profiles?.full_name ?? "—"}
                     </td>
                     <td>
                       {qualificationLabel(

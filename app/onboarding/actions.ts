@@ -12,6 +12,31 @@ const DRAFT_KEY = "onboarding";
 const DRAFT_PATH = "/onboarding";
 
 /**
+ * Removes an organisation this submission created and then could not attach.
+ *
+ * Only reachable when the profiles insert loses a race, and only for a row that
+ * is seconds old with nothing pointing at it — no members, no shifts, no
+ * invoices. Left behind it becomes a facility nobody owns, sitting in /beheer's
+ * verification queue under the same name and KvK as the real one, which is
+ * precisely the duplicate migration 024 exists to prevent.
+ *
+ * Best effort. Failing to tidy up must not turn a successful onboarding into an
+ * error, and the RESTRICT constraints make the delete safe: if anything did
+ * somehow reference it, Postgres refuses and the row stays.
+ */
+async function discardOrphanOrganisation(
+  admin: ReturnType<typeof getSupabaseAdmin>,
+  orgId: string | null,
+): Promise<void> {
+  if (!orgId) return;
+
+  const { error } = await admin.from("organisations").delete().eq("id", orgId);
+  if (error) {
+    console.error(`[onboarding] orphan organisation ${orgId} not removed: ${error.message}`);
+  }
+}
+
+/**
  * Creates the application-level rows for a freshly confirmed account.
  *
  * Runs with the service role because an organisation has no client insert policy
@@ -83,7 +108,15 @@ export async function completeOnboardingAction(formData: FormData) {
   const fullName = String(formData.get("full_name") ?? metadata.full_name ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();
   const orgName = String(formData.get("org_name") ?? metadata.org_name ?? "").trim();
-  const kvk = String(formData.get("kvk") ?? "").trim();
+  /*
+   * Digits only, so two spellings of one number are one number.
+   *
+   * The duplicate-organisation guard below compares this with `.eq("kvk", kvk)`,
+   * and a KvK number gets typed "12345678", "1234 5678" and "KvK 12345678" by
+   * three different coordinators at the same care home. Stored raw, each of those
+   * founds its own facility.
+   */
+  const kvk = String(formData.get("kvk") ?? "").replace(/\D/g, "");
   const profession = String(formData.get("profession") ?? "").trim();
 
   if (role !== "facility_admin" && role !== "freelancer") {
@@ -131,6 +164,25 @@ export async function completeOnboardingAction(formData: FormData) {
     redirect("/onboarding?error=region_required");
   }
   if (role === "facility_admin" && !orgName) redirect("/onboarding?error=org_name_required");
+
+  /*
+   * The KvK number is required, and that is the whole point of migration 024.
+   *
+   * The duplicate guard below only ran `if (!orgId && kvk)` — opt-in on a field
+   * the form did not mark required and the action did not validate. So the one
+   * case it exists for, the second coordinator at a care home whose invite went
+   * to spam, skipped it by leaving the box empty, and founded exactly the
+   * duplicate facility 024 was written to prevent. The mirror case was as easy:
+   * the FIRST coordinator left it blank, so the second one's real number matched
+   * nothing.
+   *
+   * Eight digits, which is what a KvK number is. Checked here rather than only in
+   * the browser: `required` is one devtools edit away, and this decides whether
+   * one care home is one facility or two.
+   */
+  if (role === "facility_admin" && !/^\d{8}$/.test(kvk)) {
+    redirect("/onboarding?error=kvk_required");
+  }
 
   let orgId: string | null = null;
 
@@ -207,12 +259,16 @@ export async function completeOnboardingAction(formData: FormData) {
      * public, so anyone typing a hospital's number would land inside its pool,
      * its freelancers' document metadata and its invoices.
      */
-    if (!orgId && kvk) {
+    if (!orgId) {
       /*
        * Same correction as the invite lookup above. organisations.kvk has no
        * unique constraint, so maybeSingle() returns null-plus-error exactly when
        * a duplicate ALREADY exists — which is the one case this guard is here to
        * catch. It failed open at precisely the moment it mattered.
+       *
+       * No longer conditional on `kvk` being present either: the number is
+       * validated above, so reaching here without one is impossible, and making
+       * the guard depend on it made it opt-out by leaving a field blank.
        */
       const { data: existing, error: kvkError } = await admin
         .from("organisations")
@@ -227,6 +283,14 @@ export async function completeOnboardingAction(formData: FormData) {
       }
     }
   }
+
+  /*
+   * Remembered so it can be undone. If the profiles insert below loses a race,
+   * this organisation has no owner and never will — nothing else in the product
+   * creates one — and it sits in /beheer's verification queue as a facility that
+   * does not exist, with the same name and KvK as the real one.
+   */
+  let createdOrgId: string | null = null;
 
   if (role === "facility_admin" && !orgId) {
     const { data: org, error: orgError } = await admin
@@ -246,6 +310,7 @@ export async function completeOnboardingAction(formData: FormData) {
 
     if (orgError || !org) redirect("/onboarding?error=unknown");
     orgId = org.id;
+    createdOrgId = org.id;
   }
 
   const { error: profileError } = await admin.from("profiles").insert({
@@ -271,21 +336,59 @@ export async function completeOnboardingAction(formData: FormData) {
   }
 
   if (profileError) {
+    if (profileError.code !== "23505") redirect("/onboarding?error=unknown");
+
     /*
-     * A duplicate key here means two confirmation clicks raced. The other one
-     * won and the profile exists, so this is success, not failure.
+     * A duplicate key means the profile already exists — and this branch used to
+     * redirect straight to the dashboard, which is where the stranding came from.
+     *
+     * The guard at the top of this action deliberately falls through when a
+     * freelancer has a profile but no `freelancers` row, so a half-finished
+     * onboarding can complete. The upsert that finishes it is three statements
+     * BELOW this line, under a comment saying "the guard above now lets such a
+     * retry through". It did. This redirect then sent every one of them to
+     * /professional, a page that needs the row they came back to create, and the
+     * account was stranded permanently with no way out from inside the product.
+     *
+     * So: read who won, and only leave if there is nothing left to do.
      */
-    if (profileError.code === "23505") {
-      redirect(role === "facility_admin" ? "/zorginstelling" : "/professional");
+    const { data: winner, error: winnerError } = await admin
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle<{ role: string }>();
+
+    if (winnerError || !winner) redirect("/onboarding?error=unknown");
+
+    /*
+     * The role on the stored row wins; this form cannot change it. Without this,
+     * a submission claiming "freelancer" against a profile that says
+     * facility_admin would drop a stray freelancers row onto a coordinator.
+     */
+    if (winner.role !== role) {
+      await discardOrphanOrganisation(admin, createdOrgId);
+      redirect(winner.role === "facility_admin" ? "/zorginstelling" : "/professional");
     }
-    redirect("/onboarding?error=unknown");
+
+    if (role === "facility_admin") {
+      await discardOrphanOrganisation(admin, createdOrgId);
+      redirect("/zorginstelling");
+    }
+
+    // A freelancer falls through to the upsert below, which is the whole point.
   }
 
   if (role === "freelancer") {
     /*
      * upsert, so a retry after a half-finished onboarding completes rather than
-     * colliding. The guard above now lets such a retry through; without this it
-     * would arrive here and fail on the primary key.
+     * colliding on the primary key.
+     *
+     * Reaching this line on a retry is the part that did not work. Two things
+     * have to let it through: the guard at the top of this action, which falls
+     * through when the profile exists without a freelancers row, and the
+     * duplicate-key branch above, which used to redirect to /professional before
+     * this ever ran. The comment here asserted the first and was silent about the
+     * second, so it read as true while the path was dead.
      */
     const { error: freelancerError } = await admin.from("freelancers").upsert(
       {

@@ -111,16 +111,28 @@ export default async function OnboardingPage({
               <label className="label" htmlFor="kvk">
                 KvK-nummer
               </label>
+              {/*
+                Required, because it is what stops one care home becoming two
+                facilities. The duplicate check only ran when this was filled in,
+                and the field was optional — so the colleague whose invite went to
+                spam skipped it and founded a second organisation with the same
+                name. Validated on the server too; see actions.ts.
+              */}
               <input
                 className="input"
                 id="kvk"
                 name="kvk"
                 type="text"
                 inputMode="numeric"
+                required
+                pattern="[0-9\s]{8,}"
                 defaultValue={draftValue(draft, "kvk") ?? ""}
               />
               <p className="hint">
-                We controleren dit voordat je diensten kunt plaatsen. Dat duurt meestal één werkdag.
+                Acht cijfers. Hiermee herkennen we of jouw organisatie al bij ons staat, zodat je
+                bij je collega&apos;s terechtkomt in plaats van in een tweede account. We
+                controleren het nummer voordat je diensten kunt plaatsen — dat duurt meestal één
+                werkdag.
               </p>
             </div>
           </>

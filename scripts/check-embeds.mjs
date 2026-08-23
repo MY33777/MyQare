@@ -376,8 +376,34 @@ function firstArgLiterals(arg) {
  * literal argument (a variable, or nothing at all) is skipped: there is nothing
  * to parse, and guessing would produce noise.
  */
+/**
+ * File-level `const NAME = "…" + "…";` bindings, so a select can name one.
+ *
+ * Without this the checker is blind to exactly the refactor that a long select
+ * invites — pulling the column list into a constant and reusing it — and goes
+ * quiet instead of complaining. It went quiet on the first one written after it
+ * existed. Only string literals and their concatenation are resolved; anything
+ * computed is left unresolved and COUNTED, so the coverage is reported rather
+ * than assumed.
+ */
+function stringConstants(source) {
+  const bindings = new Map();
+
+  for (const m of source.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*([^;]+);/g)) {
+    const value = m[2];
+    // A literal, or literals joined by +, and nothing else.
+    if (!/^\s*["'`]/.test(value)) continue;
+    if (/[^\s"'`+\w\-,.:!()[\]{}@*=>|$#/\\]/.test(value.replace(/["'`][^"'`]*["'`]/g, ""))) continue;
+    const literals = firstArgLiterals(value);
+    if (literals.length > 0) bindings.set(m[1], literals.join(""));
+  }
+
+  return bindings;
+}
+
 function findSelects(source) {
   const found = [];
+  const bindings = stringConstants(source);
   const fromRe = /\.from\(\s*"([a-z_][a-z0-9_]*)"\s*\)/g;
   let m;
 
@@ -396,14 +422,31 @@ function findSelects(source) {
     const arg = balanced(scope, open);
     if (arg === null) continue;
 
+    const line = source.slice(0, m.index).split("\n").length;
     const literals = firstArgLiterals(arg);
-    if (literals.length === 0) continue;
 
-    found.push({
-      table,
-      select: literals.join(""),
-      line: source.slice(0, m.index).split("\n").length,
-    });
+    if (literals.length === 0) {
+      // A named constant, possibly with a modifier applied to it.
+      const named = arg.match(/^\s*([A-Za-z_$][\w$]*)\b/);
+      const bound = named ? bindings.get(named[1]) : undefined;
+      if (bound === undefined) {
+        found.push({ table, select: null, line });
+        continue;
+      }
+      /*
+       * `.select(COLUMNS.replace("timesheets(", "timesheets!inner("))` is a real
+       * idiom in this codebase — one column list, filtered two ways. Applied
+       * literally so the checked string is the string that will be sent.
+       */
+      let select = bound;
+      for (const r of arg.matchAll(/\.replace\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*\)/g)) {
+        select = select.split(r[1]).join(r[2]);
+      }
+      found.push({ table, select, line });
+      continue;
+    }
+
+    found.push({ table, select: literals.join(""), line });
   }
 
   return found;
@@ -580,17 +623,20 @@ if (keys.length === 0 || columns.size === 0) {
 }
 
 const problems = [];
+const unresolved = [];
 let checked = 0;
 
 for (const dir of SCAN_DIRS) {
   for (const file of listSource(dir)) {
     const source = stripJs(readFileSync(file, "utf8"));
     for (const { table, select, line } of findSelects(source)) {
+      const where = { file: relative(ROOT, file).replace(/\\/g, "/"), line };
+      if (select === null) {
+        unresolved.push(where);
+        continue;
+      }
       checked++;
-      walk(table, select, graph, problems, {
-        file: relative(ROOT, file).replace(/\\/g, "/"),
-        line,
-      });
+      walk(table, select, graph, problems, where);
     }
   }
 }
@@ -608,3 +654,13 @@ if (problems.length > 0) {
 console.log(
   `check-embeds: ${checked} selects, ${keys.length} foreign keys, ${columns.size} tables — every embed and column resolves.`,
 );
+
+/*
+ * Named, not hidden. A select whose argument is computed cannot be checked, and a
+ * checker that reports only what it looked at reads as though it looked at
+ * everything — which is the shape of defect it exists to catch.
+ */
+if (unresolved.length > 0) {
+  console.log(`  ${unresolved.length} select(s) not checked (the argument is not a literal):`);
+  for (const u of unresolved) console.log(`    ${u.file}:${u.line}`);
+}

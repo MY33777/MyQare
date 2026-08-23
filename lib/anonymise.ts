@@ -39,7 +39,13 @@ export type AnonymiseResult =
   | { ok: true; documentsRemoved: number }
   | {
       ok: false;
-      reason: "not_found" | "is_staff" | "storage_failed" | "auth_not_scrambled" | "unknown";
+      reason:
+        | "not_found"
+        | "is_staff"
+        | "storage_failed"
+        | "auth_not_scrambled"
+        | "work_not_invoiced"
+        | "unknown";
       detail?: string;
     };
 
@@ -62,42 +68,76 @@ export async function anonymiseAccount(profileId: string): Promise<AnonymiseResu
    */
   if (profile.role === "staff") return { ok: false, reason: "is_staff" };
 
-  // Already done. Not an error: somebody clicking twice should not see a failure
-  // for a request that was honoured.
-  if (profile.anonymised_at) return { ok: true, documentsRemoved: 0 };
-
   /*
-   * The files, before the rows that name them.
+   * ALREADY ANONYMISED SKIPS THE DATA WORK, NOT THE SCRAMBLE.
+   *
+   * This used to `return { ok: true }` right here, and the comment said it was
+   * for somebody clicking twice. It could never fire for that. `anonymised_at` is
+   * set by the RPC below, which runs BEFORE the auth scramble — so the only state
+   * in which this line is reachable is the state where the data is gone and the
+   * login still works. It reported that as success.
+   *
+   * Worse, it was the prescribed remedy: the failure message for exactly that
+   * state tells the administrator to try again, and trying again landed here and
+   * returned ok, wrote an "account geanonimiseerd" audit entry and showed a green
+   * banner. Nothing else in the product can scramble an auth user, so the person
+   * who asked to be removed kept a working email address and password forever.
+   *
+   * (The double-click case cannot reach here at all: a successful scramble
+   * replaces the address, so looking the account up by the address it was
+   * requested with finds nothing.)
    */
-  const { data: documents, error: docError } = await admin
-    .from("documents")
-    .select("file_path")
-    .eq("freelancer_id", profileId)
-    .returns<{ file_path: string }[]>();
+  const dataAlreadyRemoved = Boolean(profile.anonymised_at);
+  let documentsRemoved = 0;
 
-  if (docError) return { ok: false, reason: "unknown", detail: docError.message };
-
-  const paths = (documents ?? []).map((row) => row.file_path).filter(Boolean);
-
-  if (paths.length > 0) {
-    const { error: removeError } = await admin.storage.from(DOCUMENT_BUCKET).remove(paths);
-
+  if (!dataAlreadyRemoved) {
     /*
-     * A failed remove ABORTS. Continuing would delete the rows and strand the
-     * files: a certificate of conduct sitting in a private bucket with nothing
-     * pointing at it, which no screen can show, no reviewer can act on and no
-     * owner can ask to have deleted. Retrying an anonymisation is cheap;
-     * recovering from that is not.
+     * The files, before the rows that name them.
      */
-    if (removeError) {
-      console.error(`[anonymise] storage remove failed for ${profileId}: ${removeError.message}`);
-      return { ok: false, reason: "storage_failed", detail: removeError.message };
-    }
-  }
+    const { data: documents, error: docError } = await admin
+      .from("documents")
+      .select("file_path")
+      .eq("freelancer_id", profileId)
+      .returns<{ file_path: string }[]>();
 
-  // Everything else, in one transaction. See supabase/functions.sql.
-  const { error: rpcError } = await admin.rpc("anonymise_account", { p_profile_id: profileId });
-  if (rpcError) return { ok: false, reason: "unknown", detail: rpcError.message };
+    if (docError) return { ok: false, reason: "unknown", detail: docError.message };
+
+    const paths = (documents ?? []).map((row) => row.file_path).filter(Boolean);
+
+    if (paths.length > 0) {
+      const { error: removeError } = await admin.storage.from(DOCUMENT_BUCKET).remove(paths);
+
+      /*
+       * A failed remove ABORTS. Continuing would delete the rows and strand the
+       * files: a certificate of conduct sitting in a private bucket with nothing
+       * pointing at it, which no screen can show, no reviewer can act on and no
+       * owner can ask to have deleted. Retrying an anonymisation is cheap;
+       * recovering from that is not.
+       */
+      if (removeError) {
+        console.error(`[anonymise] storage remove failed for ${profileId}: ${removeError.message}`);
+        return { ok: false, reason: "storage_failed", detail: removeError.message };
+      }
+    }
+
+    // Everything else, in one transaction. See supabase/functions.sql.
+    const { error: rpcError } = await admin.rpc("anonymise_account", { p_profile_id: profileId });
+
+    if (rpcError) {
+      /*
+       * MQ001 is the function refusing because assignments are still uninvoiced.
+       * Not a failure to report as "unknown": it names how many, it is the
+       * administrator's next action, and it resolves by itself once the hours are
+       * approved and the invoices go out. See migration 027.
+       */
+      if (rpcError.code === "MQ001") {
+        return { ok: false, reason: "work_not_invoiced", detail: rpcError.message };
+      }
+      return { ok: false, reason: "unknown", detail: rpcError.message };
+    }
+
+    documentsRemoved = paths.length;
+  }
 
   /*
    * THE AUTH ACCOUNT IS SCRAMBLED, NOT DELETED.
@@ -142,5 +182,5 @@ export async function anonymiseAccount(profileId: string): Promise<AnonymiseResu
     return { ok: false, reason: "auth_not_scrambled", detail: authError.message };
   }
 
-  return { ok: true, documentsRemoved: paths.length };
+  return { ok: true, documentsRemoved };
 }

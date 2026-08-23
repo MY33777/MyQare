@@ -105,6 +105,36 @@ export async function acceptShift(shiftId: string, freelancerId: string): Promis
     .maybeSingle<{ full_name: string }>();
 
   /*
+   * Which papers were in order, as at acceptance.
+   *
+   * The facility's Wkkgz duty is to have checked before engaging somebody, and
+   * the dossier is what it hands an inspector. That evidence used to live only in
+   * the `documents` rows — which anonymise_account deletes, under a comment
+   * asserting "the facility's duty is to have checked, which the dossier snapshot
+   * already records". The snapshot recorded the BIG number and nothing about a
+   * VOG, a diploma or an insurance certificate, so honouring an erasure request
+   * silently destroyed the only proof those had ever been seen, for every
+   * facility that person had worked for.
+   *
+   * Kinds, statuses and expiry dates — never file paths or filenames. The files
+   * themselves are the personal data and they still go; what is kept is the fact
+   * of the check, which is the facility's record about itself.
+   */
+  const { data: documents } = await admin
+    .from("documents")
+    .select("kind, status, issued_on, expires_on, reviewed_at")
+    .eq("freelancer_id", freelancerId)
+    .returns<
+      {
+        kind: string;
+        status: string;
+        issued_on: string | null;
+        expires_on: string | null;
+        reviewed_at: string | null;
+      }[]
+    >();
+
+  /*
    * The snapshot is denormalised on purpose. A dossier that reassembled itself
    * from live tables would silently rewrite its own history when a freelancer
    * edits their profile two years later — which is exactly when someone is
@@ -146,6 +176,19 @@ export async function acceptShift(shiftId: string, freelancerId: string): Promis
       big_verified_at: freelancer?.big_verified_at ?? null,
       advertised_rate_cents: freelancer?.hourly_rate_min_cents ?? null,
       vat_exempt: freelancer?.vat_exempt ?? null,
+      /*
+       * The papers, as at acceptance. Approved ones only: a rejected or pending
+       * upload is not evidence of anything, and listing it would suggest the
+       * facility engaged somebody on a document that had not been accepted.
+       */
+      documents: (documents ?? [])
+        .filter((doc) => doc.status === "approved")
+        .map((doc) => ({
+          kind: doc.kind,
+          issued_on: doc.issued_on,
+          expires_on: doc.expires_on,
+          reviewed_at: doc.reviewed_at,
+        })),
     },
     fee: {
       /*

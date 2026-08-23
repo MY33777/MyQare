@@ -248,13 +248,36 @@ export default function PrivacyPage() {
         </ul>
         <p>
           Omdat facturen zeven jaar bewaard moeten blijven, kan een account met opdrachten niet
-          zomaar worden gewist. In plaats daarvan anonimiseren we je profiel: je documenten worden
-          uit de opslag verwijderd, net als je telefoonnummer, adres, IBAN, beschikbaarheid en
-          poollidmaatschappen; je naam wordt overal vervangen door &quot;Verwijderd account&quot; en
-          je e-mailadres wordt losgekoppeld, zodat inloggen niet meer kan. Facturen, opdrachten en
-          dossierrecords blijven staan met de gegevens zoals ze destijds zijn vastgelegd.
-          Er is geen knop voor: je vraagt het aan via{" "}
-          <Link href="/contact">contact</Link>, en wij voeren het uit.
+          zomaar worden gewist. In plaats daarvan anonimiseren we je profiel. Weg gaan: je
+          documenten (uit de opslag én uit onze administratie), je telefoonnummer, je adres, je
+          IBAN, je beschikbaarheid en je poollidmaatschappen. Je e-mailadres wordt vervangen door
+          een adres dat nergens heen gaat, je wachtwoord wordt onbruikbaar gemaakt en het account
+          wordt geblokkeerd, zodat inloggen niet meer kan en je oude adres weer vrij is voor een
+          nieuwe registratie. In je profiel komt &quot;Verwijderd account&quot; te staan.
+        </p>
+        <p>
+          {/*
+            Said plainly, because the two documents used to promise the opposite.
+            The terms said the retained records carry "een aanduiding die niet
+            naar jou herleidbaar is" and this page said the name is replaced
+            "overal" — while the dossier export deliberately prefers the name
+            captured at acceptance, precisely so anonymising does not blank it.
+            The code is right and the promise was wrong: evidence about a named
+            person that no longer names them is not evidence.
+          */}
+          <strong>Wat wél blijft staan, met je naam erin:</strong> de facturen die op jouw naam zijn
+          uitgegeven, en de dossierrecords van de opdrachten die je hebt gedaan — met de gegevens
+          zoals ze destijds zijn vastgelegd. Dat is bewust. Een factuur zonder leverancier voldoet
+          niet aan de wet (art. 35a Wet OB), en een zorginstelling moet onder de Wkkgz kunnen laten
+          zien wíe er gewerkt heeft en dat zijn papieren waren gecontroleerd. Die records zijn
+          daarmee ook het bewijs van de instelling over zichzelf, en niet alleen gegevens over jou.
+          Ze zijn niet zichtbaar voor andere zorgprofessionals en niet voor instellingen waar je
+          niet hebt gewerkt.
+        </p>
+        <p>
+          Er is geen knop voor: je vraagt het aan via <Link href="/contact">contact</Link>, en wij
+          voeren het uit. Staan er nog opdrachten open die niet gefactureerd zijn, dan gaan die
+          facturen eerst uit — anders zou je onbetaald blijven voor werk dat je hebt gedaan.
         </p>
 
         <h2 id="rechten">6. Je rechten</h2>

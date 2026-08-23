@@ -41,12 +41,14 @@ describe("partial refunds", () => {
     let prior: PriorMovement[] = [];
 
     const first = computeReversal({ topUpCents: TOP_UP, reversibleCents: 5_000, cause: "refund", prior });
-    expect(first).toEqual({ act: true, deltaCents: 5_000, cumulative: 5_000 });
+    expect(first).toEqual({ act: true, deltaCents: 5_000, cumulative: 5_000, attempt: 1 });
     prior = apply(prior, "refund", 5_000, 5_000);
 
     // Stripe sends the CUMULATIVE amount_refunded on the second event.
     const second = computeReversal({ topUpCents: TOP_UP, reversibleCents: 8_000, cause: "refund", prior });
-    expect(second).toEqual({ act: true, deltaCents: 3_000, cumulative: 8_000 });
+    // attempt 2: the refund cause already has one reversal row, so the key gains
+    // an ordinal. A first reversal keeps the key it always had.
+    expect(second).toEqual({ act: true, deltaCents: 3_000, cumulative: 8_000, attempt: 2 });
     prior = apply(prior, "refund", 8_000, 3_000);
 
     const removed = prior.reduce((sum, row) => sum - row.deltaCents, 0);
@@ -64,7 +66,7 @@ describe("partial refunds", () => {
   it("never removes more than the top-up granted", () => {
     // A refund in a different currency, or Stripe reporting more than we credited.
     const decision = computeReversal({ topUpCents: TOP_UP, reversibleCents: 90_000, cause: "refund", prior: [] });
-    expect(decision).toEqual({ act: true, deltaCents: TOP_UP, cumulative: TOP_UP });
+    expect(decision).toEqual({ act: true, deltaCents: TOP_UP, cumulative: TOP_UP, attempt: 1 });
   });
 });
 
@@ -84,7 +86,7 @@ describe("a partial refund followed by a dispute", () => {
     // €450, and the cumulative recorded for THIS cause is €450 too — the ceiling
     // clamped it, because €50 of the disputed charge had already gone back as a
     // refund and Stripe cannot take the same €50 twice.
-    expect(dispute).toEqual({ act: true, deltaCents: 45_000, cumulative: 45_000 });
+    expect(dispute).toEqual({ act: true, deltaCents: 45_000, cumulative: 45_000, attempt: 1 });
     prior = apply(prior, "dispute", TOP_UP, 45_000);
 
     expect(prior.reduce((sum, row) => sum - row.deltaCents, 0)).toBe(TOP_UP);
@@ -142,7 +144,7 @@ describe("a refund AFTER a dispute was won", () => {
       cause: "refund",
       prior,
     });
-    expect(decision).toEqual({ act: true, deltaCents: TOP_UP, cumulative: TOP_UP });
+    expect(decision).toEqual({ act: true, deltaCents: TOP_UP, cumulative: TOP_UP, attempt: 1 });
   });
 });
 
@@ -166,7 +168,7 @@ describe("a refund and a dispute for DIFFERENT money", () => {
       cause: "refund",
       prior,
     });
-    expect(refund).toEqual({ act: true, deltaCents: 3_000, cumulative: 3_000 });
+    expect(refund).toEqual({ act: true, deltaCents: 3_000, cumulative: 3_000, attempt: 1 });
     prior = apply(prior, "refund", 3_000, 3_000);
 
     const dispute = computeReversal({
@@ -178,7 +180,7 @@ describe("a refund and a dispute for DIFFERENT money", () => {
     });
     // Was €4.000 — the €30 refund counted against the €70 dispute — leaving €30
     // of money Stripe had taken sitting on the balance as spendable credit.
-    expect(dispute).toEqual({ act: true, deltaCents: 7_000, cumulative: 7_000 });
+    expect(dispute).toEqual({ act: true, deltaCents: 7_000, cumulative: 7_000, attempt: 1 });
     prior = apply(prior, "dispute", 7_000, 7_000);
 
     expect(prior.reduce((sum, row) => sum - row.deltaCents, 0)).toBe(topUp);
@@ -195,7 +197,7 @@ describe("a refund and a dispute for DIFFERENT money", () => {
       cause: "refund",
       prior,
     });
-    expect(refund).toEqual({ act: true, deltaCents: 3_000, cumulative: 3_000 });
+    expect(refund).toEqual({ act: true, deltaCents: 3_000, cumulative: 3_000, attempt: 1 });
     prior = apply(prior, "refund", 3_000, 3_000);
 
     expect(prior.reduce((sum, row) => sum - row.deltaCents, 0)).toBe(topUp);
@@ -214,7 +216,7 @@ describe("a refund and a dispute for DIFFERENT money", () => {
       causeId: DISPUTE,
       prior,
     });
-    expect(dispute).toEqual({ act: true, deltaCents: 2_000, cumulative: 2_000 });
+    expect(dispute).toEqual({ act: true, deltaCents: 2_000, cumulative: 2_000, attempt: 1 });
     prior = apply(prior, "dispute", 2_000, 2_000);
 
     expect(prior.reduce((sum, row) => sum - row.deltaCents, 0)).toBe(topUp);
@@ -232,7 +234,7 @@ describe("a refund and a dispute for DIFFERENT money", () => {
       prior,
     });
     // dp_1's €30 must not count as dp_2's already-reversed.
-    expect(second).toEqual({ act: true, deltaCents: 4_000, cumulative: 4_000 });
+    expect(second).toEqual({ act: true, deltaCents: 4_000, cumulative: 4_000, attempt: 1 });
   });
 
   it("a redelivered refund still does nothing once a dispute has also landed", () => {
@@ -303,7 +305,74 @@ describe("a charge disputed twice", () => {
       act: true,
       deltaCents: TOP_UP,
       cumulative: TOP_UP,
+      // dp_1's rows belong to dp_1; this is dp_2's first reversal.
+      attempt: 1,
     });
+  });
+
+  /*
+   * THE SAME dispute, won and then reopened.
+   *
+   * A card network can reopen a dispute it has decided — pre-arbitration — and
+   * the issuer can then find the other way. Stripe withdraws the money a second
+   * time.
+   *
+   * Everything about this is correct except the key. priorForCause deliberately
+   * counts dp_1's restore alongside dp_1's reversal so the pair nets to zero,
+   * which is what lets the reopened dispute act at all — and that netting is
+   * exactly what makes the second reversal recompute the first one's cumulative
+   * figure. The causeId added in round 9 does not help: it is the same dispute
+   * both times, so the key came out byte-identical, the insert hit the unique
+   * index, recordLedgerEntry swallowed the 23505 as a redelivery, and the
+   * webhook answered 200 reporting money reversed that never left the balance.
+   *
+   * The test above looks like it covers this and does not: dp_2 is a SECOND
+   * dispute, which already had a distinct key.
+   */
+  it("gives the reopened dispute a key of its own the second time", () => {
+    const prior: PriorMovement[] = [
+      { deltaCents: -TOP_UP, key: reversalKey(PI, "dispute", TOP_UP, "dp_1") },
+      { deltaCents: TOP_UP, key: restoreKey(PI, "dp_1") },
+    ];
+
+    const again = computeReversal({
+      topUpCents: TOP_UP,
+      reversibleCents: TOP_UP,
+      cause: "dispute",
+      causeId: "dp_1",
+      prior,
+    });
+
+    expect(again).toEqual({ act: true, deltaCents: TOP_UP, cumulative: TOP_UP, attempt: 2 });
+    if (!again.act) throw new Error("unreachable");
+
+    const first = reversalKey(PI, "dispute", TOP_UP, "dp_1");
+    const second = reversalKey(PI, "dispute", again.cumulative, "dp_1", again.attempt);
+
+    expect(second).not.toBe(first);
+    // The first key is unchanged, so nothing already in the ledger moves.
+    expect(first).toBe("reversal:pi_X:dispute:dp_1:50000");
+  });
+
+  /*
+   * A redelivery is still caught, and caught EARLIER than the key: a repeat of
+   * the same event computes a delta of zero and never reaches the insert. The
+   * ordinal above only applies to a movement that genuinely acts.
+   */
+  it("still refuses a redelivered dispute event", () => {
+    const prior: PriorMovement[] = [
+      { deltaCents: -TOP_UP, key: reversalKey(PI, "dispute", TOP_UP, "dp_1") },
+    ];
+
+    expect(
+      computeReversal({
+        topUpCents: TOP_UP,
+        reversibleCents: TOP_UP,
+        cause: "dispute",
+        causeId: "dp_1",
+        prior,
+      }),
+    ).toEqual({ act: false, reason: "already_settled" });
   });
 
   it("restores only the dispute that was won", () => {

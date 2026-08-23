@@ -58,9 +58,17 @@ export default async function AccountsPage({
             instelling zich onder de Wkkgz op beroept.
           </li>
           <li>
-            <strong style={{ color: "var(--text)" }}>De naam</strong> wordt overal vervangen door
-            &quot;Verwijderd account&quot;. Het e-mailadres wordt losgekoppeld en komt weer vrij
+            <strong style={{ color: "var(--text)" }}>De naam in het profiel</strong> wordt
+            &quot;Verwijderd account&quot;. Niet in de facturen en de dossierrecords: die dragen de
+            naam zoals die bij acceptatie is vastgelegd, en dat is bewust — zie de blijft-regel
+            hierboven. Het e-mailadres wordt vervangen door een onbestelbaar adres en komt weer vrij
             voor een nieuwe registratie; inloggen op het oude account kan daarna niet meer.
+          </li>
+          <li>
+            <strong style={{ color: "var(--text)" }}>Niet mogelijk</strong> zolang er opdrachten
+            open staan die nog niet gefactureerd zijn. Anonimiseren wist de factuurgegevens, en
+            zonder adres en btw-id kan de factuur daarna niet meer worden opgemaakt — terwijl de
+            bemiddelingsvergoeding al bij acceptatie is afgeschreven. Keur die uren eerst goed.
           </li>
         </ul>
 

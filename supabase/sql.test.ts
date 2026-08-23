@@ -124,7 +124,26 @@ describe("functions.sql", () => {
       .sort()
       .map((f) => ({ name: f, sql: readFileSync(join(DIR, "migrations", f), "utf8") }));
 
-    for (const name of ["accept_shift", "settle_timesheet", "cancel_assignment"]) {
+    /*
+     * EVERY plpgsql function, not a hand-kept list of three.
+     *
+     * The list used to name accept_shift, settle_timesheet and cancel_assignment
+     * — the three that existed when this was written — so anonymise_account, the
+     * most destructive function in the product, was added later and checked by
+     * nothing. A drift guard that covers the functions somebody remembered to add
+     * is a drift guard for the functions least likely to drift.
+     */
+    const names = [
+      ...new Set(
+        [...functions.matchAll(/create\s+or\s+replace\s+function\s+([a-z_][a-z0-9_]*)\s*\(/gi)].map(
+          (m) => m[1],
+        ),
+      ),
+    ].filter((name) => body(functions, name));
+
+    expect(names.length, "no plpgsql function bodies found in functions.sql").toBeGreaterThan(3);
+
+    for (const name of names) {
       const canonical = body(functions, name);
       expect(canonical, `${name} is missing from functions.sql`).toBeTruthy();
 

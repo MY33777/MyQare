@@ -170,7 +170,21 @@ export async function POST(request: NextRequest) {
        * comfortably outlasts a reversal delayed by an outage.
        */
       if (restored.skipped === "nothing_was_reversed") {
-        const ageSeconds = Math.floor(Date.now() / 1000) - (dispute.created ?? 0);
+        /*
+         * The age of THIS EVENT, not of the dispute.
+         *
+         * It measured `dispute.created`, which is when the dispute was OPENED. A
+         * card dispute is decided by the issuer weeks later, so by the time
+         * `charge.dispute.closed` arrives that age is always far past a day and
+         * the branch below could never run for a single real chargeback. The
+         * comment above reasons from Stripe's three-day redelivery window and the
+         * code bounded the wait by the dispute's own lifetime instead.
+         *
+         * `event.created` is stable across redeliveries — Stripe resends the same
+         * event object — so this really does measure how long we have been asking
+         * to be retried, which is the quantity the three days apply to.
+         */
+        const ageSeconds = Math.floor(Date.now() / 1000) - (event.created ?? 0);
 
         if (ageSeconds < 24 * 60 * 60) {
           console.warn(
@@ -389,7 +403,13 @@ async function reverseCharge(
        * produces a different one and lands. Prefixed so it never collides with
        * the top-up's own row.
        */
-      stripePaymentIntent: reversalKey(paymentIntent, cause, decision.cumulative, causeId),
+      stripePaymentIntent: reversalKey(
+        paymentIntent,
+        cause,
+        decision.cumulative,
+        causeId,
+        decision.attempt,
+      ),
       note:
         event.type === "charge.refunded"
           ? "Terugbetaling van een opwaardering"

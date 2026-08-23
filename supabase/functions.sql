@@ -453,6 +453,7 @@ set search_path = public
 as $fn$
 declare
   v_role text;
+  v_open integer;
 begin
   select role into v_role from profiles where id = p_profile_id;
 
@@ -470,21 +471,55 @@ begin
     raise exception 'Verwijder deze persoon eerst als beheerder.' using errcode = 'P0001';
   end if;
 
+  /*
+   * Work that still has to be invoiced. Counted BEFORE anything is deleted,
+   * because invoice_settings goes below and the invoice cannot be raised without
+   * it — see the header of this migration.
+   *
+   * Cancelled assignments are excluded: nothing is owed on them and the fee was
+   * refunded when they were cancelled. Everything else counts, whether or not the
+   * hours have been approved yet, because an accepted shift is work somebody is
+   * going to do and be billed for.
+   */
+  select count(*) into v_open
+  from assignments a
+  where a.freelancer_id = p_profile_id
+    and a.status <> 'cancelled'
+    and not exists (select 1 from invoices i where i.assignment_id = a.id);
+
+  if v_open > 0 then
+    raise exception
+      'Er % nog % opdracht(en) zonder factuur. Rond die eerst af; daarna kan dit account geanonimiseerd worden.',
+      case when v_open = 1 then 'is' else 'zijn' end,
+      v_open
+      -- Its own SQLSTATE, so the caller can tell this refusal from the staff one
+      -- and show the count rather than a generic failure.
+      using errcode = 'MQ001';
+  end if;
+
   -- Everything purely personal, with no evidentiary role.
   delete from profile_contact where profile_id = p_profile_id;
   delete from availability_blocks where freelancer_id = p_profile_id;
   delete from pools where freelancer_id = p_profile_id;
 
   /*
-   * Documents go. Their storage objects are removed by the caller before this
-   * runs — see lib/anonymise.ts. A VOG is the most sensitive thing this product
-   * holds and there is no retention obligation on OUR copy: the facility's duty
-   * is to have checked, which the dossier snapshot already records.
+   * Documents go, and the evidence stays.
+   *
+   * A VOG is the most sensitive thing this product holds and there is no
+   * retention obligation on OUR copy. The facility's duty is to have checked, and
+   * that check is recorded in the compliance snapshot taken at acceptance —
+   * kinds, review dates and expiry dates, captured then, unaffected by this.
+   *
+   * That sentence used to be here and was not true: the snapshot held the BIG
+   * number and nothing else about the papers. lib/assignments.ts writes them from
+   * this migration onwards. Assignments accepted BEFORE it have no document block
+   * in their snapshot, and for those this deletion is still a loss — which is why
+   * the dossier prints "niet vastgelegd" rather than an empty list.
    */
   delete from documents where freelancer_id = p_profile_id;
 
-  -- Bank details and address. Issued invoices carry their own snapshot of what
-  -- was needed at the time.
+  -- Bank details and address. Safe now: the count above proved every assignment
+  -- has its invoice, and an issued invoice carries its own copy of what it needed.
   delete from invoice_settings where profile_id = p_profile_id;
 
   -- An offer that was never accepted says nothing about a working relationship.

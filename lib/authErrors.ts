@@ -39,6 +39,10 @@ const MESSAGES: Record<string, string> = {
     "die al toegang heeft om je uit te nodigen — dan werken jullie in dezelfde pool, " +
     "met één factuurreeks en één dossier.",
   org_name_required: "Vul de naam van de zorginstelling in.",
+  kvk_required:
+    "Vul het KvK-nummer van de zorginstelling in: acht cijfers. Daarmee herkennen we of je " +
+    "organisatie al bij ons staat, zodat je bij je collega's terechtkomt in plaats van in een " +
+    "tweede account.",
   not_verified:
     "We controleren je KvK-inschrijving nog. Zodra dat rond is — meestal binnen één " +
     "werkdag — kun je diensten plaatsen. Je kunt intussen wel je pool opbouwen.",
@@ -105,6 +109,11 @@ const MESSAGES: Record<string, string> = {
   auth_not_scrambled:
     "De gegevens zijn verwijderd, maar het inlogaccount kon niet worden afgesloten " +
     "— diegene kan dus nog inloggen. Probeer het opnieuw en meld het als het blijft misgaan.",
+  work_not_invoiced:
+    "Er staan nog opdrachten open die niet gefactureerd zijn. Keur die uren eerst goed en laat " +
+    "de facturen uitgaan; daarna kan dit account geanonimiseerd worden. Anonimiseren wist de " +
+    "factuurgegevens, en zonder adres en btw-id kan de factuur daarna niet meer worden opgemaakt " +
+    "— terwijl de bemiddelingsvergoeding al is afgeschreven.",
   storage_failed:
     "De documenten konden niet uit de opslag worden verwijderd, dus er is niets " +
     "gewijzigd. Probeer het opnieuw — half anonimiseren is erger dan niet.",

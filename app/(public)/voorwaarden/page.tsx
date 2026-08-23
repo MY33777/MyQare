@@ -193,9 +193,12 @@ export default function VoorwaardenPage() {
           */}
           <li>
             Je kunt je account op elk moment opzeggen door ons een bericht te sturen. Lopende
-            opdrachten maak je eerst af. We verwijderen dan je profielgegevens; facturen en
-            dossierrecords blijven bewaard zolang de wet dat vraagt, met je naam vervangen door een
-            aanduiding die niet naar jou herleidbaar is.
+            opdrachten maak je eerst af, en openstaande facturen gaan eerst uit. We verwijderen dan
+            je profielgegevens, je documenten en je contactgegevens. Facturen en dossierrecords
+            blijven bewaard zolang de wet dat vraagt, en die dragen je naam: een factuur zonder
+            leverancier is geen factuur, en een instelling die onder de Wkkgz moet kunnen laten zien
+            wie er heeft gewerkt, heeft daar een naam voor nodig. Wat er precies blijft staan en
+            waarom, staat in de <Link href="/privacy">privacyverklaring</Link>.
           </li>
           <li>
             Wij kunnen een account opschorten of beëindigen bij misbruik, bij vervalste documenten,

@@ -29,7 +29,16 @@ export type PriorMovement = {
 
 export type ReversalDecision =
   | { act: false; reason: "already_settled" }
-  | { act: true; deltaCents: number; cumulative: number };
+  | {
+      act: true;
+      deltaCents: number;
+      cumulative: number;
+      /**
+       * Which reversal this is for the cause: 1 the first time, 2 after a win
+       * that was reopened and lost. Goes into the key. See reversalKey.
+       */
+      attempt: number;
+    };
 
 /**
  * How much more to take off the balance for this event.
@@ -91,7 +100,18 @@ export function computeReversal(input: {
    * removed — not the target — so a delta clamped by the ceiling still produces a
    * key that a redelivery of the same event reproduces exactly.
    */
-  return { act: true, deltaCents: delta, cumulative: alreadyForCause + delta };
+  /*
+   * How many times this cause has ALREADY reversed. Restores are not counted:
+   * they are the same cause moving the other way.
+   *
+   * A dispute that is won and then reopened nets back to zero — that netting is
+   * deliberate, it is what lets the reopened dispute reverse again — and the
+   * cumulative figure therefore comes out identical to the first time. So does
+   * the key. See reversalKey.
+   */
+  const attempt = mine.filter((row) => row.key.startsWith("reversal:")).length + 1;
+
+  return { act: true, deltaCents: delta, cumulative: alreadyForCause + delta, attempt };
 }
 
 /**
@@ -193,9 +213,31 @@ export function reversalKey(
    * increases, so each genuine refund already yields a distinct key.
    */
   causeId?: string,
+  /**
+   * Which reversal this is for the cause. Omitted or 1 for the first, which keeps
+   * every key already in the ledger byte-identical.
+   *
+   * A dispute WON and then REOPENED needs this. `priorForCause` deliberately
+   * counts the restore alongside the reversal so the pair nets to zero and the
+   * reopened dispute can act again — and that is exactly what makes the second
+   * reversal recompute the first one's cumulative figure, and its key. The insert
+   * then violated the unique index, recordLedgerEntry swallowed the 23505 as a
+   * redelivery, and the webhook answered 200 with `reversed` set: Stripe had
+   * taken the money back, we reported that we had, and the balance still held it.
+   *
+   * The causeId above fixed the SECOND-dispute case and looked like it covered
+   * this one. It does not; the id is the same dispute both times.
+   *
+   * Safe against redelivery because idempotency does not rest here: a redelivered
+   * event computes a delta of zero in computeReversal and never reaches this. Two
+   * SIMULTANEOUS deliveries both read the same prior rows, so they still produce
+   * the same attempt and the same key, and the index still separates them.
+   */
+  attempt = 1,
 ) {
   const scope = cause === "dispute" && causeId ? `${cause}:${causeId}` : cause;
-  return `reversal:${paymentIntent}:${scope}:${cumulative}`;
+  const base = `reversal:${paymentIntent}:${scope}:${cumulative}`;
+  return attempt > 1 ? `${base}:${attempt}` : base;
 }
 
 /** The ledger key for a restore. Scoped to the dispute, so a second one restores again. */

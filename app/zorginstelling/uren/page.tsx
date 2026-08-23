@@ -18,6 +18,16 @@ import { SubmitButton } from "@/components/SubmitButton";
 
 export const metadata: Metadata = { title: "Uren goedkeuren" };
 
+/**
+ * How many rows either list fetches.
+ *
+ * Both queries filter server-side now, so this bounds the answer and not the
+ * haystack: a facility hits it only with 200 timesheets genuinely waiting for a
+ * decision at once, which is a staffing emergency rather than a page-size
+ * question. Reaching it is reported on the page instead of silently truncating.
+ */
+const QUEUE_CAP = 200;
+
 type PendingRow = {
   id: string;
   agreed_rate_cents: number;
@@ -60,31 +70,64 @@ export default async function TimesheetsPage({
   const params = await searchParams;
   const supabase = await createClient();
 
-  const { data: rows, error: rowsError } = await supabase
-    .from("assignments")
-    .select(
-      "id, agreed_rate_cents, agreed_break_minutes, status, freelancers(profiles(full_name)), shifts(profession, department, starts_at, ends_at), timesheets(minutes_claimed, break_minutes, note, approved_at, disputed_at)",
-    )
-    .eq("org_id", org.id)
-    .neq("status", "cancelled")
-    /*
-     * Oldest first, and a cap far above what the filter needs.
-     *
-     * The limit ran BEFORE the "needs approval" filter — this page loads
-     * assignments and then keeps the ones with an unapproved timesheet — so past
-     * sixty assignments the queue silently stopped showing work that was waiting.
-     * A timesheet nobody approves is work nobody invoices and nobody is paid for.
-     *
-     * Ascending so that if the cap ever bites it drops the newest, not the ones
-     * that have been waiting longest.
-     */
-    .order("accepted_at", { ascending: true })
-    .limit(400)
-    .returns<PendingRow[]>();
+  const COLUMNS =
+    "id, agreed_rate_cents, agreed_break_minutes, status, freelancers(profiles(full_name)), " +
+    "shifts(profession, department, starts_at, ends_at), " +
+    "timesheets(minutes_claimed, break_minutes, note, approved_at, disputed_at)";
 
-  // Only rows where the freelancer has actually submitted something and it is
-  // not yet approved need a decision. Everything else is noise on this page.
-  const pending = (rows ?? []).filter((row) => row.timesheets && !row.timesheets.approved_at);
+  /*
+   * TWO queries, because one served two lists and could only be right for one.
+   *
+   * This page needs the timesheets waiting for a decision AND the completed
+   * assignments waiting for a rating. It used to fetch every non-cancelled
+   * assignment the facility ever had and sort the two out in JavaScript, which
+   * put the cap in the wrong place: the limit applied before the filter, so the
+   * slots were spent on rows this page did not want.
+   *
+   * The previous round noticed that and made it worse. It raised the cap to 400
+   * and ordered ASCENDING, under a comment saying that drops "the newest, not the
+   * ones that have been waiting longest". Ascending on accepted_at does not order
+   * by how long a timesheet has waited — it orders by when the shift was taken —
+   * so the 400 kept were the OLDEST assignments, which are precisely the ones
+   * already approved, invoiced and finished. A facility past 400 assignments,
+   * about seven months of two shifts a day, saw every new submission fall outside
+   * the window: an approval queue that was permanently, calmly empty, with hours
+   * nobody approved, invoices nobody raised and freelancers nobody paid.
+   *
+   * Filtering server-side is the fix. `timesheets!inner` plus a filter on its
+   * column makes the database return only rows that need a decision, so the cap
+   * bounds the answer instead of the haystack.
+   */
+  const [{ data: pendingRows, error: pendingError }, { data: completedRows, error: completedError }] =
+    await Promise.all([
+      supabase
+        .from("assignments")
+        .select(COLUMNS.replace("timesheets(", "timesheets!inner("))
+        .eq("org_id", org.id)
+        .neq("status", "cancelled")
+        .is("timesheets.approved_at", null)
+        // Longest wait first, which for a submitted timesheet is now genuinely
+        // what this orders by: only unapproved rows are in the result.
+        .order("accepted_at", { ascending: true })
+        .limit(QUEUE_CAP)
+        .returns<PendingRow[]>(),
+      supabase
+        .from("assignments")
+        .select(COLUMNS)
+        .eq("org_id", org.id)
+        .eq("status", "completed")
+        /*
+         * Newest first here, and deliberately the other way round from the queue
+         * above. Rating is a courtesy about work somebody remembers; an unrated
+         * shift from eight months ago is not going to be rated now, and letting it
+         * hold a slot would push last week's out of view.
+         */
+        .order("accepted_at", { ascending: false })
+        .limit(QUEUE_CAP)
+        .returns<PendingRow[]>(),
+    ]);
+
+  const pending = pendingRows ?? [];
 
   /*
    * "Could not read" is not "nothing to do".
@@ -95,14 +138,18 @@ export default async function TimesheetsPage({
    * Hours nobody approves are hours nobody invoices and nobody is paid for, so
    * this is the one screen where a false empty is expensive.
    */
-  const queueFailed = Boolean(rowsError);
+  const queueFailed = Boolean(pendingError);
+
+  // Said out loud rather than silently truncated, for the same reason: a capped
+  // queue that looks complete is a queue somebody stops scrolling.
+  const queueTruncated = pending.length >= QUEUE_CAP;
 
   /*
    * Completed work still awaiting this facility's rating. Kept on the same page as
    * approvals rather than given its own tab: rating is a thirty-second job that
    * only ever happens if it is in front of the person who just approved the hours.
    */
-  const completed = (rows ?? []).filter((row) => row.status === "completed");
+  const completed = completedError ? [] : (completedRows ?? []);
 
   const { data: existingRatings } = await supabase
     .from("ratings")
@@ -208,6 +255,13 @@ export default async function TimesheetsPage({
         <FormMessage kind="error">
           De wachtrij kon niet worden geladen, dus deze pagina is op dit moment niet compleet.
           Ververs zo meteen — er staan mogelijk uren te wachten die hier nog niet bij staan.
+        </FormMessage>
+      ) : null}
+
+      {queueTruncated ? (
+        <FormMessage kind="warn">
+          Er staan meer dan {QUEUE_CAP} urenbriefjes te wachten. Dit zijn de {QUEUE_CAP} die er het
+          langst staan; zodra je die hebt behandeld verschijnt de rest.
         </FormMessage>
       ) : null}
 

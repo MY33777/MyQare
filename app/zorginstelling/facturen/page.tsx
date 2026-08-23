@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { EmptyState, PageHeader } from "@/components/AppHeader";
 import { requireFacilityAdmin } from "@/lib/auth";
+import { forEachPage } from "@/lib/pagination";
 import { createClient } from "@/lib/supabase/server";
 import { formatEuros } from "@/lib/money";
 import { formatDate } from "@/lib/hours";
@@ -36,10 +37,7 @@ type InvoiceRow = {
  * paid, an older unpaid one could never be settled from the product at all. A
  * facility running two wards reaches a hundred invoices in a quarter.
  *
- * Matched to the freelancer's page so the two sides of the same invoice agree
- * about which invoices exist. Reaching it is reported rather than silent.
  */
-const INVOICE_CAP = 2000;
 
 export default async function FacilityInvoicesPage({
   searchParams,
@@ -58,36 +56,50 @@ export default async function FacilityInvoicesPage({
   const { org } = await requireFacilityAdmin("/zorginstelling/facturen");
   const supabase = await createClient();
 
-  const { data: invoices } = await supabase
-    .from("invoices")
-    .select(
-      "id, number, issued_on, due_on, amount_ex_vat_cents, vat_amount_cents, total_cents, vat_treatment, paid_at, pdf_path, freelancers(profiles(full_name))",
-    )
-    .eq("org_id", org.id)
-    /*
-     * A held invoice has not been issued to this facility yet — the freelancer is
-     * reviewing it before it goes out. It was appearing in this list, counted into
-     * the payables total and flagged overdue once its due date passed, for a
-     * document the facility had never been sent.
-     */
-    .not("sent_at", "is", null)
-    .order("issued_on", { ascending: false })
-    .limit(INVOICE_CAP)
-    .returns<InvoiceRow[]>();
+  /*
+   * PAGED, like the freelancer's side.
+   *
+   * This asked for 2000 rows and logged a console.error when the result reached
+   * that number — a guard that could not fire, because PostgREST truncates at the
+   * project max-rows (1000 by default) and returns no error, so the count never
+   * reaches the cap. A facility past 1000 invoices saw an understated payables
+   * total with nothing on screen and nothing in the log saying so, and older
+   * unpaid invoices simply left the product.
+   *
+   * Deterministic order because .range() over an ambiguous one can return the
+   * same invoice on two pages, which for a payables SUM means paying it twice.
+   */
+  const invoices: InvoiceRow[] = [];
 
-  if ((invoices ?? []).length >= INVOICE_CAP) {
-    console.error(
-      `[facturen] org ${org.id} has at least ${INVOICE_CAP} sent invoices; the ` +
-        "payables total on this page is understated. Paginate this screen.",
-    );
-  }
+  const complete = await forEachPage<InvoiceRow>(
+    (rangeFrom, rangeTo) =>
+      supabase
+        .from("invoices")
+        .select(
+          "id, number, issued_on, due_on, amount_ex_vat_cents, vat_amount_cents, total_cents, vat_treatment, paid_at, pdf_path, freelancers(profiles(full_name))",
+        )
+        .eq("org_id", org.id)
+        /*
+         * A held invoice has not been issued to this facility yet — the freelancer
+         * is reviewing it before it goes out. It was appearing in this list, counted
+         * into the payables total and flagged overdue once its due date passed, for
+         * a document the facility had never been sent.
+         */
+        .not("sent_at", "is", null)
+        .order("issued_on", { ascending: false })
+        .order("id", { ascending: false })
+        .range(rangeFrom, rangeTo)
+        .returns<InvoiceRow[]>(),
+    (page) => invoices.push(...page),
+    { label: "facturen-instelling" },
+  );
 
   // Compared as calendar dates in Amsterdam. new Date(due_on) parses the date as
   // UTC midnight, which is still "yesterday" locally and flagged invoices a day
   // early — and disagreed with the freelancer own page and the reminder cron.
   const todayKey = amsterdamDateKey();
 
-  const outstanding = (invoices ?? [])
+  const outstanding = invoices
     .filter((invoice) => !invoice.paid_at)
     .reduce((sum, invoice) => sum + invoice.total_cents, 0);
 
@@ -102,6 +114,17 @@ export default async function FacilityInvoicesPage({
         <FormMessage kind="error">{authErrorMessage(params.error)}</FormMessage>
       ) : null}
       {params.paid ? <FormMessage kind="ok">Factuur op betaald gezet.</FormMessage> : null}
+
+      {/*
+        On screen, not in a log. The previous guard wrote a console.error nobody
+        reading their own payables would ever see — and could not fire anyway.
+      */}
+      {!complete ? (
+        <FormMessage kind="error">
+          Niet alle facturen konden worden geladen, dus het openstaande bedrag hieronder is niet
+          compleet. Ververs de pagina voordat je hierop afgaat.
+        </FormMessage>
+      ) : null}
 
       <div className="card p-4 mb-6 inline-block">
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>

@@ -454,6 +454,7 @@ as $fn$
 declare
   v_role text;
   v_open integer;
+  v_email text;
 begin
   select role into v_role from profiles where id = p_profile_id;
 
@@ -474,7 +475,7 @@ begin
   /*
    * Work that still has to be invoiced. Counted BEFORE anything is deleted,
    * because invoice_settings goes below and the invoice cannot be raised without
-   * it — see the header of this migration.
+   * it — see migration 027.
    *
    * Cancelled assignments are excluded: nothing is owed on them and the fee was
    * refunded when they were cancelled. Everything else counts, whether or not the
@@ -497,6 +498,10 @@ begin
       using errcode = 'MQ001';
   end if;
 
+  -- The address, before auth.users is scrambled by the caller. Needed to find
+  -- the invites, which are keyed on the address and not on the id.
+  select lower(email) into v_email from auth.users where id = p_profile_id;
+
   -- Everything purely personal, with no evidentiary role.
   delete from profile_contact where profile_id = p_profile_id;
   delete from availability_blocks where freelancer_id = p_profile_id;
@@ -512,7 +517,7 @@ begin
    *
    * That sentence used to be here and was not true: the snapshot held the BIG
    * number and nothing else about the papers. lib/assignments.ts writes them from
-   * this migration onwards. Assignments accepted BEFORE it have no document block
+   * migration 027 onwards. Assignments accepted BEFORE it have no document block
    * in their snapshot, and for those this deletion is still a loss — which is why
    * the dossier prints "niet vastgelegd" rather than an empty list.
    */
@@ -525,6 +530,27 @@ begin
   -- An offer that was never accepted says nothing about a working relationship.
   delete from shift_offers
   where freelancer_id = p_profile_id and response is distinct from 'accept';
+
+  /*
+   * Invitations. See the header of this migration.
+   *
+   * An invite nobody took up is deleted; an accepted one keeps its row with the
+   * address and the name replaced, because it records a decision the ORGANISATION
+   * made about who may see its pool and its freelancers' documents.
+   */
+  if v_email is not null then
+    delete from organisation_invites
+    where lower(email) = v_email and accepted_at is null;
+
+    update organisation_invites
+    set email = 'anon-' || p_profile_id || '@removed.myqare.invalid'
+    where lower(email) = v_email;
+  end if;
+
+  -- And their name off every invite they sent to somebody else.
+  update organisation_invites
+  set invited_by_name = 'Verwijderd account'
+  where invited_by = p_profile_id;
 
   /*
    * The freelancers row is kept, because invoices and assignments reference it,

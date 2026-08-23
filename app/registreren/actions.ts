@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { mapAuthError } from "@/lib/authErrors";
 import {
   bucketKey,
@@ -78,11 +79,30 @@ export async function signUpAction(formData: FormData) {
   if (clientBucket) await recordRateLimitHit(clientBucket);
 
   /*
-   * Out of mail budget: report the same thing a successful signup reports and
-   * send nothing. Saying "too many attempts" about an address somebody merely
-   * typed confirms it exists.
+   * Out of mail budget — but only a RESEND is suppressed, never a first signup.
+   *
+   * This skipped supabase.auth.signUp entirely and redirected to the confirmation
+   * page, so no account was created at all. The comment above calls the address
+   * bucket "a ceiling on mail" and cites the rule in lib/rateLimit.ts that a
+   * bucket keyed on something a stranger shares with the victim must not gate an
+   * action whose refusal harms the person who did not spend it. It gated the
+   * action, and the previous version at least told the caller; this one shows the
+   * same page as success, so somebody blocked from registering by five requests
+   * from a script waits for a confirmation email that was never sent.
+   *
+   * The distinction that makes the ceiling legitimate is whether the address
+   * already has an account. If it does, this submission would only re-send mail
+   * to somebody who can already sign in or reset their password, and suppressing
+   * that harms nobody. If it does not, this is a first registration and it
+   * proceeds — abuse from one machine is what the client bucket above is for.
+   *
+   * The check runs with the service role and its answer never reaches the
+   * response: both branches below render the same confirmation page, so this
+   * cannot be used to find out whether an address is registered.
    */
-  if (!mailBudgetLeft) redirect("/registreren/bevestig?email=" + encodeURIComponent(email));
+  if (!mailBudgetLeft && (await addressHasAccount(email))) {
+    redirect("/registreren/bevestig?email=" + encodeURIComponent(email));
+  }
 
   const supabase = await createClient();
 
@@ -184,4 +204,30 @@ export async function resendConfirmationAction(formData: FormData) {
   });
 
   redirect(back(`sent=1&email=${encodeURIComponent(email)}`));
+}
+
+/**
+ * Whether an address already has an account, for the mail ceiling only.
+ *
+ * Service role, and the answer never leaves the server: both callers render the
+ * same confirmation page whichever way it goes. lookup_account_by_email returns
+ * an id and nothing else, and is revoked from anon and authenticated.
+ *
+ * A failed lookup answers FALSE — treat it as a first registration and let the
+ * signup proceed. The alternative fails the wrong way: a database blip would
+ * silently refuse to create accounts.
+ */
+async function addressHasAccount(email: string): Promise<boolean> {
+  try {
+    const { data, error } = await getSupabaseAdmin().rpc("lookup_account_by_email", {
+      p_email: email,
+    });
+    if (error) {
+      console.error(`[registreren] account lookup failed: ${error.message}`);
+      return false;
+    }
+    return Boolean(data);
+  } catch {
+    return false;
+  }
 }

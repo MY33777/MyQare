@@ -114,12 +114,12 @@ export default function PrivacyPage() {
           </li>
           <li>
             Technische gegevens om misbruik tegen te gaan: een teller per e-mailadres van het aantal
-            inlogpogingen, wachtwoordherstel-verzoeken en contactformulieren binnen een kort
-            tijdvenster. Bij inloggen, wachtwoordherstel en het contactformulier tellen we ook per IP-adres,
-            zodat één machine die adressen afgaat niet iedereen achter hetzelfde adres kan
-            buitensluiten. Zowel het e-mailadres als het IP-adres worden daarbij eerst door een
-            eenrichtingsfunctie gehaald: in de tabel staat een onleesbare code, geen adres. Die
-            tellers worden na twee dagen verwijderd.
+            inlogpogingen, wachtwoordherstel-verzoeken, aanmeldingen en contactformulieren binnen
+            een kort tijdvenster. Bij inloggen, wachtwoordherstel en aanmelden tellen we ook per
+            IP-adres, zodat één machine die adressen afgaat niet iedereen achter hetzelfde adres
+            kan buitensluiten. Bij het contactformulier gebeurt dat niet. Zowel het e-mailadres als
+            het IP-adres worden daarbij eerst door een eenrichtingsfunctie gehaald: in de tabel
+            staat een onleesbare code, geen adres. Die tellers worden na twee dagen verwijderd.
           </li>
         </ul>
 
@@ -297,9 +297,30 @@ export default function PrivacyPage() {
 
         <h2 id="cookies">7. Cookies</h2>
         <p>
-          MyQare gebruikt alleen cookies die nodig zijn om de site te laten werken: een cookie dat
-          je ingelogd houdt en een voorkeur voor het lichte of donkere thema. Daar is geen
-          toestemming voor nodig, en daarom is er geen cookiebanner.
+          MyQare gebruikt alleen cookies die nodig zijn om de site te laten werken. Er zijn er
+          twee.
+        </p>
+        <ul>
+          <li>
+            <strong>Een sessiecookie</strong> die je ingelogd houdt.
+          </li>
+          <li>
+            <strong>Een formuliercookie</strong>, hooguit vijf minuten geldig, dat bewaart wat je
+            net in een formulier had ingevuld als we je terugsturen omdat er iets niet klopte —
+            anders is alles weg en typ je het opnieuw. Daar kunnen je naam, je e-mailadres en je
+            telefoonnummer in staan. Wachtwoorden nooit: die worden er expliciet uit gefilterd.
+            Het cookie is niet leesbaar voor scripts op de pagina, geldt alleen voor het
+            formulier waar het bij hoort, en wordt gewist zodra het formulier lukt.
+          </li>
+        </ul>
+        <p>
+          {/*
+            This section named a theme cookie that does not exist anywhere in the
+            codebase, and omitted lib/formDraft.ts — the only cookie that holds
+            personal data about a named healthcare worker. Wrong in both
+            directions, on the page that exists to be accurate about exactly this.
+          */}
+          Voor deze twee is geen toestemming nodig, en daarom is er geen cookiebanner.
         </p>
         <p>
           Er staan geen analyse-, advertentie- of volgcookies op de site, en er worden geen

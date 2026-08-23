@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { forEachPage } from "@/lib/pagination";
 import { getFreelancer } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { csvEuros, csvFilename, csvHours, toCsv } from "@/lib/csv";
@@ -23,36 +24,65 @@ export async function GET(request: NextRequest) {
   // Caller's own client, so RLS scopes the rows rather than a hand-written filter.
   const supabase = await createClient();
 
-  let query = supabase
-    .from("invoices")
-    .select(
-      "number, issued_on, due_on, paid_at, minutes_billed, rate_cents, amount_ex_vat_cents, vat_rate_bp, vat_amount_cents, total_cents, vat_treatment, organisations(name, kvk)",
-    )
-    .eq("freelancer_id", freelancer.userId)
-    .order("issued_on", { ascending: true })
-    .limit(2000);
+  /*
+   * PAGED. This asked for 2000 rows in one go.
+   *
+   * PostgREST truncates at the project max-rows — 1000 by default — and returns
+   * no error, so the export a freelancer is told to use when the SCREEN is
+   * incomplete had the same silent ceiling as the screen, one that could not be
+   * detected from the result. An export used for an aangifte is the last place
+   * that is acceptable.
+   *
+   * The order is deterministic on purpose: .range() over an ambiguous one can
+   * return the same invoice on two pages, which here means declaring it twice.
+   */
+  type ExportRow = {
+    number: string;
+    issued_on: string;
+    due_on: string;
+    paid_at: string | null;
+    minutes_billed: number;
+    rate_cents: number;
+    amount_ex_vat_cents: number;
+    vat_rate_bp: number;
+    vat_amount_cents: number;
+    total_cents: number;
+    vat_treatment: string;
+    organisations: { name: string; kvk: string | null } | null;
+  };
 
-  if (from) query = query.gte("issued_on", from);
-  if (to) query = query.lte("issued_on", to);
+  const rows: ExportRow[] = [];
 
-  const { data, error } = await query.returns<
-    {
-      number: string;
-      issued_on: string;
-      due_on: string;
-      paid_at: string | null;
-      minutes_billed: number;
-      rate_cents: number;
-      amount_ex_vat_cents: number;
-      vat_rate_bp: number;
-      vat_amount_cents: number;
-      total_cents: number;
-      vat_treatment: string;
-      organisations: { name: string; kvk: string | null } | null;
-    }[]
-  >();
+  const complete = await forEachPage<ExportRow>(
+    (rangeFrom, rangeTo) => {
+      let query = supabase
+        .from("invoices")
+        .select(
+          "number, issued_on, due_on, paid_at, minutes_billed, rate_cents, amount_ex_vat_cents, vat_rate_bp, vat_amount_cents, total_cents, vat_treatment, organisations(name, kvk)",
+        )
+        .eq("freelancer_id", freelancer.userId)
+        .order("issued_on", { ascending: true })
+        .order("id", { ascending: true });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (from) query = query.gte("issued_on", from);
+      if (to) query = query.lte("issued_on", to);
+
+      return query.range(rangeFrom, rangeTo).returns<ExportRow[]>();
+    },
+    (page) => rows.push(...page),
+    { label: "facturen-export" },
+  );
+
+  /*
+   * A partial export is refused rather than served. A CSV that is missing rows
+   * looks exactly like a CSV that is not, and this one is filed with the
+   * Belastingdienst.
+   */
+  if (!complete) {
+    return NextResponse.json({ error: "export_incomplete" }, { status: 500 });
+  }
+
+  const data = rows;
 
   const VAT_LABELS: Record<string, string> = {
     exempt_medical: "Vrijgesteld (medisch)",

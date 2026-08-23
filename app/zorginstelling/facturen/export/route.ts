@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { forEachPage } from "@/lib/pagination";
 import { getFacilityAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { csvEuros, csvFilename, csvHours, toCsv } from "@/lib/csv";
@@ -22,43 +23,66 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createClient();
 
-  let query = supabase
-    .from("invoices")
-    .select(
-      "number, issued_on, due_on, paid_at, minutes_billed, rate_cents, amount_ex_vat_cents, vat_rate_bp, vat_amount_cents, total_cents, vat_treatment, freelancers(kvk, big_number, profiles(full_name))",
-    )
-    .eq("org_id", admin.org.id)
-    // Held invoices have not been issued to this facility yet. See the list page.
-    .not("sent_at", "is", null)
-    .order("issued_on", { ascending: true })
-    .limit(2000);
+  /*
+   * PAGED. This asked for 2000 rows in one go, and PostgREST truncates at the
+   * project max-rows — 1000 by default — with no error, so a facility with more
+   * than that got a CSV silently missing the rest. It is used to reconcile
+   * payables, so the missing rows read as invoices that do not exist.
+   *
+   * Deterministic order because .range() over an ambiguous one can return the
+   * same invoice on two pages, which here means paying it twice.
+   */
+  type ExportRow = {
+    number: string;
+    issued_on: string;
+    due_on: string;
+    paid_at: string | null;
+    minutes_billed: number;
+    rate_cents: number;
+    amount_ex_vat_cents: number;
+    vat_rate_bp: number;
+    vat_amount_cents: number;
+    total_cents: number;
+    vat_treatment: string;
+    freelancers: {
+      kvk: string | null;
+      big_number: string | null;
+      profiles: { full_name: string } | null;
+    } | null;
+  };
 
-  if (from) query = query.gte("issued_on", from);
-  if (to) query = query.lte("issued_on", to);
-  if (unpaidOnly) query = query.is("paid_at", null);
+  const rows: ExportRow[] = [];
 
-  const { data, error } = await query.returns<
-    {
-      number: string;
-      issued_on: string;
-      due_on: string;
-      paid_at: string | null;
-      minutes_billed: number;
-      rate_cents: number;
-      amount_ex_vat_cents: number;
-      vat_rate_bp: number;
-      vat_amount_cents: number;
-      total_cents: number;
-      vat_treatment: string;
-      freelancers: {
-        kvk: string | null;
-        big_number: string | null;
-        profiles: { full_name: string } | null;
-      } | null;
-    }[]
-  >();
+  const complete = await forEachPage<ExportRow>(
+    (rangeFrom, rangeTo) => {
+      let query = supabase
+        .from("invoices")
+        .select(
+          "number, issued_on, due_on, paid_at, minutes_billed, rate_cents, amount_ex_vat_cents, vat_rate_bp, vat_amount_cents, total_cents, vat_treatment, freelancers(kvk, big_number, profiles(full_name))",
+        )
+        .eq("org_id", admin.org.id)
+        // Held invoices have not been issued to this facility yet. See the list page.
+        .not("sent_at", "is", null)
+        .order("issued_on", { ascending: true })
+        .order("id", { ascending: true });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (from) query = query.gte("issued_on", from);
+      if (to) query = query.lte("issued_on", to);
+      if (unpaidOnly) query = query.is("paid_at", null);
+
+      return query.range(rangeFrom, rangeTo).returns<ExportRow[]>();
+    },
+    (page) => rows.push(...page),
+    { label: "facturen-export-instelling" },
+  );
+
+  // Refused rather than served short. A CSV missing rows looks like one that is
+  // not, and this one is reconciled against a bank statement.
+  if (!complete) {
+    return NextResponse.json({ error: "export_incomplete" }, { status: 500 });
+  }
+
+  const data = rows;
 
   const csv = toCsv(
     [

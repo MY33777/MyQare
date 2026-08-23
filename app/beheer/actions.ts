@@ -27,10 +27,16 @@ async function requireStaffUserId(capability: Capability): Promise<string> {
  * Marks a facility verified.
  *
  * The gate that decides whether an organisation can post work at all — enforced
- * here, in requireFacilityAdmin, and again by the shifts insert policy in
- * supabase/schema.sql. Verification means a human looked at the KvK extract; it is
- * not a formality, because posting a shift creates a financial obligation on a
- * freelancer.
+ * in createShiftAction and in requireFacilityAdmin, and nowhere else.
+ *
+ * This used to add "and again by the shifts insert policy in supabase/schema.sql"
+ * as a third layer. There is none: migration 005 dropped every client write
+ * policy, and the shift insert runs with the service role, which bypasses RLS
+ * regardless. A database guarantee that does not exist is how the checks that DO
+ * hold get removed later, by somebody who believes something else is catching it.
+ *
+ * Verification means a human looked at the KvK extract. Not a formality: posting
+ * a shift creates a financial obligation on a freelancer.
  */
 export async function verifyOrganisationAction(formData: FormData) {
   await requireStaffUserId("verify_organisations");

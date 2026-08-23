@@ -5,6 +5,7 @@ import { EmptyState, PageHeader } from "@/components/AppHeader";
 import { FormMessage } from "@/components/AuthShell";
 import { qualificationLabel } from "@/lib/qualifications";
 import { requireFreelancer } from "@/lib/auth";
+import { forEachPage } from "@/lib/pagination";
 import { createClient } from "@/lib/supabase/server";
 import { formatEuros } from "@/lib/money";
 import { formatDate } from "@/lib/hours";
@@ -79,14 +80,6 @@ function Stat({
   );
 }
 
-/**
- * How many invoices the page loads.
- *
- * Every figure on this page — turnover, the VAT table, outstanding — is summed
- * from the rows below, so a cap is not a display limit, it is a wrong number.
- * 2000 is far past a plausible year of shift work, and reaching it says so.
- */
-const INVOICE_CAP = 2000;
 
 const MESSAGES: Record<string, string> = {
   already_sent: "Deze factuur was al verstuurd.",
@@ -113,30 +106,46 @@ export default async function FreelancerInvoicesPage({
 
   const now = new Date();
 
-  const [
-    { data: invoices, error: invoicesError },
-    { data: upcoming, error: upcomingError },
-    { data: blocked, error: blockedError },
-  ] = await Promise.all([
-    supabase
-      .from("invoices")
-      .select(
-        "id, number, issued_on, due_on, paid_at, sent_at, pdf_path, amount_ex_vat_cents, vat_amount_cents, total_cents, vat_treatment, organisations(name)",
-      )
-      .eq("freelancer_id", userId)
-      .order("issued_on", { ascending: false })
-      /*
-       * Turnover, the per-quarter VAT table and the receivables are all summed
-       * from this list, so a cap here silently understates every one of them.
-       * Raised well past a plausible year — and now actually reported, on screen,
-       * when the returned count reaches it. The previous "reported when reached"
-       * was a console.error that a person reading their own aangifte figures
-       * would never see.
-       */
-      .limit(INVOICE_CAP)
-      .returns<InvoiceRow[]>(),
-    // Accepted but not yet invoiced — an expectation, not a receivable.
-    supabase
+  /*
+   * PAGED, not capped.
+   *
+   * Turnover, the per-quarter VAT table and the receivables are all summed from
+   * this list, so a short read silently understates every one of them — and this
+   * is the page somebody files an aangifte from.
+   *
+   * It asked for INVOICE_CAP rows in one go and reported truncation when the
+   * result reached that number. The comment above that guard explained, correctly,
+   * that PostgREST returns fewer rows than requested when the project max-rows is
+   * lower, with no error — and then implemented the guard it had just described as
+   * unable to fire. With Supabase's default max-rows of 1000 against a cap of 2000
+   * it could not: a freelancer with 1200 invoices got 1000 rows, no banner, and a
+   * confident understated total. lib/pagination.ts exists for exactly this and was
+   * two imports away.
+   */
+  const invoices: InvoiceRow[] = [];
+
+  const [invoicesComplete, { data: upcoming, error: upcomingError }, { data: blocked, error: blockedError }] =
+    await Promise.all([
+      forEachPage<InvoiceRow>(
+        (from, to) =>
+          supabase
+            .from("invoices")
+            .select(
+              "id, number, issued_on, due_on, paid_at, sent_at, pdf_path, amount_ex_vat_cents, vat_amount_cents, total_cents, vat_treatment, organisations(name)",
+            )
+            .eq("freelancer_id", userId)
+            // A deterministic order, because .range() over an ambiguous one can
+            // return the same row on two pages — which for a SUM means counting
+            // an invoice twice. id breaks ties on a shared issue date.
+            .order("issued_on", { ascending: false })
+            .order("id", { ascending: false })
+            .range(from, to)
+            .returns<InvoiceRow[]>(),
+        (rows) => invoices.push(...rows),
+        { label: "facturen" },
+      ),
+      // Accepted but not yet invoiced — an expectation, not a receivable.
+      supabase
       .from("assignments")
       .select("agreed_rate_cents, agreed_break_minutes, status, shifts(starts_at, ends_at)")
       .eq("freelancer_id", userId)
@@ -212,18 +221,22 @@ export default async function FreelancerInvoicesPage({
    * saying the data could not be loaded. /zorginstelling/uren guards the
    * identical shape explicitly; this page did not.
    *
-   * A cap that was HIT is a different problem with the same effect: PostgREST
-   * returns fewer rows than requested when the project's max-rows is lower, with
-   * no error, so the old guard — invoices.length >= INVOICE_CAP — could not fire
-   * in exactly the case it was written for. Both are reported as "incomplete"
-   * rather than silently summed.
+   * The invoices themselves no longer have a cap to hit — they are paged, see
+   * above — so what is left here is the two smaller lists beside them.
    */
-  const loadFailed = Boolean(invoicesError || upcomingError || blockedError);
-  const possiblyTruncated = (invoices ?? []).length >= INVOICE_CAP;
+  const loadFailed = Boolean(upcomingError || blockedError);
 
-  const earnings = summariseEarnings(invoices ?? [], booked);
-  const receivables = summariseReceivables(invoices ?? [], now);
-  const quarters = byQuarter(invoices ?? []);
+  /*
+   * forEachPage returns false when a page errored or the runaway ceiling was
+   * hit, having already handed over the pages before it. Either way the totals
+   * below are summed from a prefix, which on this page must never be presented
+   * as a year.
+   */
+  const incomplete = !invoicesComplete;
+
+  const earnings = summariseEarnings(invoices, booked);
+  const receivables = summariseReceivables(invoices, now);
+  const quarters = byQuarter(invoices);
 
   return (
     <>
@@ -238,22 +251,21 @@ export default async function FreelancerInvoicesPage({
         successful one, and the Versturen button was still there, inviting a
         retry that would send it twice.
       */}
-      {(invoices?.length ?? 0) >= INVOICE_CAP ? (
+      {incomplete ? (
         <FormMessage kind="error">
-          Er zijn meer facturen dan deze pagina laadt ({INVOICE_CAP}). De bedragen hieronder tellen
-          alleen die op — gebruik de export voor een volledig overzicht.
+          Niet alle facturen konden worden geladen, dus de bedragen hieronder zijn niet compleet.
+          Ververs de pagina — gebruik ze niet voor je aangifte zolang deze melding er staat.
         </FormMessage>
       ) : null}
+      {/*
+        The upcoming and blocked lists, which are their own queries. The invoices
+        themselves are covered by the banner above; this one used to have a third
+        branch for truncation, keyed on a count that could not reach its own cap.
+      */}
       {loadFailed ? (
-        <FormMessage kind="error">
-          Je facturen konden niet volledig worden geladen, dus de bedragen hieronder kloppen op dit
-          moment niet. Ververs de pagina — gebruik deze cijfers niet voor je aangifte tot ze weer
-          compleet zijn.
-        </FormMessage>
-      ) : possiblyTruncated ? (
         <FormMessage kind="warn">
-          Er zijn meer facturen dan deze pagina toont, dus de totalen hieronder zijn niet compleet.
-          Gebruik de CSV-export voor je aangifte.
+          Het overzicht van nog te factureren opdrachten kon niet worden geladen. Je facturen
+          hieronder kloppen wel.
         </FormMessage>
       ) : null}
 

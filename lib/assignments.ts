@@ -260,7 +260,7 @@ export async function declineOffer(
   reason: string | null,
 ): Promise<boolean> {
   const admin = getSupabaseAdmin();
-  const { error } = await admin
+  const { data: updated, error } = await admin
     .from("shift_offers")
     .update({
       responded_at: new Date().toISOString(),
@@ -269,15 +269,29 @@ export async function declineOffer(
     })
     .eq("shift_id", shiftId)
     .eq("freelancer_id", freelancerId)
-    .is("responded_at", null);
+    .is("responded_at", null)
+    /*
+     * select(), because a zero-row update is not a failure to supabase-js.
+     *
+     * The `responded_at is null` filter is deliberate — it is what stops a
+     * decline overwriting an acceptance — so an offer already answered matches
+     * nothing and returns error:null. That is indistinguishable from success
+     * without this, which is the exact fact revokeInviteAction documents and
+     * guards against two files away.
+     */
+    .select("id");
 
   /*
    * Returns whether it landed. This used to be Promise<void>, so a failed decline
    * looked identical to a successful one: the offer stayed open, the shift kept
    * appearing in the freelancer's list, and they were told it had been declined.
    * The next round of offers then counted them as still deciding.
+   *
+   * And then it returned `!error`, which had the same shape one layer down: an
+   * offer answered a moment ago on another device said 'je reactie is
+   * doorgegeven' over a write that changed nothing.
    */
-  return !error;
+  return !error && (updated?.length ?? 0) > 0;
 }
 
 /**

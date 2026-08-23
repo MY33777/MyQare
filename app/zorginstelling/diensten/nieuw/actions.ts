@@ -22,9 +22,15 @@ export async function createShiftAction(formData: FormData) {
   if (!admin) redirect("/login?next=%2Fzorginstelling%2Fdiensten%2Fnieuw");
 
   /*
-   * Re-checked here even though the page and the RLS insert policy both check it.
-   * A server action is reachable without ever rendering the page, so "the form
-   * wasn't shown" is not a control.
+   * Re-checked here even though the page checks it too. A server action is
+   * reachable without ever rendering the page, so "the form wasn't shown" is
+   * not a control.
+   *
+   * This used to name "the RLS insert policy" as a third layer. There is no
+   * such policy — migration 005 dropped every client write policy and the
+   * insert here runs with the service role, which bypasses RLS anyway. Citing
+   * a database guarantee that does not exist is how a check like this one
+   * gets removed later by somebody who believes something else is holding.
    */
   if (!admin.org.verified_at) redirect(`${NEW_SHIFT_PATH}?error=not_verified`);
 

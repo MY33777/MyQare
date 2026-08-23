@@ -21,9 +21,21 @@ import { isRecoveryToken } from "@/lib/authSession";
  *      request that reaches a Server Action directly never passed through a page
  *      route at all.
  *
- * So: proxy.ts improves the experience, these functions decide access, and Row
- * Level Security in Postgres is the backstop that holds even when app code is
- * wrong. Every protected page and every server action calls one of these first.
+ * So: proxy.ts improves the experience, and these functions decide access.
+ * Every protected page and every server action calls one of them first.
+ *
+ * WHAT RLS IS AND IS NOT
+ * ----------------------
+ * This used to end with 'and Row Level Security in Postgres is the backstop
+ * that holds even when app code is wrong'. Migration 005 removed every client
+ * write policy, and both that migration and schema.sql quote that exact
+ * sentence as the false one — the reassurance that let five defects through
+ * review, because a reviewer who believes the database will catch a mistake
+ * reads an authorization gate less carefully.
+ *
+ * RLS is a READ backstop. Writes go through the service role or a SECURITY
+ * DEFINER function, both of which bypass it entirely, so for every write in
+ * this product the check below is the only check there is.
  */
 
 export type Role = "facility_admin" | "freelancer" | "staff";

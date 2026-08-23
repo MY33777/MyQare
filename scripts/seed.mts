@@ -92,17 +92,34 @@ async function reset() {
 
   for (const user of demo) {
     /*
-     * Most things cascade from auth.users, but invoices and compliance_records now
-     * hold assignments with 'on delete restrict' (migration 006) — a record of
-     * money or evidence should not vanish because the person was tidied up. So a
-     * demo account that has been invoiced cannot be deleted, and that is reported
-     * rather than swallowed.
+     * Most things cascade from auth.users. Five do not: migration 025 made
+     * invoices, assignments and credit_ledger RESTRICT against profiles, so a
+     * record of money or of evidence cannot vanish because the person was
+     * tidied up.
+     *
+     * That includes the demo balance. seed() gives every demo freelancer a
+     * credit_ledger row, so on a fresh project where nothing has ever been
+     * invoiced this delete refuses for EVERY one of them — while this comment
+     * blamed invoices and migration 006, neither of which is involved. The
+     * ledger is cleared first for exactly that reason: a demo top-up is not a
+     * record anybody needs to keep.
      */
+    const { error: ledgerError } = await db
+      .from("credit_ledger")
+      .delete()
+      .eq("profile_id", user.id);
+
+    if (ledgerError) {
+      kept++;
+      console.log(`  KEPT    ${user.email} — ledger not cleared: ${ledgerError.message}`);
+      continue;
+    }
+
     const { error } = await db.auth.admin.deleteUser(user.id);
     if (error) {
       kept++;
       console.log(`  KEPT    ${user.email} — ${error.message}`);
-      console.log("          (most likely has an invoice; those are retained by design)");
+      console.log("          (has an invoice or an assignment; those are retained by design)");
     } else {
       removed++;
       console.log(`  deleted ${user.email}`);

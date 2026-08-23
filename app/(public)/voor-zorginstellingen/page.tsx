@@ -14,7 +14,15 @@ const FEATURES = [
   },
   {
     title: "Series in één handeling",
-    body: "Elke dinsdag- en donderdagnacht, acht weken lang: dat plaats je één keer. MyQare maakt er losse diensten van met elk een eigen reactietermijn, zodat de zevende week niet al verlopen is voordat iemand hem ziet.",
+    /*
+     * This said "elke dinsdag- en donderdagnacht, acht weken lang" as one
+     * posting. There is no way to say that: lib/recurrence.ts offers four
+     * patterns — eenmalig, elke dag, elke werkdag, elke week op dezelfde dag —
+     * and the form has one select. Twice a week on two different days is two
+     * postings. The block below it in this same array carries a comment about
+     * its own claim being corrected for exactly this reason.
+     */
+    body: "Elke woensdagnacht, acht weken lang: dat plaats je één keer. MyQare maakt er losse diensten van met elk een eigen reactietermijn, zodat de zevende week niet al verlopen is voordat iemand hem ziet. Kiezen kan uit elke dag, elke werkdag of elke week dezelfde dag.",
   },
   {
     title: "Documenten die je moet zien",

@@ -224,7 +224,7 @@ describe("a refund and a dispute for DIFFERENT money", () => {
 
   it("keeps two disputes on one charge apart", () => {
     const topUp = 10_000;
-    let prior = apply([], "dispute", 3_000, 3_000, "dp_1");
+    const prior = apply([], "dispute", 3_000, 3_000, "dp_1");
 
     const second = computeReversal({
       topUpCents: topUp,

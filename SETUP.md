@@ -298,11 +298,26 @@ not. If your database predates 025, run it before honouring any request.
 
 **The AVG answer is anonymise-and-retain.** From /beheer, an admin holding
 `anonymise_accounts` runs it from the person page. It removes the documents from
-storage first, then the contact details, availability, pool memberships,
-invoice settings and unaccepted offers, empties the freelancer profile, replaces
-the name with "Verwijderd account", and finally deletes the auth account so the
-email address is free again. Invoices, assignments and compliance records stay,
-with the snapshot they were issued with.
+storage first, then the contact details, availability, pool memberships, invoice
+settings, unaccepted offers and unaccepted invitations, empties the freelancer
+profile, and replaces the name with "Verwijderd account". Finally it SCRAMBLES
+the auth account — a new unroutable address, a password nobody knows, and a ban —
+so the original address is free to register again and the old credentials stop
+working. Invoices, assignments and compliance records stay, with the snapshot
+they were issued with, and those carry the real name on purpose: an invoice needs
+a supplier (art. 35a Wet OB) and a Wkkgz dossier needs to say who worked.
+
+This paragraph used to say the auth account is DELETED. It is not, and it cannot
+be: `profiles.id` cascades from `auth.users`, and 025 made the financial tables
+restrict against `profiles` precisely so that cascade is blocked — the delete
+fails for exactly the population this feature exists for.
+
+**It refuses while work is uninvoiced.** Anonymising wipes the invoice settings,
+and without an address and a btw-id no invoice can be raised afterwards — while
+the platform fee was already taken at acceptance. So a person with a
+non-cancelled assignment that has no invoice cannot be anonymised until those
+invoices go out, and the screen says how many are outstanding. Approve the hours
+first.
 
 Staff accounts are refused. A platform administrator is named in
 `admin_audit_log` against every permission they granted, and anonymising them

@@ -51,6 +51,15 @@ type AuditRow = {
   created_at: string;
 };
 
+/*
+ * Every action a migration adds needs a line here.
+ *
+ * This map is the only place the audit log becomes readable, and it has now
+ * fallen behind twice: `assignment_cancelled` from migration 020, and
+ * `account_anonymised` from 025 — the most irreversible thing an
+ * administrator can do, rendering as the literal string account_anonymised in
+ * the record a supervisory authority would ask to see.
+ */
 const ACTION_LABELS: Record<string, string> = {
   admin_appointed: "benoemd tot beheerder",
   admin_removed: "verwijderd als beheerder",
@@ -63,6 +72,10 @@ const ACTION_LABELS: Record<string, string> = {
    * people's accounts.
    */
   assignment_cancelled: "dienst geannuleerd namens beide partijen",
+  // Added by migration 025 and, again, not here. This is the entry a supervisory
+  // authority asks to see: it is the only remaining record that somebody existed
+  // and that we were asked to remove them.
+  account_anonymised: "account geanonimiseerd op verzoek",
 };
 
 export default async function AdminsPage({

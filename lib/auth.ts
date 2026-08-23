@@ -202,7 +202,17 @@ export async function requireStaff(
   return { userId, profile, capabilities };
 }
 
-/** Requires a freelancer with a freelancer row. */
+/**
+ * Requires a signed-in account whose ROLE is freelancer.
+ *
+ * Deliberately not "with a freelancers row", which is what this said and did not
+ * check. The two come apart: onboarding writes profiles first and freelancers
+ * last, so a failure in between leaves an account that passes here and has no
+ * freelancers row at all. Checking it on every freelancer page would add a query
+ * to each one to guard a state that onboarding can now finish by itself, so the
+ * pages that WRITE that row check their own writes instead — see
+ * app/professional/profiel/actions.ts.
+ */
 export async function requireFreelancer(
   next?: string,
 ): Promise<{ userId: string; profile: Profile }> {

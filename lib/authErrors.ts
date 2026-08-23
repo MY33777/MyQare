@@ -1,3 +1,5 @@
+import { formatDocumentSizeLimit } from "@/lib/documents";
+
 /*
  * Error codes shown after a redirect.
  *
@@ -39,6 +41,10 @@ const MESSAGES: Record<string, string> = {
     "die al toegang heeft om je uit te nodigen — dan werken jullie in dezelfde pool, " +
     "met één factuurreeks en één dossier.",
   org_name_required: "Vul de naam van de zorginstelling in.",
+  no_freelancer_row:
+    "Je profiel is nog niet compleet aangemaakt, dus dit kon niet worden opgeslagen. Doorloop " +
+    "het aanmeldformulier nog één keer — je gegevens blijven staan — en probeer het daarna " +
+    "opnieuw. Lukt het dan nog niet, neem dan contact met ons op.",
   kvk_required:
     "Vul het KvK-nummer van de zorginstelling in: acht cijfers. Daarmee herkennen we of je " +
     "organisatie al bij ons staat, zodat je bij je collega's terechtkomt in plaats van in een " +
@@ -131,7 +137,13 @@ const MESSAGES: Record<string, string> = {
     "Rond eerst je profiel af. Zonder een compleet profiel kunnen we een betaling " +
     "niet aan je account koppelen.",
   no_file: "Kies een bestand om te uploaden.",
-  too_large: "Het bestand is te groot. Maximaal 5 MB.",
+  /*
+   * Derived, not typed. This said "Maximaal 5 MB" while the upload form beside it
+   * derived "4 MB" from MAX_DOCUMENT_BYTES — so on the one screen where a person
+   * needs a number to act on, the product gave two, and the one in the error told
+   * them the file they had just been refused should have been accepted.
+   */
+  too_large: `Het bestand is te groot. Maximaal ${formatDocumentSizeLimit()}.`,
   bad_type: "Alleen PDF of een foto (JPG, PNG, HEIC, WebP).",
   expiry_required:
     "Vul de vervaldatum in. Zonder die datum kan MyQare niet aantonen dat dit " +

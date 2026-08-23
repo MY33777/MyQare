@@ -24,6 +24,19 @@ export const DOCUMENT_BUCKET = "documents";
  */
 export const MAX_DOCUMENT_BYTES = 4 * 1024 * 1024;
 
+/**
+ * The limit as a person reads it, from the constant.
+ *
+ * Two places state this number — the hint under the file input and the too_large
+ * error — and they disagreed: the hint derived "4 MB" from the constant while the
+ * error said "Maximaal 5 MB", left over from before the limit came down. On the
+ * one screen where somebody needs a number to act on, the error told them the
+ * file they had just been refused should have been accepted.
+ */
+export function formatDocumentSizeLimit(): string {
+  return `${Math.round(MAX_DOCUMENT_BYTES / 1024 / 1024)} MB`;
+}
+
 /*
  * Allow-list, not a block-list. The set is small and known, so anything outside it
  * is a mistake or an attack — there is no legitimate reason to upload an archive or

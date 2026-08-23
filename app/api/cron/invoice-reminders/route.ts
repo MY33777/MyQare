@@ -102,8 +102,26 @@ export async function GET(request: NextRequest) {
      * every morning. Three reminders total: the day after, two weeks, a month.
      * Beyond that it is a conversation between the two parties, not a robot's job.
      */
-    const due = REMINDER_DAYS[invoice.reminders_sent];
-    if (due === undefined || daysOverdue < due) {
+    /*
+     * WHICH reminder this invoice is due, not the next one in the counter.
+     *
+     * It read REMINDER_DAYS[reminders_sent] and sent whenever daysOverdue had
+     * passed it. For an invoice that goes out on time that is right — day 1, day
+     * 14, day 30, one each. For an invoice already well overdue when it is first
+     * seen it is not: at 35 days the counter is 0, so morning one clears the
+     * day-1 threshold, morning two clears day 14, morning three clears day 30.
+     * Three escalating dunning letters to one facility on three consecutive
+     * mornings, ending with the final notice, for an invoice they may only just
+     * have received. That happens to every invoice released late from the hold
+     * queue, which is a normal thing for a freelancer to do.
+     *
+     * Counting how many thresholds have passed instead sends ONE reminder — the
+     * one that fits how overdue it actually is — and moves the counter straight
+     * to it.
+     */
+    const stage = REMINDER_DAYS.filter((day) => daysOverdue >= day).length;
+
+    if (stage <= invoice.reminders_sent) {
       skipped++;
       continue;
     }
@@ -128,7 +146,9 @@ export async function GET(request: NextRequest) {
     if (ok) {
       const { error: counterError } = await admin
         .from("invoices")
-        .update({ reminders_sent: invoice.reminders_sent + 1 })
+        // To the stage that was actually sent, not one more than before: an
+        // invoice first seen at 35 days has had its final notice and is done.
+        .update({ reminders_sent: stage })
         .eq("id", invoice.id);
 
       /*

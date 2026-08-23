@@ -151,14 +151,67 @@ export async function GET(request: NextRequest) {
       continue;
     }
 
-    for (const pool of pools ?? []) {
-      const to = pool.organisations?.billing_email;
-      if (!to) continue;
-      if (!pool.organisations?.verified_at) continue;
+    /*
+     * AND every facility with live work, which the pool does not cover.
+     *
+     * The warning went out strictly through `pools`, and nothing in the product
+     * adds anybody to a pool on acceptance — accept_shift writes assignments,
+     * offers, the ledger and the compliance record and never touches it. A
+     * region-wide shift is the one route that deliberately reaches people OUTSIDE
+     * a pool, so the freelancers hired that way, whose facility has never met them
+     * before and has the most to check, were exactly the ones nobody was warned
+     * about.
+     *
+     * The schema already draws this line the right way round: documents_select
+     * grants a facility the evidence on "assignments … and a.status <> cancelled",
+     * under the comment "Cancelled work creates no duty to have checked
+     * anything". The read was keyed on the assignment and the warning on the pool.
+     */
+    const { data: engagements, error: engagementsError } = await admin
+      .from("assignments")
+      .select("org_id, organisations(name, billing_email, verified_at)")
+      .eq("freelancer_id", document.freelancer_id)
+      .neq("status", "cancelled")
+      .returns<
+        {
+          org_id: string;
+          organisations: {
+            name: string;
+            billing_email: string | null;
+            verified_at: string | null;
+          } | null;
+        }[]
+      >();
+
+    if (engagementsError) {
+      failed++;
+      problems.push(`${document.id}: could not read assignments — ${engagementsError.message}`);
+      continue;
+    }
+
+    /*
+     * One mail per facility. Somebody in a pool who also has two assignments there
+     * is one facility with one duty, not three copies of the same warning.
+     */
+    const recipients = new Map<string, { name: string; billingEmail: string }>();
+
+    for (const row of [...(pools ?? []), ...(engagements ?? [])]) {
+      const org = row.organisations;
+      if (!org?.billing_email) continue;
+      // Unverified facilities are not in the product yet and get no named
+      // person's expiry dates.
+      if (!org.verified_at) continue;
+      if (!recipients.has(org.billing_email)) {
+        recipients.set(org.billing_email, { name: org.name, billingEmail: org.billing_email });
+      }
+    }
+
+    for (const facility of recipients.values()) {
+      const to = facility.billingEmail;
 
       const ok = await sendFacilityDocumentExpiryEmail({
         to,
-        facilityName: pool.organisations?.name ?? "",
+        facilityName: facility.name,
         freelancerName: name,
         documentLabel: label,
         expiresOn: document.expires_on,

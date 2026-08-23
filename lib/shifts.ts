@@ -59,6 +59,22 @@ export type FanOutResult = {
 export async function createShiftWithOffers(input: NewShift): Promise<FanOutResult> {
   const admin = getSupabaseAdmin();
 
+  /*
+   * WHO GETS IT, BEFORE THE SHIFT EXISTS.
+   *
+   * findRecipients throws when it cannot read the pool, under a comment saying
+   * "the shift has not been created yet at this point, so the caller can still
+   * report a failure instead of a shift that reached nobody". It ran after the
+   * insert. So a transient pool failure left a committed, open shift behind while
+   * every caller reported that nothing had been created — and the coordinator,
+   * told to try again, ended up with two identical shifts for the same night, the
+   * first of which was offered to nobody. For a recurring series that multiplies.
+   *
+   * Moving the read above the insert is what makes that sentence true. It also
+   * costs nothing: findRecipients takes the request, not the stored row.
+   */
+  const recipients = await findRecipients(input);
+
   const { data: shift, error } = await admin
     .from("shifts")
     .insert({
@@ -84,8 +100,6 @@ export async function createShiftWithOffers(input: NewShift): Promise<FanOutResu
   if (error || !shift) {
     throw new Error(error?.message ?? "Kon de dienst niet aanmaken.");
   }
-
-  const recipients = await findRecipients(input);
 
   if (recipients.length > 0) {
     const { error: offerError } = await admin.from("shift_offers").insert(
@@ -279,10 +293,12 @@ async function findRecipients(input: NewShift): Promise<string[]> {
    * configuration, for what was actually a failure on our side. The coordinator
    * goes and checks a pool that is fine.
    *
-   * Thrown rather than returned: the shift has not been created yet at this
-   * point, so the caller can still report a failure instead of a shift that
-   * reached nobody. The neighbouring branch on the same page was corrected for
-   * exactly this reason.
+   * Thrown rather than returned, and createShiftWithOffers now calls this BEFORE
+   * inserting the shift — which is what makes the rest of this sentence true. The
+   * caller can report a failure instead of a shift that reached nobody, because
+   * at this point there is genuinely no shift. It used to run after the insert,
+   * so the same throw left an open shift behind while the screen said none had
+   * been created.
    */
   if (poolError) {
     throw new Error(`Kon de pool niet lezen: ${poolError.message}`);

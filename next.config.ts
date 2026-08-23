@@ -27,12 +27,20 @@ const nextConfig: NextConfig = {
        * advertised by the upload form, accepted by lib/documents.ts, and
        * unreachable — a raw 413 the app never saw and could not explain.
        *
-       * Both numbers come down to 4MB, which leaves room under 4.5MB for the
-       * multipart boundaries and part headers this limit also counts. A phone
-       * photo of a diploma is 2–4MB, so the ceiling that matters is unchanged in
-       * practice and is now one the platform will actually deliver.
+       * Both numbers came down, and then to exactly the same number — 4MB here
+       * and 4MB in MAX_DOCUMENT_BYTES — which made the app's own check dead. This
+       * limit counts the WHOLE multipart body, so any file big enough to fail
+       * `file.size > MAX_DOCUMENT_BYTES` had already produced a body over this
+       * one and was rejected by the framework first. The nurse got the generic
+       * error page and no explanation, which is the exact outcome the paragraph
+       * above says was fixed, one megabyte lower.
+       *
+       * 4.4MB here against 4MB there. That leaves a real band — a file between
+       * 4MB and about 4.4MB reaches the action and gets a sentence naming the
+       * limit — while staying under Vercel's 4.5MB edge rejection, which nothing
+       * in the application can catch.
        */
-      bodySizeLimit: "4mb",
+      bodySizeLimit: "4.4mb",
     },
   },
 };

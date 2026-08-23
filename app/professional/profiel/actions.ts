@@ -76,7 +76,7 @@ export async function updateProfileAction(formData: FormData) {
     .upsert({ profile_id: freelancer.userId, phone, updated_at: new Date().toISOString() }, { onConflict: "profile_id" });
   if (phoneError) redirect(`${PROFILE_PATH}?error=unknown`);
 
-  const { error } = await admin
+  const { data: updated, error } = await admin
     .from("freelancers")
     .update({
       kvk,
@@ -121,9 +121,25 @@ export async function updateProfileAction(formData: FormData) {
         ? {}
         : { big_verified_at: null, big_checked_at: null, big_check_note: null }),
     })
-    .eq("profile_id", freelancer.userId);
+    .eq("profile_id", freelancer.userId)
+    /*
+     * select(), so a write that matched NOTHING is visible.
+     *
+     * supabase-js returns error:null for an update that matched zero rows, and
+     * this page is the only screen besides onboarding that writes profession,
+     * regions, KvK, BIG number and rate. An account with a profiles row and no
+     * freelancers row — the state a half-finished onboarding leaves behind — got
+     * "Opgeslagen" over a write that went nowhere, then found every field blank
+     * again on reload. It was also the only apparent way out of that state.
+     */
+    .select("profile_id");
 
   if (error) redirect(`${PROFILE_PATH}?error=unknown`);
+
+  if (!updated || updated.length === 0) {
+    console.error(`[profiel] no freelancers row for ${freelancer.userId}; profile not saved`);
+    redirect(`${PROFILE_PATH}?error=no_freelancer_row`);
+  }
 
   revalidatePath(PROFILE_PATH);
   revalidatePath("/professional");

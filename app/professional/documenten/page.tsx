@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   DOCUMENT_KIND_LABELS,
   KINDS_NEEDING_EXPIRY,
-  MAX_DOCUMENT_BYTES,
+  formatDocumentSizeLimit,
   daysUntilExpiry,
   expiryState,
   type DocumentKind,
@@ -140,7 +140,7 @@ export default async function DocumentsPage({
               required
             />
             <p className="hint">
-              PDF of foto, maximaal {Math.round(MAX_DOCUMENT_BYTES / 1024 / 1024)} MB.
+              PDF of foto, maximaal {formatDocumentSizeLimit()}.
             </p>
           </div>
         </div>

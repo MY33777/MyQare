@@ -63,7 +63,18 @@ export default async function StaffDashboard({
   // is exactly what RLS is built to prevent.
   const admin = getSupabaseAdmin();
 
-  const [{ data: pending }, { data: verified }, { data: freelancers }] = await Promise.all([
+  /*
+   * The errors are read. All three used to be discarded, so a transient PostgREST
+   * failure rendered "Niets te verifiëren — Alle zorginstellingen zijn beoordeeld"
+   * over a queue nobody had actually looked at. Round 9 fixed this exact shape on
+   * /zorginstelling/uren and /professional/facturen and left the third instance —
+   * the screen that decides whether a facility may post work at all — unguarded.
+   */
+  const [
+    { data: pending, error: pendingError },
+    { data: verified, error: verifiedError },
+    { data: freelancers, error: freelancersError },
+  ] = await Promise.all([
     admin
       .from("organisations")
       .select("id, name, kvk, billing_email, verified_at, created_at")
@@ -136,7 +147,13 @@ export default async function StaffDashboard({
       {canVerifyOrgs ? (
         <>
       <h2 className="text-lg font-bold mb-3">Wachtende zorginstellingen</h2>
-      {pendingOrgs.length === 0 ? (
+      {pendingError || verifiedError ? (
+        <FormMessage kind="error">
+          De lijst met zorginstellingen kon niet worden geladen, dus deze pagina is niet compleet.
+          Ververs zo meteen — er staan mogelijk instellingen te wachten die hier niet bij staan.
+        </FormMessage>
+      ) : null}
+      {pendingError ? null : pendingOrgs.length === 0 ? (
         <EmptyState title="Niets te verifiëren" body="Alle zorginstellingen zijn beoordeeld." />
       ) : (
         <div className="card table-scroll mb-8" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">
@@ -266,7 +283,12 @@ export default async function StaffDashboard({
         Zoek het nummer op in het BIG-register voordat je het goedkeurt. Instellingen leunen hierop
         voor hun eigen Wkkgz-plicht, dus een vinkje zonder controle is erger dan geen vinkje.
       </p>
-      {!freelancers || freelancers.length === 0 ? (
+      {freelancersError ? (
+        <FormMessage kind="error">
+          De BIG-wachtrij kon niet worden geladen. Ververs zo meteen — een leeg scherm betekent
+          hier niet dat er niets te controleren valt.
+        </FormMessage>
+      ) : !freelancers || freelancers.length === 0 ? (
         <EmptyState title="Niets te controleren" body="Er staan geen ongecontroleerde BIG-nummers open." />
       ) : (
         <div className="card table-scroll mb-8" tabIndex={0} role="region" aria-label="Tabel, horizontaal scrollbaar">

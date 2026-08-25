@@ -445,6 +445,25 @@ revoke all on function lookup_account_by_email(text) from public, anon, authenti
  * all-or-nothing: a half-anonymised account is worse than either end state — the
  * person believes they are gone and their phone number is still stored.
  */
+create or replace function anonymise_blockers(p_profile_id uuid)
+returns integer
+language sql
+stable
+security definer
+set search_path = public
+as $fn$
+  select count(*)::integer
+  from assignments a
+  where a.freelancer_id = p_profile_id
+    and a.status <> 'cancelled'
+    and not exists (select 1 from invoices i where i.assignment_id = a.id);
+$fn$;
+
+comment on function anonymise_blockers(uuid) is
+  'Assignments that must be invoiced before this account can be anonymised. Read by anonymise_account and by lib/anonymise.ts before it deletes any file.';
+
+revoke all on function anonymise_blockers(uuid) from public, anon, authenticated;
+
 create or replace function anonymise_account(p_profile_id uuid)
 returns void
 language plpgsql
@@ -477,16 +496,11 @@ begin
    * because invoice_settings goes below and the invoice cannot be raised without
    * it — see migration 027.
    *
-   * Cancelled assignments are excluded: nothing is owed on them and the fee was
-   * refunded when they were cancelled. Everything else counts, whether or not the
-   * hours have been approved yet, because an accepted shift is work somebody is
-   * going to do and be billed for.
+   * The count itself lives in anonymise_blockers, because the CALLER has to ask
+   * the same question before it deletes any document file, and asking it in two
+   * dialects is how two answers drift apart. See migration 029.
    */
-  select count(*) into v_open
-  from assignments a
-  where a.freelancer_id = p_profile_id
-    and a.status <> 'cancelled'
-    and not exists (select 1 from invoices i where i.assignment_id = a.id);
+  v_open := anonymise_blockers(p_profile_id);
 
   if v_open > 0 then
     raise exception
@@ -515,11 +529,24 @@ begin
    * that check is recorded in the compliance snapshot taken at acceptance —
    * kinds, review dates and expiry dates, captured then, unaffected by this.
    *
-   * That sentence used to be here and was not true: the snapshot held the BIG
+   * That sentence has been wrong twice, in two different ways, and this is what
+   * makes it true.
+   *
+   * First it claimed a capture that did not exist: the snapshot held the BIG
    * number and nothing else about the papers. lib/assignments.ts writes them from
-   * migration 027 onwards. Assignments accepted BEFORE it have no document block
-   * in their snapshot, and for those this deletion is still a loss — which is why
-   * the dossier prints "niet vastgelegd" rather than an empty list.
+   * migration 027 onwards.
+   *
+   * Then it claimed a RENDERING that did not exist. The block was captured and
+   * read by nothing — no screen, no export, no PDF — so this deletion still
+   * destroyed the only evidence that survived, under a comment saying it did not.
+   * Migration 029 is what closed that: lib/dossierPdf.ts prints "Documenten bij
+   * aanvang" per assignment, app/zorginstelling/dossier/page.tsx carries the same
+   * column, and lib/dossierPdf.test.ts fails if either stops.
+   *
+   * Assignments accepted BEFORE 027 have no document block, and for those this
+   * deletion is still a loss — which is why both surfaces print "niet vastgelegd"
+   * rather than an empty list. An absent capture and an empty one are different
+   * facts, and only one of them is a statement about a check nobody made.
    */
   delete from documents where freelancer_id = p_profile_id;
 

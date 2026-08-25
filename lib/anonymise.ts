@@ -92,6 +92,44 @@ export async function anonymiseAccount(profileId: string): Promise<AnonymiseResu
 
   if (!dataAlreadyRemoved) {
     /*
+     * MAY THIS RUN AT ALL? ASKED BEFORE ANYTHING IRREVERSIBLE HAPPENS.
+     *
+     * anonymise_account refuses while work is still uninvoiced, and that refusal
+     * is correct and authoritative — but it is raised INSIDE the transaction,
+     * which is several lines below the point where this function has already
+     * emptied the storage bucket. Storage is not transactional. So a refused
+     * erasure was not a no-op: the rows rolled back, the screen said "approve
+     * those hours first, then this account can be anonymised" — come back later,
+     * nothing changed — and the VOG, the diploma and the insurance certificate
+     * were gone. Every facility with a live assignment saw an approved document
+     * whose signed URL 404s, and the owner could not re-upload, because
+     * deleteDocument refuses approved rows. The population that hits the refusal
+     * is exactly the population that has documents.
+     *
+     * The rule is NOT repeated here. anonymise_blockers is the one definition,
+     * and the function below reads the same one; a count written twice is how two
+     * answers drift apart. This call is advisory — hours can be approved between
+     * the two — and the authoritative refusal still stands inside the
+     * transaction. Its only job is to not start shredding something that is
+     * going to be refused anyway.
+     */
+    const { data: blockers, error: blockerError } = await admin.rpc("anonymise_blockers", {
+      p_profile_id: profileId,
+    });
+
+    if (blockerError) return { ok: false, reason: "unknown", detail: blockerError.message };
+
+    if (typeof blockers === "number" && blockers > 0) {
+      // Phrased like the function's own MQ001 message, so the two refusals read
+      // identically wherever `detail` is logged or surfaced.
+      return {
+        ok: false,
+        reason: "work_not_invoiced",
+        detail: `Er ${blockers === 1 ? "is" : "zijn"} nog ${blockers} opdracht(en) zonder factuur.`,
+      };
+    }
+
+    /*
      * The files, before the rows that name them.
      */
     const { data: documents, error: docError } = await admin

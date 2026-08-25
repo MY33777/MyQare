@@ -150,6 +150,19 @@ type Snapshot = {
     kvk?: string | null;
     big_number?: string | null;
     big_verified_at?: string | null;
+    /*
+     * The approved documents at the moment of acceptance. Captured from migration
+     * 027 onwards; absent on anything older, which is why the reader below tells
+     * "no block" apart from "an empty block" instead of collapsing both to zero.
+     */
+    documents?:
+      | {
+          kind?: string | null;
+          issued_on?: string | null;
+          expires_on?: string | null;
+          reviewed_at?: string | null;
+        }[]
+      | null;
   } | null;
 };
 
@@ -202,6 +215,20 @@ type Snapshot = {
         kvk: snap?.freelancer?.kvk ?? null,
         bigNumber: snap?.freelancer?.big_number ?? null,
         bigVerifiedAt: snap?.freelancer?.big_verified_at ?? null,
+        /*
+         * Undefined and empty are different answers, so the null-coalescing that
+         * every other field uses would be wrong here: it would turn "we never
+         * captured this" into "there were none", which is a claim about a Wkkgz
+         * check that nobody made.
+         */
+        documents: Array.isArray(snap?.freelancer?.documents)
+          ? snap.freelancer.documents.map((doc) => ({
+              kind: doc?.kind ?? "onbekend",
+              issuedOn: doc?.issued_on ?? null,
+              expiresOn: doc?.expires_on ?? null,
+              reviewedAt: doc?.reviewed_at ?? null,
+            }))
+          : null,
         startsAt,
         endsAt,
         minutes:

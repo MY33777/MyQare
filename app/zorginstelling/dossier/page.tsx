@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatDate, formatMinutes, formatShiftWindow } from "@/lib/hours";
 import { formatEuros } from "@/lib/money";
 import { qualificationLabel } from "@/lib/qualifications";
+import { DOCUMENT_KIND_LABELS, type DocumentKind } from "@/lib/documents";
 
 export const metadata: Metadata = { title: "Dossier" };
 
@@ -180,6 +181,7 @@ export default async function DossierPage() {
               <tr>
                 <th>Zorgprofessional</th>
                 <th>Dienst</th>
+                <th>Documenten bij aanvang</th>
                 <th>Aangeboden</th>
                 <th>Geaccepteerd</th>
                 <th>Tarief</th>
@@ -205,7 +207,23 @@ export default async function DossierPage() {
                     starts_at?: string | null;
                     ends_at?: string | null;
                   } | null;
-                  freelancer?: { full_name?: string | null } | null;
+                  freelancer?: {
+                    full_name?: string | null;
+                    /*
+                     * The approved documents at acceptance. Captured since
+                     * migration 027 and rendered by nothing until now — which
+                     * mattered, because anonymise_account deletes the documents
+                     * rows on the stated grounds that this preserves the Wkkgz
+                     * evidence. It only preserves it if something shows it.
+                     */
+                    documents?:
+                      | {
+                          kind?: string | null;
+                          expires_on?: string | null;
+                          reviewed_at?: string | null;
+                        }[]
+                      | null;
+                  } | null;
                 } | null;
 
                 const startsAt = snap?.shift?.starts_at ?? assignment?.shifts?.starts_at ?? null;
@@ -223,6 +241,28 @@ export default async function DossierPage() {
                       <span className="block text-xs tnum" style={{ color: "var(--text-muted)" }}>
                         {startsAt && endsAt ? formatShiftWindow(startsAt, endsAt) : "—"}
                       </span>
+                    </td>
+                    <td style={{ color: "var(--text-muted)" }} className="text-xs">
+                      {/*
+                        Absent and empty are different answers and the screen says
+                        which. A record from before the capture existed must not
+                        read as "there were no documents" — that is a claim about a
+                        check nobody made. Same three states as the PDF.
+                      */}
+                      {!Array.isArray(snap?.freelancer?.documents) ? (
+                        "Niet vastgelegd"
+                      ) : snap.freelancer.documents.length === 0 ? (
+                        "Geen goedgekeurde documenten"
+                      ) : (
+                        <>
+                          {snap.freelancer.documents.map((doc, i) => (
+                            <span key={i} className="block">
+                              {DOCUMENT_KIND_LABELS[doc?.kind as DocumentKind] ?? doc?.kind ?? "—"}
+                              {doc?.expires_on ? ` · tot ${formatDate(doc.expires_on)}` : ""}
+                            </span>
+                          ))}
+                        </>
+                      )}
                     </td>
                     <td className="tnum">{formatDate(record.offered_at)}</td>
                     <td className="tnum">{formatDate(record.accepted_at)}</td>

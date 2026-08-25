@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
 import { winAnsiSafe } from "@/lib/winAnsi";
 import { formatEuros } from "@/lib/money";
+import { DOCUMENT_KIND_LABELS, type DocumentKind } from "@/lib/documents";
 import { formatDate, formatMinutes } from "@/lib/hours";
 
 /*
@@ -31,6 +32,14 @@ function guardText(doc: PDFKit.PDFDocument): void {
     original(typeof value === "string" ? winAnsiSafe(value) : (value as string), ...(rest as []));
 }
 
+/** One approved document, as at the moment the shift was accepted. */
+export type DossierDocument = {
+  kind: string;
+  issuedOn: string | null;
+  expiresOn: string | null;
+  reviewedAt: string | null;
+};
+
 export type DossierEntry = {
   freelancerName: string;
   qualification: string;
@@ -49,6 +58,22 @@ export type DossierEntry = {
   kvk: string | null;
   bigNumber: string | null;
   bigVerifiedAt: string | null;
+  /*
+   * The papers the facility had accepted when it engaged this person.
+   *
+   * This is the Wkkgz half of the document. The facility's duty is to have
+   * checked qualifications BEFORE deployment, and the dossier is what it hands an
+   * inspector to show it did. Until now that evidence lived only in the
+   * `documents` rows — which anonymise_account deletes, on the strength of a
+   * comment saying the snapshot preserved it. The snapshot did capture it, from
+   * migration 027 onwards. Nothing rendered it, in any screen, export or PDF, so
+   * the deletion destroyed the only proof that survived.
+   *
+   * `null` means the record predates the capture and is genuinely unknown; an
+   * empty array means the snapshot was taken and the person had no approved
+   * documents at that moment. Those are different facts and the document says so.
+   */
+  documents: DossierDocument[] | null;
   startsAt: string;
   endsAt: string;
   minutes: number;
@@ -180,6 +205,31 @@ export function renderDossierPdf(input: DossierInput): Promise<Buffer> {
             : `${entry.bigNumber} (nog niet gecontroleerd)`
           : "niet van toepassing of niet vastgelegd",
       );
+
+      /*
+       * The papers, as at acceptance — and an explicit sentence when there were
+       * none, rather than an omitted line. A missing line reads as an oversight;
+       * a stated absence reads as a fact, and on a Wkkgz question the difference
+       * is the whole point of the document.
+       */
+      if (entry.documents === null) {
+        line("Documenten bij aanvang", "niet vastgelegd voor deze opdracht");
+      } else if (entry.documents.length === 0) {
+        line("Documenten bij aanvang", "geen goedgekeurde documenten op dat moment");
+      } else {
+        line(
+          "Documenten bij aanvang",
+          entry.documents
+            .map((doc) => {
+              const label = DOCUMENT_KIND_LABELS[doc.kind as DocumentKind] ?? doc.kind;
+              const checked = doc.reviewedAt ? `goedgekeurd ${formatDate(doc.reviewedAt)}` : null;
+              const valid = doc.expiresOn ? `geldig tot ${formatDate(doc.expiresOn)}` : null;
+              const detail = [checked, valid].filter(Boolean).join(", ");
+              return detail ? `${label} (${detail})` : label;
+            })
+            .join(" · "),
+        );
+      }
 
       line("Dienst", `${formatDate(entry.startsAt)} · ${formatMinutes(entry.minutes)}`);
       line("Tarief", `${formatEuros(entry.rateCents)} per uur`);

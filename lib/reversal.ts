@@ -144,7 +144,7 @@ function priorForCause(
 
 export type RestoreDecision =
   | { act: false; reason: "nothing_was_reversed" | "already_restored" }
-  | { act: true; deltaCents: number };
+  | { act: true; deltaCents: number; attempt: number };
 
 /**
  * How much to give back when a dispute is won.
@@ -168,12 +168,24 @@ export function computeRestore(prior: PriorMovement[], disputeId: string): Resto
   const mine = prior.filter((row) => row.key.includes(`:dispute:${disputeId}:`));
   if (mine.length === 0) return { act: false, reason: "nothing_was_reversed" };
 
-  // The restore for this dispute, if an earlier delivery already made one.
-  const restores = prior.filter((row) => row.key === restoreKey(paymentOf(mine[0].key), disputeId));
+  /*
+   * EVERY restore for this dispute, not just the first one's key.
+   *
+   * This compared for equality against restoreKey(pi, disputeId), which is the
+   * key of the FIRST restore only. Once restores carry an ordinal — they must,
+   * see restoreKey — an exact comparison stops seeing the later ones, and a
+   * dispute restored twice would then look unrestored and pay out a third time.
+   *
+   * The boundary matters: "restored:pi:dp_1" is a prefix of "restored:pi:dp_10",
+   * so a bare startsWith would net one dispute's restores against another's.
+   */
+  const base = restoreKey(paymentOf(mine[0].key), disputeId);
+  const restores = prior.filter((row) => row.key === base || row.key.startsWith(base + ":"));
   const outstanding = netReversed([...mine, ...restores]);
 
   if (outstanding <= 0) return { act: false, reason: "already_restored" };
-  return { act: true, deltaCents: outstanding };
+
+  return { act: true, deltaCents: outstanding, attempt: restores.length + 1 };
 }
 
 /** Pulls the payment intent back out of a reversal key: reversal:<pi>:... */
@@ -240,7 +252,31 @@ export function reversalKey(
   return attempt > 1 ? `${base}:${attempt}` : base;
 }
 
-/** The ledger key for a restore. Scoped to the dispute, so a second one restores again. */
-export function restoreKey(paymentIntent: string, disputeId: string) {
-  return `restored:${paymentIntent}:${disputeId}`;
+/**
+ * The ledger key for a restore.
+ *
+ * Scoped to the dispute, so a second DISPUTE restores again — and carrying an
+ * ordinal, so the same dispute can restore twice.
+ *
+ * That second parameter is the whole point. reversalKey was given an `attempt`
+ * for a dispute that is won and then REOPENED, and this function was left on the
+ * old contract: a reopened dispute reversed a second time under a fresh key, and
+ * winning it a second time rebuilt `restored:<pi>:<dispute>` byte for byte. The
+ * insert hit the unique index, recordLedgerEntry swallowed the 23505 as a
+ * redelivery, and restoreWonDispute returned { restored: N } for a row that was
+ * never written. Stripe answered 200 and never redelivered. The freelancer had
+ * won and was permanently down the money, on an append-only ledger with no
+ * manual credit path, and accept_shift's balance check then barred them from
+ * working.
+ *
+ * Numbered rather than made unique some other way, so it matches reversalKey
+ * exactly: the first one keeps its old shape, which leaves every restore already
+ * in a ledger reachable by the same comparison.
+ *
+ * Idempotency does not rest on the ordinal. A redelivered close event nets to
+ * outstanding <= 0 and returns already_restored before any key is built.
+ */
+export function restoreKey(paymentIntent: string, disputeId: string, attempt = 1) {
+  const base = `restored:${paymentIntent}:${disputeId}`;
+  return attempt > 1 ? `${base}:${attempt}` : base;
 }

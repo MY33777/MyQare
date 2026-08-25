@@ -96,7 +96,7 @@ describe("a partial refund followed by a dispute", () => {
 describe("winning a dispute", () => {
   it("gives back what the dispute took", () => {
     const prior = apply([], "dispute", TOP_UP, TOP_UP);
-    expect(computeRestore(prior, DISPUTE)).toEqual({ act: true, deltaCents: TOP_UP });
+    expect(computeRestore(prior, DISPUTE)).toEqual({ act: true, deltaCents: TOP_UP, attempt: 1 });
   });
 
   it("does NOT give back a refund", () => {
@@ -108,7 +108,7 @@ describe("winning a dispute", () => {
     let prior = apply([], "refund", 5_000, 5_000);
     prior = apply(prior, "dispute", TOP_UP, 45_000);
 
-    expect(computeRestore(prior, DISPUTE)).toEqual({ act: true, deltaCents: 45_000 });
+    expect(computeRestore(prior, DISPUTE)).toEqual({ act: true, deltaCents: 45_000, attempt: 1 });
   });
 
   it("does nothing when only a refund happened", () => {
@@ -355,6 +355,72 @@ describe("a charge disputed twice", () => {
   });
 
   /*
+   * The other half of the same story, and the half that was missing.
+   *
+   * The test above proved a reopened dispute can REVERSE twice. Nothing proved it
+   * can RESTORE twice, and it could not: restoreKey had no ordinal, so winning a
+   * reopened dispute rebuilt the first restore's key, the insert collided, the
+   * 23505 was swallowed as a redelivery and the webhook reported money it had not
+   * moved. A freelancer who won was left paying for it.
+   */
+  it("restores a second time when a reopened dispute is won again", () => {
+    const prior: PriorMovement[] = [
+      { deltaCents: -TOP_UP, key: reversalKey(PI, "dispute", TOP_UP, "dp_1") },
+      { deltaCents: TOP_UP, key: restoreKey(PI, "dp_1") },
+      { deltaCents: -TOP_UP, key: reversalKey(PI, "dispute", TOP_UP, "dp_1", 2) },
+    ];
+
+    const again = computeRestore(prior, "dp_1");
+
+    expect(again).toEqual({ act: true, deltaCents: TOP_UP, attempt: 2 });
+    if (!again.act) throw new Error("unreachable");
+
+    const second = restoreKey(PI, "dp_1", again.attempt);
+
+    expect(second).not.toBe(restoreKey(PI, "dp_1"));
+    // The first restore's key is untouched, so nothing already in a ledger moves.
+    expect(restoreKey(PI, "dp_1")).toBe("restored:pi_X:dp_1");
+    expect(second).toBe("restored:pi_X:dp_1:2");
+  });
+
+  /*
+   * And the second restore, once written, is seen. An exact-equality filter found
+   * only the FIRST restore, so a dispute restored twice looked unrestored and
+   * would have paid out a third time.
+   */
+  it("counts a restore that already carries an ordinal", () => {
+    const prior: PriorMovement[] = [
+      { deltaCents: -TOP_UP, key: reversalKey(PI, "dispute", TOP_UP, "dp_1") },
+      { deltaCents: TOP_UP, key: restoreKey(PI, "dp_1") },
+      { deltaCents: -TOP_UP, key: reversalKey(PI, "dispute", TOP_UP, "dp_1", 2) },
+      { deltaCents: TOP_UP, key: restoreKey(PI, "dp_1", 2) },
+    ];
+
+    expect(computeRestore(prior, "dp_1")).toEqual({
+      act: false,
+      reason: "already_restored",
+    });
+  });
+
+  /*
+   * The prefix boundary. "restored:pi:dp_1" is a prefix of "restored:pi:dp_10",
+   * so matching on startsWith alone would net one dispute's restores against
+   * another's and refuse a payout that is genuinely owed.
+   */
+  it("does not mistake dp_10's restore for dp_1's", () => {
+    const prior: PriorMovement[] = [
+      { deltaCents: -TOP_UP, key: reversalKey(PI, "dispute", TOP_UP, "dp_1") },
+      { deltaCents: TOP_UP, key: restoreKey(PI, "dp_10") },
+    ];
+
+    expect(computeRestore(prior, "dp_1")).toEqual({
+      act: true,
+      deltaCents: TOP_UP,
+      attempt: 1,
+    });
+  });
+
+  /*
    * A redelivery is still caught, and caught EARLIER than the key: a repeat of
    * the same event computes a delta of zero and never reaches the insert. The
    * ordinal above only applies to a movement that genuinely acts.
@@ -382,8 +448,8 @@ describe("a charge disputed twice", () => {
       { deltaCents: -20_000, key: reversalKey(PI, "dispute", 20_000, "dp_1") },
       { deltaCents: -20_000, key: reversalKey(PI, "dispute", 40_000, "dp_2") },
     ];
-    expect(computeRestore(prior, "dp_1")).toEqual({ act: true, deltaCents: 20_000 });
-    expect(computeRestore(prior, "dp_2")).toEqual({ act: true, deltaCents: 20_000 });
+    expect(computeRestore(prior, "dp_1")).toEqual({ act: true, deltaCents: 20_000, attempt: 1 });
+    expect(computeRestore(prior, "dp_2")).toEqual({ act: true, deltaCents: 20_000, attempt: 1 });
   });
 
   it("says nothing was reversed for a dispute it has no row for", () => {

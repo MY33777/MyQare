@@ -480,9 +480,11 @@ async function restoreWonDispute(
     // Distinct from both the original top-up and its reversal, and stable, so a
     // redelivered close event collides on the unique index instead of crediting
     // a second time.
-    // Includes the dispute id, so a charge disputed twice restores twice while a
-    // redelivered event for the SAME dispute collides on the unique index.
-    stripePaymentIntent: restoreKey(paymentIntent, dispute.id),
+    // Includes the dispute id, so a charge disputed twice restores twice, and the
+    // attempt ordinal, so ONE dispute won twice — reopened in pre-arbitration and
+    // won again — restores twice as well. A redelivered event for the same
+    // dispute never reaches here: computeRestore returns already_restored first.
+    stripePaymentIntent: restoreKey(paymentIntent, dispute.id, decision.attempt),
     note: "Teruggeboekt bedrag hersteld: het betaalgeschil is in jouw voordeel beslecht",
   });
 

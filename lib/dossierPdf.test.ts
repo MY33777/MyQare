@@ -16,6 +16,10 @@ function entry(overrides: Partial<DossierEntry> = {}): DossierEntry {
     kvk: "12345678",
     bigNumber: "91234567890",
     bigVerifiedAt: "2026-06-01",
+    documents: [
+      { kind: "vog", issuedOn: "2026-01-10", expiresOn: "2029-01-10", reviewedAt: "2026-01-12" },
+      { kind: "diploma", issuedOn: null, expiresOn: null, reviewedAt: "2026-01-12" },
+    ],
     startsAt: "2026-08-14T05:00:00.000Z",
     endsAt: "2026-08-14T13:00:00.000Z",
     minutes: 450,
@@ -220,5 +224,44 @@ describe("the dossier names who the person was and what they were allowed to do"
       await renderDossierPdf(dossier([entry({ kvk: null, bigNumber: null, bigVerifiedAt: null })])),
     );
     expect(pdfContains(text, "niet vastgelegd")).toBe(true);
+  });
+});
+
+/*
+ * The Wkkgz half of the dossier.
+ *
+ * accept_shift has captured the approved documents into the snapshot since
+ * migration 027, and anonymise_account deletes the `documents` rows on the
+ * strength of a comment saying the dossier preserves that evidence. Nothing
+ * rendered it. These three tests are what makes that comment true, and they fail
+ * the moment it stops being.
+ */
+describe("the documents the facility had accepted", () => {
+  it("names each document with when it was approved and how long it was valid", async () => {
+    const text = extractPdfText(await renderDossierPdf(dossier([entry()])));
+
+    expect(text).toContain("Documenten bij aanvang");
+    expect(text).toContain("VOG (Verklaring Omtrent het Gedrag)");
+    expect(text).toContain("goedgekeurd 12 januari 2026");
+    expect(text).toContain("geldig tot 10 januari 2029");
+    expect(text).toContain("Diploma");
+  });
+
+  it("says so plainly when the snapshot recorded no approved documents", async () => {
+    const text = extractPdfText(await renderDossierPdf(dossier([entry({ documents: [] })])));
+
+    expect(text).toContain("geen goedgekeurde documenten op dat moment");
+  });
+
+  /*
+   * The distinction that matters legally: a record from before the capture
+   * existed must not read as "there were none". That is a claim about a check
+   * nobody made.
+   */
+  it("distinguishes a record that predates the capture from one with nothing in it", async () => {
+    const text = extractPdfText(await renderDossierPdf(dossier([entry({ documents: null })])));
+
+    expect(text).toContain("niet vastgelegd voor deze opdracht");
+    expect(text).not.toContain("geen goedgekeurde documenten op dat moment");
   });
 });

@@ -11,6 +11,15 @@ import { qualificationLabel } from "@/lib/qualifications";
 
 export const metadata: Metadata = { title: "Aanbod" };
 
+/**
+ * How many unanswered offers are read before the dead ones are filtered out.
+ *
+ * Named rather than inline because the truncation notice has to compare against
+ * the same number — the shape where a cap and the guard that reports it drift
+ * apart has produced a finding in three separate rounds.
+ */
+const OFFER_CAP = 300;
+
 type OfferRow = {
   id: string;
   shift_id: string;
@@ -45,7 +54,21 @@ export default async function OffersPage({
     .eq("freelancer_id", userId)
     .is("responded_at", null)
     .order("created_at", { ascending: false })
-    .limit(50)
+    /*
+     * Raised, because the cap runs BEFORE the filter below.
+     *
+     * The 50 newest unanswered offers are fetched and then the dead ones — lapsed
+     * respond_by, or a shift that has already started — are removed in
+     * JavaScript. So somebody who has left fifty stale offers unanswered sees an
+     * empty inbox while live work is being offered to her, with no banner and no
+     * way to see more. Nothing in the product ever answers an offer on her
+     * behalf, so that pile only grows.
+     *
+     * A higher cap rather than a paged walk: this is a screen somebody scans in
+     * ten seconds, and the truncation notice below is what makes the limit
+     * honest. 300 is far above any real inbox and still one round trip.
+     */
+    .limit(OFFER_CAP)
     .returns<OfferRow[]>();
 
   /*
@@ -80,10 +103,22 @@ export default async function OffersPage({
 
       {params.declined ? <FormMessage kind="ok">Bedankt, je reactie is doorgegeven.</FormMessage> : null}
 
+      {/*
+        The cap runs before the filter, so a reader has to be told when it bit —
+        otherwise "geen open aanbod" is indistinguishable from "je oudste
+        onbeantwoorde aanbod verdringt het nieuwe".
+      */}
+      {(offers ?? []).length >= OFFER_CAP ? (
+        <FormMessage kind="warn">
+          Je hebt heel veel onbeantwoord aanbod staan, dus mogelijk zie je hier niet alles.
+          Reageer op wat je ziet — ook weigeren helpt — dan ruimt de lijst zichzelf op.
+        </FormMessage>
+      ) : null}
+
       {open.length === 0 ? (
         <EmptyState
           title="Geen open aanbod"
-          body="Zodra een instelling waar je in de pool zit een dienst plaatst, verschijnt die hier."
+          body="Zodra een instelling waar je in de pool zit een dienst plaatst, of een dienst in jouw regio openstaat, verschijnt die hier."
         />
       ) : (
         <div className="grid gap-4">

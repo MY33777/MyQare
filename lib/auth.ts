@@ -145,8 +145,17 @@ export async function requireProfile(next?: string): Promise<{ userId: string; p
  *
  * Verification IS a real gate, on the one thing it should gate: posting work,
  * which creates a financial obligation on a freelancer. That is checked in
- * app/zorginstelling/diensten/nieuw/actions.ts and again by the shifts insert
- * policy in supabase/schema.sql, so a direct API call cannot skip it either.
+ * app/zorginstelling/diensten/nieuw/actions.ts and in lib/shifts.ts, both of
+ * which run with the service role.
+ *
+ * It is NOT enforced by an RLS policy, and this docstring used to say it was —
+ * "and again by the shifts insert policy in supabase/schema.sql, so a direct API
+ * call cannot skip it either". Migration 005 dropped every client write policy on
+ * shifts, and schema.sql says so where the table is declared. The sentence
+ * survived the commit that deleted two identical claims from the two server
+ * actions beside it. A docstring describing a second gate that does not exist is
+ * exactly the thing the paragraph above this one warns about, in the file it
+ * warns in.
  *
  * Callers that need it read `org.verified_at`, which is returned below.
  */

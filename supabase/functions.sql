@@ -452,11 +452,38 @@ stable
 security definer
 set search_path = public
 as $fn$
-  select count(*)::integer
-  from assignments a
-  where a.freelancer_id = p_profile_id
-    and a.status <> 'cancelled'
-    and not exists (select 1 from invoices i where i.assignment_id = a.id);
+  select
+    (
+      -- Work with no invoice at all. See migration 027.
+      select count(*)
+      from assignments a
+      where a.freelancer_id = p_profile_id
+        and a.status <> 'cancelled'
+        and not exists (select 1 from invoices i where i.assignment_id = a.id)
+    )
+    +
+    (
+      /*
+       * Invoices that exist but are not finished. See migration 030.
+       *
+       * An invoice with no sent_at was never delivered — auto_send off leaves it
+       * held, and the ONLY release path is a button behind requireFreelancer, on
+       * an account this process bans. An invoice with no pdf_path has no document
+       * either party can obtain, and re-rendering reads the supplier details live
+       * from invoice_settings, which this process deletes.
+       *
+       * Counting them here is what makes 028's claim true. It deleted
+       * invoice_settings under the line "an issued invoice carries its own copy of
+       * what it needed" — and the invoices row has no business_name, address_line,
+       * postcode, city, vat_number, iban or account_holder column. There is no
+       * copy. The details live in invoice_settings and in the rendered blob, and
+       * for these two states the blob does not exist or has not been sent.
+       */
+      select count(*)
+      from invoices i
+      where i.freelancer_id = p_profile_id
+        and (i.sent_at is null or i.pdf_path is null)
+    )
 $fn$;
 
 comment on function anonymise_blockers(uuid) is
@@ -504,7 +531,7 @@ begin
 
   if v_open > 0 then
     raise exception
-      'Er % nog % opdracht(en) zonder factuur. Rond die eerst af; daarna kan dit account geanonimiseerd worden.',
+      'Er % nog % onafgeronde opdracht(en) of factu(u)r(en). Rond die eerst af; daarna kan dit account geanonimiseerd worden.',
       case when v_open = 1 then 'is' else 'zijn' end,
       v_open
       -- Its own SQLSTATE, so the caller can tell this refusal from the staff one
@@ -550,8 +577,21 @@ begin
    */
   delete from documents where freelancer_id = p_profile_id;
 
-  -- Bank details and address. Safe now: the count above proved every assignment
-  -- has its invoice, and an issued invoice carries its own copy of what it needed.
+  /*
+   * Bank details and address.
+   *
+   * This said "an issued invoice carries its own copy of what it needed". It does
+   * not: the invoices row has a number, amounts, dates and VAT, and no
+   * business_name, address_line, postcode, city, vat_number, iban or
+   * account_holder. Those live here and in the rendered PDF blob, and
+   * renderAndStoreInvoicePdf reads them live — so an invoice whose blob was never
+   * written could only ever be re-rendered without a supplier address, a btw-id
+   * or a payment instruction, which is not a valid invoice under art. 35a Wet OB.
+   *
+   * Safe now because anonymise_blockers refuses while any invoice is unsent or
+   * has no pdf_path, as well as while any assignment has no invoice at all. See
+   * migration 030.
+   */
   delete from invoice_settings where profile_id = p_profile_id;
 
   -- An offer that was never accepted says nothing about a working relationship.

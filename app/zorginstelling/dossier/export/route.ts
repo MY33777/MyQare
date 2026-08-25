@@ -110,12 +110,29 @@ export async function GET(request: NextRequest) {
     if (fromIso) query = query.gte("accepted_at", fromIso);
   }
   if (to) {
-    // Exclusive start of the NEXT day, which is inclusive of everything on the
-    // chosen day without going near a 23:59:59.999 boundary.
-    const [year, month, day] = to.split("-").map(Number);
-    const nextDay = new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
-    const toIso = localInputToIso(`${nextDay}T00:00`);
-    if (toIso) query = query.lt("accepted_at", toIso);
+    /*
+     * Exclusive start of the NEXT day, which is inclusive of everything on the
+     * chosen day without going near a 23:59:59.999 boundary.
+     *
+     * Validated first. `from` on this same route goes through localInputToIso,
+     * which returns null for anything unparseable; `to` went straight into
+     * hand-rolled arithmetic, so `?to=x` made Number() return NaN,
+     * Date.UTC(NaN…) an Invalid Date, and .toISOString() throw a RangeError —
+     * an unhandled 500 on a GET anybody can type, on the route that produces the
+     * document a facility hands an inspector.
+     */
+    const parts = to.split("-").map(Number);
+    const valid = parts.length === 3 && parts.every((n) => Number.isFinite(n));
+
+    if (valid) {
+      const [year, month, day] = parts;
+      const next = new Date(Date.UTC(year, month - 1, day + 1));
+
+      if (!Number.isNaN(next.getTime())) {
+        const toIso = localInputToIso(`${next.toISOString().slice(0, 10)}T00:00`);
+        if (toIso) query = query.lt("accepted_at", toIso);
+      }
+    }
   }
 
   const { data, error } = await query.returns<Row[]>();

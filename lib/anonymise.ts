@@ -125,7 +125,7 @@ export async function anonymiseAccount(profileId: string): Promise<AnonymiseResu
       return {
         ok: false,
         reason: "work_not_invoiced",
-        detail: `Er ${blockers === 1 ? "is" : "zijn"} nog ${blockers} opdracht(en) zonder factuur.`,
+        detail: `Er ${blockers === 1 ? "is" : "zijn"} nog ${blockers} onafgeronde opdracht(en) of factu(u)r(en).`,
       };
     }
 

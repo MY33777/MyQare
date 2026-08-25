@@ -370,7 +370,7 @@ async function findRecipients(input: NewShift): Promise<string[]> {
       region_codes: string[] | null;
     };
 
-    await forEachPage<Candidate>(
+    const reachedEverybody = await forEachPage<Candidate>(
       (from, to) =>
         admin
           .from("freelancers")
@@ -395,6 +395,25 @@ async function findRecipients(input: NewShift): Promise<string[]> {
       },
       { label: "region fan-out" },
     );
+
+    /*
+     * A partial walk is a partial market, and it must not pass silently.
+     *
+     * The comment above this call says so in as many words — "silently reaching a
+     * fraction of the market is the worst possible failure for the one feature
+     * whose entire job is reach" — and then the boolean that says whether the walk
+     * completed was thrown away. forEachPage returns false when a page errored or
+     * the runaway ceiling was hit, having already handed over the pages before it,
+     * so the fan-out would post the shift, report "aangeboden aan 12
+     * zorgprofessionals", and leave everybody past the cut-off never hearing there
+     * was work near them.
+     *
+     * Refusing is right: the coordinator retries, and a shift offered to a
+     * fraction of the region cannot be un-offered.
+     */
+    if (!reachedEverybody) {
+      throw new Error("region fan-out could not read every candidate");
+    }
 
     /*
      * Re-exclude anyone this facility has hidden: a region-wide broadcast must

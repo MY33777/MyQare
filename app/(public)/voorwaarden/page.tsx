@@ -141,7 +141,11 @@ export default function VoorwaardenPage() {
         <h2 id="dossier">7. Het dossier</h2>
         <p>
           Bij elke aangenomen dienst legt MyQare vast wat er op dat moment gold, en bewaart dat als
-          vaste kopie. Beide partijen kunnen dat inzien en exporteren.
+          vaste kopie. De zorginstelling kan dat dossier inzien en exporteren — zij is degene die
+          het onder de Wkkgz en bij een controle van de Belastingdienst moet kunnen tonen. Als
+          zorgprofessional kun je je eigen opdrachten, tarieven en facturen inzien en exporteren;
+          een eigen dossierscherm is er nog niet. Vraag het dossier op via{" "}
+          <Link href="/contact">contact</Link> als je het nodig hebt.
         </p>
         <p>
           Het dossier laat zien wat er is vastgelegd. Of een arbeidsrelatie als zelfstandigheid

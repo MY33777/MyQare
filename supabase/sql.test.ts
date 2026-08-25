@@ -358,3 +358,47 @@ describe("document access agrees between the policy and the code", () => {
     }
   });
 });
+
+/*
+ * SETUP.md tells the operator what a correct install looks like, and those
+ * numbers are the only way to tell a clean run from a half-applied one — the SQL
+ * editor runs a pasted file as one transaction, so a failure means nothing
+ * landed, and the way you find out is by counting.
+ *
+ * Both numbers were wrong: "19 tables" against 20, and "four functions, plus the
+ * helpers" against 17. A correct install and a partial one produced answers that
+ * looked equally plausible, which is worse than no verification step at all —
+ * it converts a check into a rubber stamp.
+ */
+describe("SETUP.md describes the schema it ships with", () => {
+  const setup = readFileSync(join(DIR, "..", "SETUP.md"), "utf8");
+  const schema = read("schema.sql");
+  const functions = read("functions.sql");
+
+  it("states the right number of tables", () => {
+    const actual = [...schema.matchAll(/^create table /gim)].length;
+    const claimed = setup.match(/`supabase\/schema\.sql` — (\d+) tables/);
+
+    expect(claimed, "SETUP.md no longer states a table count").toBeTruthy();
+    expect(Number(claimed![1]), "SETUP.md's table count").toBe(actual);
+  });
+
+  it("states the right number of functions, and names every one", () => {
+    const names = [
+      ...new Set(
+        [...(schema + functions).matchAll(
+          /create\s+or\s+replace\s+function\s+([a-z_][a-z0-9_]*)\s*\(/gi,
+        )].map((m) => m[1]),
+      ),
+    ].sort();
+
+    const claimed = setup.match(/\*\*(\d+)\.\*\* If it is fewer/);
+    expect(claimed, "SETUP.md no longer states a function count").toBeTruthy();
+    expect(Number(claimed![1]), "SETUP.md's function count").toBe(names.length);
+
+    // And the list beside it, so a renamed function is caught too.
+    for (const name of names) {
+      expect(setup, `SETUP.md does not name ${name}`).toContain(name);
+    }
+  });
+});

@@ -151,14 +151,34 @@ export default async function TimesheetsPage({
    */
   const completed = completedError ? [] : (completedRows ?? []);
 
-  const { data: existingRatings } = await supabase
-    .from("ratings")
-    .select("assignment_id")
-    .eq("direction", "facility_to_freelancer")
-    .in("assignment_id", completed.length > 0 ? completed.map((row) => row.id) : ["none"])
-    .returns<{ assignment_id: string }[]>();
+  /*
+   * "Has this FACILITY rated it", not "have I".
+   *
+   * This selected from `ratings` with the caller's own client, and migration 019
+   * narrowed ratings_select to `author_id = auth.uid() or is_staff()` — correctly,
+   * a rating is anonymous. Which means the query answered a different question
+   * than the one being asked. With two coordinators at one facility, the day
+   * coordinator was shown every assignment the night coordinator had already
+   * rated, rated them again, and the freelancer got two ratings for one shift from
+   * one facility.
+   *
+   * facility_rated_assignments returns ids and nothing else, so the existence of
+   * a rating is answerable without its contents becoming readable. See migration
+   * 031.
+   */
+  const { data: ratedIds, error: ratedError } = await supabase.rpc(
+    "facility_rated_assignments",
+    { p_assignment_ids: completed.map((row) => row.id) },
+  );
 
-  const rated = new Set((existingRatings ?? []).map((row) => row.assignment_id));
+  /*
+   * A failed read means "unknown", and unknown must not read as "not yet rated" —
+   * that is how a second rating gets typed. Showing nothing to rate is the
+   * recoverable direction: the work stays in the list tomorrow.
+   */
+  const rated = ratedError
+    ? new Set(completed.map((row) => row.id))
+    : new Set((ratedIds ?? []).map((row: unknown) => String(row)));
   const toRate = completed.filter((row) => !rated.has(row.id));
 
   return (
@@ -226,7 +246,13 @@ export default async function TimesheetsPage({
           {Number(params.undelivered) > 1
             ? `Uren goedgekeurd. ${params.undelivered} facturen zijn opgemaakt maar konden niet worden verstuurd`
             : "Uren goedgekeurd. De factuur is opgemaakt maar kon niet worden verstuurd"}
-          {" — controleer het factuuradres bij Instellingen. De factuur staat wel klaar bij Facturen."}
+          {/*
+            "De factuur staat wel klaar bij Facturen" was false from this side:
+            /zorginstelling/facturen filters on `sent_at is not null`, which is
+            precisely what an undelivered invoice does not have. The facility went
+            looking, found nothing, and had no reason to think anything was wrong.
+          */}
+          {" — controleer het factuuradres bij Instellingen. Zodra dat klopt stuurt de zorgprofessional hem opnieuw; tot dan staat hij nog niet in jullie factuuroverzicht."}
         </FormMessage>
       ) : null}
       {params.approved && params.invoice === "invoice_details_missing" ? (

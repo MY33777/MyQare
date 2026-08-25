@@ -113,13 +113,16 @@ export default function PrivacyPage() {
             zagen op het moment van accepteren
           </li>
           <li>
-            Technische gegevens om misbruik tegen te gaan: een teller per e-mailadres van het aantal
-            inlogpogingen, wachtwoordherstel-verzoeken, aanmeldingen en contactformulieren binnen
-            een kort tijdvenster. Bij inloggen, wachtwoordherstel en aanmelden tellen we ook per
-            IP-adres, zodat één machine die adressen afgaat niet iedereen achter hetzelfde adres
-            kan buitensluiten. Bij het contactformulier gebeurt dat niet. Zowel het e-mailadres als
-            het IP-adres worden daarbij eerst door een eenrichtingsfunctie gehaald: in de tabel
-            staat een onleesbare code, geen adres. Die tellers worden na twee dagen verwijderd.
+            Technische gegevens om misbruik tegen te gaan: tellers binnen een kort tijdvenster.
+            Per e-mailadres tellen we inlogpogingen, wachtwoordherstel-verzoeken, aanmeldingen,
+            het opnieuw laten sturen van een bevestigingsmail en contactformulieren. Per IP-adres
+            tellen we inlogpogingen, wachtwoordherstel, aanmelden en het opnieuw sturen van een
+            bevestigingsmail — zodat één machine die adressen afgaat niet iedereen achter hetzelfde
+            adres kan buitensluiten. Bij het contactformulier gebeurt dat niet. Ben je ingelogd,
+            dan tellen we daarnaast per account hoe vaak je een dienst aanneemt, een document
+            uploadt, een dienst plaatst of een collega uitnodigt. Elk adres en elk IP-adres gaat
+            eerst door een eenrichtingsfunctie: in de tabel staat een onleesbare code, geen adres.
+            Die tellers worden na twee dagen verwijderd.
           </li>
         </ul>
 
@@ -233,8 +236,13 @@ export default function PrivacyPage() {
             bij de opdracht waarop de factuur ziet.
           </li>
           <li>
-            <strong>Documenten zoals VOG en verzekering:</strong> tot ze verlopen of tot je ze
-            verwijdert, en niet langer dan nodig voor de opdrachten waarvoor ze golden.
+            <strong>Documenten zoals VOG en verzekering:</strong> zolang je account bestaat. Een
+            document dat nog niet is goedgekeurd kun je zelf verwijderen. Een goedgekeurd document
+            kan dat niet: het is het bewijs waarop een zorginstelling je heeft ingezet, en zij moet
+            onder de Wkkgz kunnen laten zien dat ze het vóór die inzet heeft gecontroleerd. Een
+            verlopen document verdwijnt dus niet vanzelf — we waarschuwen je en de instelling 60 en
+            30 dagen van tevoren en op de dag zelf, maar de scan blijft staan. Wil je alles weg,
+            dan is de route het volledige verzoek hieronder.
           </li>
           <li>
             <strong>Profiel- en factuurgegevens:</strong> zolang je account bestaat. Je

@@ -116,10 +116,12 @@ const MESSAGES: Record<string, string> = {
     "De gegevens zijn verwijderd, maar het inlogaccount kon niet worden afgesloten " +
     "— diegene kan dus nog inloggen. Probeer het opnieuw en meld het als het blijft misgaan.",
   work_not_invoiced:
-    "Er staan nog opdrachten open die niet gefactureerd zijn. Keur die uren eerst goed en laat " +
-    "de facturen uitgaan; daarna kan dit account geanonimiseerd worden. Anonimiseren wist de " +
-    "factuurgegevens, en zonder adres en btw-id kan de factuur daarna niet meer worden opgemaakt " +
-    "— terwijl de bemiddelingsvergoeding al is afgeschreven.",
+    "Er is nog werk dat niet is afgerond: opdrachten zonder factuur, of facturen die nog niet " +
+    "verstuurd zijn of waarvan de pdf ontbreekt. Keur die uren goed, laat de facturen uitgaan " +
+    "en controleer of elke factuur een pdf heeft; daarna kan dit account geanonimiseerd worden. " +
+    "Anonimiseren wist de factuurgegevens, en zonder adres, btw-id en IBAN kan een factuur " +
+    "daarna niet meer worden opgemaakt of opnieuw worden gemaakt — terwijl de " +
+    "bemiddelingsvergoeding al is afgeschreven en beide partijen hem zeven jaar moeten bewaren.",
   storage_failed:
     "De documenten konden niet uit de opslag worden verwijderd, dus er is niets " +
     "gewijzigd. Probeer het opnieuw — half anonimiseren is erger dan niet.",
@@ -188,6 +190,22 @@ const MESSAGES: Record<string, string> = {
   link_wrong_device:
     "Open deze link in dezelfde browser waarin je het herstel hebt aangevraagd, " +
     "of vraag hieronder een nieuwe link aan en open die direct op dit apparaat.",
+
+  /*
+   * The same two failures, said for a CONFIRMATION link rather than a recovery
+   * one. Every failure used to land on /wachtwoord-vergeten with the wording
+   * above, so a nurse who registered on the ward PC and opened the mail on her
+   * phone was told to reopen a link for "het herstel" she never requested, on a
+   * page whose only control is a password-reset form that does not confirm an
+   * account.
+   */
+  signup_link_wrong_device:
+    "Open de link uit je bevestigingsmail in dezelfde browser waarin je je hebt " +
+    "aangemeld, of vraag hieronder een nieuwe mail aan en open die direct op dit apparaat.",
+
+  signup_link_expired:
+    "Deze bevestigingslink is verlopen of al gebruikt. Vraag hieronder een nieuwe aan — " +
+    "als je account al bevestigd is, kun je gewoon inloggen.",
 
   needs_recovery_link:
     "Een nieuw wachtwoord instellen kan alleen via de link uit de herstelmail. " +

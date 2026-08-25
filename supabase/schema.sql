@@ -1459,3 +1459,27 @@ revoke insert, update, delete on ratings from authenticated, anon;
 revoke insert, update, delete on compliance_records from authenticated, anon;
 revoke insert, update, delete on availability_blocks from authenticated, anon;
 revoke insert, update, delete on rate_limit_hits from authenticated, anon;
+
+create or replace function facility_rated_assignments(p_assignment_ids uuid[])
+returns setof uuid
+language sql
+stable
+security definer
+set search_path = public
+as $fn$
+  select r.assignment_id
+  from ratings r
+  join assignments a on a.id = r.assignment_id
+  where r.assignment_id = any(p_assignment_ids)
+    and r.direction = 'facility_to_freelancer'
+    -- The caller's own organisation, and only that. current_org_id() reads the
+    -- signed-in profile, so a crafted array of somebody else's assignment ids
+    -- returns nothing rather than confirming they exist.
+    and a.org_id = current_org_id();
+$fn$;
+
+comment on function facility_rated_assignments(uuid[]) is
+  'Which of these assignments this facility has already rated. Ids only — the score and the note stay behind ratings_select. See migration 031.';
+
+revoke all on function facility_rated_assignments(uuid[]) from public, anon;
+grant execute on function facility_rated_assignments(uuid[]) to authenticated;

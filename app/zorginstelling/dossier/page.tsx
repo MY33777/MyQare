@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { EmptyState, PageHeader } from "@/components/AppHeader";
+import { FormMessage } from "@/components/AuthShell";
 import { requireFacilityAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, formatMinutes, formatShiftWindow } from "@/lib/hours";
@@ -57,7 +58,7 @@ export default async function DossierPage() {
   const { org } = await requireFacilityAdmin("/zorginstelling/dossier");
   const supabase = await createClient();
 
-  const { data: records } = await supabase
+  const { data: records, error: recordsError } = await supabase
     .from("compliance_records")
     .select(
       "assignment_id, model_agreement_version, offered_at, accepted_at, could_decline, substitution_allowed, rate_set_by, declined_other_offers, snapshot, assignments!inner(id, freelancer_id, agreed_rate_cents, status, org_id, freelancers(profiles(full_name)), shifts(profession, starts_at, ends_at), timesheets(minutes_claimed, break_minutes))",
@@ -66,6 +67,17 @@ export default async function DossierPage() {
     .order("accepted_at", { ascending: false })
     .limit(DOSSIER_PAGE_CAP)
     .returns<DossierRow[]>();
+
+  /*
+   * A failed read is not "no dossier".
+   *
+   * The error was discarded, so a blip rendered the empty state — "Nog geen
+   * dossier" — on the one screen a facility opens because an inspector asked for
+   * it. Telling somebody their compliance evidence does not exist, calmly, is a
+   * worse outcome than an error, and this is the same shape the approval queue
+   * beside it already guards.
+   */
+  const dossierFailed = Boolean(recordsError);
 
   /*
    * Everybody who appears in this dossier, once each.
@@ -169,7 +181,14 @@ export default async function DossierPage() {
         </p>
       </div>
 
-      {!records || records.length === 0 ? (
+      {dossierFailed ? (
+        <FormMessage kind="error">
+          Het dossier kon niet worden geladen. Dit is geen leeg dossier — probeer het zo opnieuw, en
+          neem contact op als het blijft misgaan.
+        </FormMessage>
+      ) : null}
+
+      {dossierFailed ? null : !records || records.length === 0 ? (
         <EmptyState
           title="Nog geen dossier"
           body="Zodra een zorgprofessional een dienst aanneemt, wordt hier automatisch een record vastgelegd."

@@ -32,9 +32,11 @@ app and must never be exposed to a browser or committed.
 
 In **SQL Editor → New query**, paste and run, separately:
 
-1. `supabase/schema.sql` — 19 tables, RLS, policies, grants, one trigger
+1. `supabase/schema.sql` — 20 tables, RLS, policies, grants, one trigger, and
+   11 helper functions
 2. `supabase/functions.sql` — `accept_shift`, `settle_timesheet`,
-   `cancel_assignment`, `lookup_account_by_email`
+   `cancel_assignment`, `lookup_account_by_email`, `anonymise_blockers`,
+   `anonymise_account`
 
 **Do not run anything in `supabase/migrations/`.** Those exist for a database
 that already has an older version. `schema.sql` and `functions.sql` are the
@@ -56,13 +58,29 @@ Every row must show `rowsecurity = true`. A policy on a table whose RLS is off i
 silently inert — Postgres accepts it, lists it, never enforces it.
 
 ```sql
-select proname from pg_proc
-where pronamespace = 'public'::regnamespace and prokind = 'f'
-order by proname;
+select count(*) as functies from pg_proc
+where pronamespace = 'public'::regnamespace and prokind = 'f';
 ```
 
-Four functions, plus the helpers (`current_role_name`, `current_org_id`,
-`is_staff`, `clear_big_verification_on_change`).
+**17.** If it is fewer, one of the two files did not apply cleanly — the editor
+runs a pasted script as one transaction, so a single failure means nothing in
+that file landed.
+
+The full list, if you want to compare by name:
+
+```
+accept_shift              anonymise_account         anonymise_blockers
+can_manage_admins         cancel_assignment         clear_big_verification_on_change
+credit_balance_cents      current_org_id            current_org_verified
+current_role_name         facility_rated_assignments has_offer_for_shift
+is_staff                  lookup_account_by_email   rating_summary
+settle_timesheet          shift_org
+```
+
+Both counts above were wrong until migration 031 — "19 tables" and "four
+functions, plus the helpers", against 20 and 17 — so a correct install and a
+partial one produced answers that looked equally plausible. They are checked against
+the files by `supabase/sql.test.ts`, so `npm test` fails if they drift again.
 
 ## 3. Storage
 

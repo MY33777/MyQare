@@ -115,9 +115,20 @@ export async function inviteColleagueAction(formData: FormData) {
    * The invite is for a person who has not signed up yet, and it is claimed when
    * they do.
    */
-  const { data: existingId } = await service.rpc("lookup_account_by_email", {
+  /*
+   * A failed lookup is not "no account".
+   *
+   * The error was discarded, so a transient failure let this invite an address
+   * that already belongs to somebody — and the whole reason the check exists is
+   * that claiming an invite sets role and org_id, which drive seventeen RLS
+   * policies. The same rule is spelled out at three other call sites in this
+   * codebase; this was the fourth and it drifted.
+   */
+  const { data: existingId, error: lookupError } = await service.rpc("lookup_account_by_email", {
     p_email: email,
   });
+
+  if (lookupError) redirect("/zorginstelling/instellingen?error=unknown");
 
   if (existingId) {
     const { data: profile } = await service

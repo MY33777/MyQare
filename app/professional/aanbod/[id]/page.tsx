@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { PageHeader } from "@/components/AppHeader";
 import { FormMessage } from "@/components/AuthShell";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -19,6 +20,7 @@ export const metadata: Metadata = { title: "Aanbod" };
 type OfferDetail = {
   id: string;
   responded_at: string | null;
+  viewed_at: string | null;
   response: string | null;
   shifts: {
     id: string;
@@ -58,13 +60,41 @@ export default async function OfferDetailPage({
   const { data: offer } = await supabase
     .from("shift_offers")
     .select(
-      "id, responded_at, response, shifts(id, profession, department, location, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, respond_by, organisations(name))",
+      "id, responded_at, response, viewed_at, shifts(id, profession, department, location, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, respond_by, organisations(name))",
     )
     .eq("shift_id", id)
     .eq("freelancer_id", userId)
     .maybeSingle<OfferDetail>();
 
   if (!offer || !offer.shifts) notFound();
+
+  /*
+   * MARK IT SEEN.
+   *
+   * shift_offers.viewed_at has existed since the table did, and the facility's
+   * shift page renders a "Bekeken" badge from it — a badge nothing could ever
+   * turn on, because no code in the product wrote the column. A coordinator
+   * watching an urgent night shift saw "Niet bekeken" beside every name for as
+   * long as the offer stood, and made staffing decisions on it.
+   *
+   * Written here rather than on the list, because opening the detail is what
+   * "bekeken" means: the list is a glance at twelve rows.
+   *
+   * Idempotent by the .is() filter, so a reload does not move the timestamp and
+   * the first view is the one recorded. The service role because migration 005
+   * removed every client write policy on this table; the row is already proven to
+   * be this user's by the select above, which is scoped to their own id.
+   *
+   * Failures are ignored on purpose. This is a badge on somebody else's screen,
+   * and it must never stop a freelancer reading a shift she was offered.
+   */
+  if (!offer.viewed_at) {
+    await getSupabaseAdmin()
+      .from("shift_offers")
+      .update({ viewed_at: new Date().toISOString() })
+      .eq("id", offer.id)
+      .is("viewed_at", null);
+  }
 
   const shift = offer.shifts;
   const minutes = billableMinutes(shift.starts_at, shift.ends_at, shift.break_minutes);

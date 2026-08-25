@@ -255,10 +255,19 @@ export async function sendDocumentExpiryEmail(input: {
   const soon = input.daysRemaining > 0;
   return send({
     to: input.to,
+    /*
+     * A document that expires TODAY is valid today.
+     *
+     * This said "is vandaag verlopen" — past tense — on the day itself, while the
+     * same cron run told the facility "verloopt vandaag". Two mails about one
+     * document, an hour apart, disagreeing about whether it is still valid, and
+     * the one that reaches the person who can renew it is the one that is wrong.
+     * It also invites her to stop working a shift she is entitled to work.
+     */
     subject: soon
       ? `Je ${input.documentLabel} verloopt over ${input.daysRemaining} dagen`
-      : `Je ${input.documentLabel} is vandaag verlopen`,
-    heading: soon ? "Tijd om dit te vernieuwen" : "Dit document is verlopen",
+      : `Je ${input.documentLabel} verloopt vandaag`,
+    heading: soon ? "Tijd om dit te vernieuwen" : "Dit document verloopt vandaag",
     body: [
       soon
         ? `Je ${input.documentLabel} verloopt op ${input.expiresOn}. Een nieuwe aanvragen duurt vaak weken, dus begin er op tijd aan.`

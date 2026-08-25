@@ -94,7 +94,7 @@ export default async function DocumentsPage({
     <div className="max-w-3xl">
       <PageHeader
         title="Documenten"
-        description="Zorginstellingen moeten kunnen controleren dat je bevoegd bent. Een instelling die je in haar pool heeft gezet ziet wélke goedgekeurde documenten je hebt en tot wanneer ze geldig zijn, en krijgt bericht als er één bijna verloopt — dat is haar Wkkgz-plicht en die geldt vóórdat ze je inhuurt. Het bestand zelf kan ze pas openen nadat je een dienst bij haar hebt gedaan."
+        description="Zorginstellingen moeten kunnen controleren dat je bevoegd bent. Een instelling die je in haar pool heeft gezet ziet wélke goedgekeurde documenten je hebt en tot wanneer ze geldig zijn, en krijgt bericht als er één bijna verloopt — dat is haar Wkkgz-plicht en die geldt vóórdat ze je inhuurt. Het bestand zelf kan ze openen zodra je een dienst bij haar hebt aangenomen, en niet eerder."
       />
 
       {params.uploaded ? (

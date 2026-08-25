@@ -46,8 +46,36 @@ export async function GET(request: Request) {
   // somebody would try to smuggle an off-site redirect through.
   const next = safeNextPath(url.searchParams.get("next")) ?? "/";
 
-  const failed = (reason: string) =>
-    NextResponse.redirect(new URL(`/wachtwoord-vergeten?error=${reason}`, url.origin));
+  /*
+   * WHERE A FAILURE LANDS DEPENDS ON WHAT THE LINK WAS FOR.
+   *
+   * Every failure went to /wachtwoord-vergeten, which is right for a recovery
+   * link and wrong for the other one every single account has to follow. A nurse
+   * registers on the ward PC and opens the confirmation mail on her phone: the
+   * PKCE verifier is a cookie on the PC, the exchange fails, and she landed on a
+   * page headed "Wachtwoord vergeten" telling her to reopen the link in the
+   * browser where she requested "het herstel" — a recovery she never asked for.
+   * Her only control there is a password-reset form, which does not confirm an
+   * account, and nothing on that page links to the one screen that can resend a
+   * confirmation.
+   *
+   * The link type is what tells them apart: `type` on the token_hash form, and
+   * the `next` destination on the PKCE form, which registerAction sets to
+   * /onboarding.
+   */
+  const isSignup = type === "signup" || type === "email" || next.startsWith("/onboarding");
+
+  const failed = (reason: "link_expired" | "link_wrong_device") =>
+    NextResponse.redirect(
+      new URL(
+        isSignup
+          ? `/registreren/bevestig?error=${
+              reason === "link_wrong_device" ? "signup_link_wrong_device" : "signup_link_expired"
+            }`
+          : `/wachtwoord-vergeten?error=${reason}`,
+        url.origin,
+      ),
+    );
 
   const supabase = await createClient();
 

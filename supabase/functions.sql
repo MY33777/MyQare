@@ -452,38 +452,26 @@ stable
 security definer
 set search_path = public
 as $fn$
-  select
-    (
-      -- Work with no invoice at all. See migration 027.
-      select count(*)
-      from assignments a
-      where a.freelancer_id = p_profile_id
-        and a.status <> 'cancelled'
-        and not exists (select 1 from invoices i where i.assignment_id = a.id)
-    )
-    +
-    (
-      /*
-       * Invoices that exist but are not finished. See migration 030.
-       *
-       * An invoice with no sent_at was never delivered — auto_send off leaves it
-       * held, and the ONLY release path is a button behind requireFreelancer, on
-       * an account this process bans. An invoice with no pdf_path has no document
-       * either party can obtain, and re-rendering reads the supplier details live
-       * from invoice_settings, which this process deletes.
-       *
-       * Counting them here is what makes 028's claim true. It deleted
-       * invoice_settings under the line "an issued invoice carries its own copy of
-       * what it needed" — and the invoices row has no business_name, address_line,
-       * postcode, city, vat_number, iban or account_holder column. There is no
-       * copy. The details live in invoice_settings and in the rendered blob, and
-       * for these two states the blob does not exist or has not been sent.
-       */
-      select count(*)
-      from invoices i
-      where i.freelancer_id = p_profile_id
-        and (i.sent_at is null or i.pdf_path is null)
-    )
+  /*
+   * Work that has not been invoiced at all. See migration 027.
+   *
+   * This is the only condition the person asking to be erased can clear: they
+   * submit the hours, the facility approves, the invoice is raised.
+   *
+   * Migration 030 also counted invoices with sent_at or pdf_path null, to stop
+   * invoice_settings being deleted out from under a document that still needed
+   * it. Migration 032 removed the need: the parties are written onto the invoice
+   * row at issue, so nothing about an issued invoice depends on the profile any
+   * more. Counting them was refusing an art. 17 erasure on states a THIRD PARTY
+   * controls — a facility that never set a billing address could block somebody's
+   * removal from the platform indefinitely, and nothing on the screen told either
+   * of them that was what was happening.
+   */
+  select count(*)::integer
+  from assignments a
+  where a.freelancer_id = p_profile_id
+    and a.status <> 'cancelled'
+    and not exists (select 1 from invoices i where i.assignment_id = a.id);
 $fn$;
 
 comment on function anonymise_blockers(uuid) is
@@ -612,6 +600,28 @@ begin
     update organisation_invites
     set email = 'anon-' || p_profile_id || '@removed.myqare.invalid'
     where lower(email) = v_email;
+
+    /*
+     * AND THE ORGANISATION'S BILLING ADDRESS, if it is this person's.
+     *
+     * onboarding seeds organisations.billing_email with the founding
+     * coordinator's own login address, and nothing forces them to change it. So
+     * an erased facility admin kept receiving every invoice, every payment
+     * reminder and every document-expiry warning for that facility, at a personal
+     * address, forever — and the address stayed visible to MyQare staff and to
+     * their former colleagues on the settings screen. Migration 028 was written
+     * specifically to reach "the address they were invited with" and missed the
+     * other table seeded from the same value.
+     *
+     * Blanked rather than scrambled. A scrambled address would bounce silently;
+     * null makes deliverInvoice return no_billing_email, which surfaces on both
+     * sides as a thing to fix, and /zorginstelling/instellingen says so. The
+     * facility must choose a new one — which is the correct outcome, because the
+     * old one belonged to somebody who has left.
+     */
+    update organisations
+    set billing_email = null
+    where lower(billing_email) = v_email;
   end if;
 
   -- And their name off every invite they sent to somebody else.

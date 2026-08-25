@@ -21,7 +21,7 @@ export async function acceptShiftAction(formData: FormData) {
    * broken client hammering the endpoint.
    */
   const allowed = await checkRateLimit(bucketKey("accept", freelancer.userId), 30, 300);
-  if (!allowed) redirect(`/professional/aanbod/${shiftId}?error=rate_limited`);
+  if (!allowed) redirect(`/professional/aanbod/${shiftId}?error=rate_limited_accept`);
 
   const result = await acceptShift(shiftId, freelancer.userId);
 

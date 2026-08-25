@@ -46,7 +46,7 @@ export default async function OffersPage({
   const params = await searchParams;
   const supabase = await createClient();
 
-  const { data: offers } = await supabase
+  const { data: offers, error: offersError } = await supabase
     .from("shift_offers")
     .select(
       "id, shift_id, responded_at, shifts(profession, department, starts_at, ends_at, hourly_rate_cents, break_minutes, status, respond_by, organisations(name))",
@@ -70,6 +70,16 @@ export default async function OffersPage({
      */
     .limit(OFFER_CAP)
     .returns<OfferRow[]>();
+
+  /*
+   * A failed read is not "no work".
+   *
+   * The error was discarded, so a blip rendered "Geen open aanbod" on the one
+   * screen a freelancer opens to find income. She concludes there is nothing and
+   * closes the app, while shifts she was offered sit there. Every money screen in
+   * this product now guards this shape; this one did not.
+   */
+  const offersFailed = Boolean(offersError);
 
   /*
    * Only what she can actually still take.
@@ -115,7 +125,14 @@ export default async function OffersPage({
         </FormMessage>
       ) : null}
 
-      {open.length === 0 ? (
+      {offersFailed ? (
+        <FormMessage kind="error">
+          Je aanbod kon niet worden geladen. Dit betekent niet dat er geen diensten zijn — probeer
+          het zo opnieuw.
+        </FormMessage>
+      ) : null}
+
+      {offersFailed ? null : open.length === 0 ? (
         <EmptyState
           title="Geen open aanbod"
           body="Zodra een instelling waar je in de pool zit een dienst plaatst, of een dienst in jouw regio openstaat, verschijnt die hier."

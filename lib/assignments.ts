@@ -120,7 +120,21 @@ export async function acceptShift(shiftId: string, freelancerId: string): Promis
    * themselves are the personal data and they still go; what is kept is the fact
    * of the check, which is the facility's record about itself.
    */
-  const { data: documents } = await admin
+  /*
+   * The error is READ, because this block becomes permanent evidence.
+   *
+   * Discarded, a failed read fell to `documents ?? []`, and the filter below then
+   * wrote an EMPTY array into the snapshot — which the dossier renders as "geen
+   * goedgekeurde documenten op dat moment". That is a statement to an inspector
+   * that the facility engaged somebody with no papers, produced by a dropped
+   * connection, and it is unfixable afterwards: the snapshot is the historical
+   * record precisely because nothing rewrites it.
+   *
+   * `undefined` on failure, so the writer below omits the key entirely and every
+   * surface prints "niet vastgelegd" — the same thing it prints for an assignment
+   * accepted before this block existed, which is the honest answer.
+   */
+  const { data: documents, error: documentsError } = await admin
     .from("documents")
     .select("kind, status, issued_on, expires_on, reviewed_at")
     .eq("freelancer_id", freelancerId)
@@ -181,14 +195,16 @@ export async function acceptShift(shiftId: string, freelancerId: string): Promis
        * upload is not evidence of anything, and listing it would suggest the
        * facility engaged somebody on a document that had not been accepted.
        */
-      documents: (documents ?? [])
-        .filter((doc) => doc.status === "approved")
-        .map((doc) => ({
-          kind: doc.kind,
-          issued_on: doc.issued_on,
-          expires_on: doc.expires_on,
-          reviewed_at: doc.reviewed_at,
-        })),
+      documents: documentsError
+        ? undefined
+        : (documents ?? [])
+            .filter((doc) => doc.status === "approved")
+            .map((doc) => ({
+              kind: doc.kind,
+              issued_on: doc.issued_on,
+              expires_on: doc.expires_on,
+              reviewed_at: doc.reviewed_at,
+            })),
     },
     fee: {
       /*

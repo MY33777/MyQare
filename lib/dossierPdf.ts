@@ -33,6 +33,14 @@ function guardText(doc: PDFKit.PDFDocument): void {
 }
 
 /** One approved document, as at the moment the shift was accepted. */
+/**
+ * The tallest an entry gets, in points, with room to spare.
+ *
+ * Measured at 161pt for a two-document entry; 200 leaves headroom for a longer
+ * document list and a wrapped facility name without another round of arithmetic.
+ */
+const ENTRY_HEIGHT = 200;
+
 export type DossierDocument = {
   kind: string;
   issuedOn: string | null;
@@ -74,6 +82,22 @@ export type DossierEntry = {
    * documents at that moment. Those are different facts and the document says so.
    */
   documents: DossierDocument[] | null;
+  /*
+   * Whether the work actually happened.
+   *
+   * A cancelled assignment printed here as a full evidence entry — name, date,
+   * duration, rate, papers — with nothing saying the shift was never worked. And
+   * because assignments_shift_id_active_idx is a PARTIAL unique index (`where
+   * status <> 'cancelled'`) and cancel_assignment reopens a future shift, ONE
+   * night can carry two compliance records. The dossier printed both, so an
+   * inspector asking "who worked ward X on 14 August" was handed two names and no
+   * way to tell which.
+   *
+   * Kept rather than filtered out: that somebody accepted and then could not go
+   * is part of the record, and a dossier that quietly drops rows is a dossier
+   * somebody can accuse of being edited. It just has to say so.
+   */
+  cancelled: boolean;
   startsAt: string;
   endsAt: string;
   minutes: number;
@@ -177,12 +201,27 @@ export function renderDossierPdf(input: DossierInput): Promise<Buffer> {
       /*
        * A page break mid-entry would split one assignment's evidence across two
        * pages, which is exactly the kind of thing that makes a reader doubt a
-       * document. 150pt is comfortably more than the tallest entry below.
+       * document.
+       *
+       * Measured against the bottom MARGIN, not the page height, and against the
+       * entry's real height. The old test compared `doc.y` to
+       * `page.height - 150`, which with a 45pt bottom margin guarantees only
+       * 105pt of usable space — while the entry grew to twelve lines when
+       * "Documenten bij aanvang" was added. Rendering eight typical entries put
+       * roughly one in three across a boundary, with the compliance statements on
+       * one page and the name they belong to on the previous one.
+       *
+       * ENTRY_HEIGHT is deliberately generous. Reserving too much costs a page
+       * break that was not strictly needed; reserving too little costs the
+       * document its credibility.
        */
-      if (doc.y > doc.page.height - 150) doc.addPage();
+      if (doc.y > doc.page.height - doc.page.margins.bottom - ENTRY_HEIGHT) doc.addPage();
 
       doc.fontSize(11).font("Helvetica-Bold").fillColor("#000000");
-      doc.text(`${index + 1}. ${entry.freelancerName} — ${entry.qualification}`);
+      doc.text(
+        `${index + 1}. ${entry.freelancerName} — ${entry.qualification}` +
+          (entry.cancelled ? "  (geannuleerd — niet gewerkt)" : ""),
+      );
 
       doc.fontSize(9).font("Helvetica").fillColor("#333333");
 
@@ -228,6 +267,18 @@ export function renderDossierPdf(input: DossierInput): Promise<Buffer> {
               return detail ? `${label} (${detail})` : label;
             })
             .join(" · "),
+        );
+      }
+
+      /*
+       * Said twice, in the heading and here. The heading is what a reader scans;
+       * this line is what they read when they stop. On the one question this
+       * document exists to answer, saying it once is not enough.
+       */
+      if (entry.cancelled) {
+        line(
+          "Status",
+          "Geannuleerd — deze dienst is aangenomen maar niet gewerkt. Geen factuur, geen uren.",
         );
       }
 

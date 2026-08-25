@@ -402,3 +402,41 @@ describe("SETUP.md describes the schema it ships with", () => {
     }
   });
 });
+
+/*
+ * The claim that justifies the most destructive statement in the product.
+ *
+ * anonymise_account deletes every documents row, and the comment above it — in
+ * functions.sql and in migrations 029, 030 and 032 — argues that is safe because
+ * the Wkkgz evidence is rendered from the acceptance snapshot instead. It names
+ * two surfaces and asserts "lib/dossierPdf.test.ts fails if either stops".
+ *
+ * Only one of those was true. dossierPdf.test.ts renders the PDF and reads its
+ * text; nothing anywhere read the dossier PAGE, so somebody could drop the
+ * column from the screen and npm test would stay green while half the evidence
+ * quietly disappeared for every facility that engaged the erased person.
+ *
+ * A source-level check rather than a render, because the page is a Server
+ * Component that needs a database. It is coarse and it is enough: it fails the
+ * moment the column or its reader is removed, which is the regression the
+ * comment claims is impossible.
+ */
+describe("the dossier screen still renders the document evidence", () => {
+  const page = readFileSync(
+    join(DIR, "..", "app", "zorginstelling", "dossier", "page.tsx"),
+    "utf8",
+  );
+
+  it("has the column anonymise_account's comment says it has", () => {
+    expect(page).toContain("Documenten bij aanvang");
+  });
+
+  it("reads the documents block out of the snapshot", () => {
+    expect(page).toContain("snap?.freelancer?.documents");
+  });
+
+  it("tells an absent capture apart from an empty one", () => {
+    expect(page).toContain("Niet vastgelegd");
+    expect(page).toContain("Geen goedgekeurde documenten");
+  });
+});

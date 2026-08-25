@@ -119,8 +119,9 @@ export default function PrivacyPage() {
             tellen we inlogpogingen, wachtwoordherstel, aanmelden en het opnieuw sturen van een
             bevestigingsmail — zodat één machine die adressen afgaat niet iedereen achter hetzelfde
             adres kan buitensluiten. Bij het contactformulier gebeurt dat niet. Ben je ingelogd,
-            dan tellen we daarnaast per account hoe vaak je een dienst aanneemt, een document
-            uploadt, een dienst plaatst of een collega uitnodigt. Elk adres en elk IP-adres gaat
+            dan tellen we daarnaast per account hoe vaak je een dienst aanneemt en een document
+            uploadt, en per zorginstelling hoe vaak er een dienst wordt geplaatst of een collega
+            wordt uitgenodigd — dat laatste geldt dus voor alle coördinatoren samen. Elk adres en elk IP-adres gaat
             eerst door een eenrichtingsfunctie: in de tabel staat een onleesbare code, geen adres.
             Die tellers worden na twee dagen verwijderd.
           </li>
@@ -201,9 +202,25 @@ export default function PrivacyPage() {
         <p>Wat een ander te zien krijgt, hangt af van de relatie:</p>
         <ul>
           <li>
+            {/*
+              The list was shorter than the screen. /zorginstelling/pool/[id]
+              renders KvK, BIG number (and whether it was checked), the bio and a
+              rating averaged across every facility — none of which appeared here.
+              A disclosure notice under art. 13 AVG that names four of eight
+              fields is not a disclosure notice.
+            */}
             <strong>Een zorginstelling</strong> ziet van haar eigen poolleden de naam, kwalificatie,
-            regio, het minimumtarief en de goedgekeurde documenten. Het telefoonnummer pas zodra er
-            een lopende opdracht is.
+            specialisaties, regio&apos;s, het minimumtarief, een eventuele korte introductie, het
+            KvK-nummer, het BIG-nummer en of dat is gecontroleerd, welke goedgekeurde documenten er
+            zijn en tot wanneer ze geldig zijn, en de beoordeling die je van álle instellingen
+            samen hebt gekregen — als gemiddelde, nooit wie wat gaf. Het telefoonnummer pas zodra er
+            een lopende opdracht is, en het document zélf openen kan pas zodra je een dienst bij hen
+            hebt aangenomen.
+          </li>
+          <li>
+            <strong>Een zorginstelling waar je géén poollid van bent</strong> ziet hetzelfde, maar
+            alleen zolang er een opdracht met hen loopt of heeft gelopen. Bij een regio-brede dienst
+            zie je van hen een aanbod voordat zij iets van jou zien.
           </li>
           <li>
             <strong>Een zorgprofessional</strong> ziet van een instelling de naam, locatie en de
@@ -274,8 +291,12 @@ export default function PrivacyPage() {
             person that no longer names them is not evidence.
           */}
           <strong>Wat wél blijft staan, met je naam erin:</strong> de facturen die op jouw naam zijn
-          uitgegeven, en de dossierrecords van de opdrachten die je hebt gedaan — met de gegevens
-          zoals ze destijds zijn vastgelegd. Dat is bewust. Een factuur zonder leverancier voldoet
+          uitgegeven, de dossierrecords van de opdrachten die je hebt gedaan — met de gegevens
+          zoals ze destijds zijn vastgelegd — en, als wij ooit iets aan je account hebben gedaan
+          (een document beoordeeld, een BIG-nummer gecontroleerd, dit verzoek uitgevoerd), de
+          regel daarover in ons interne handelingslogboek, met de naam die je toen had. Dat laatste
+          is alleen zichtbaar voor MyQare-beheerders en bestaat zodat achteraf te zien is wie welk
+          besluit nam. Dat is bewust. Een factuur zonder leverancier voldoet
           niet aan de wet (art. 35a Wet OB), en een zorginstelling moet onder de Wkkgz kunnen laten
           zien wíe er gewerkt heeft en dat zijn papieren waren gecontroleerd. Die records zijn
           daarmee ook het bewijs van de instelling over zichzelf, en niet alleen gegevens over jou.

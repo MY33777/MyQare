@@ -459,6 +459,34 @@ create table if not exists invoices (
   -- current profile settings.
   vat_treatment text not null check (vat_treatment in ('exempt_medical', 'standard_21', 'undetermined')),
   vat_note text,
+  /*
+   * THE PARTIES, AS AT THE MOMENT OF ISSUE.
+   *
+   * art. 35a Wet OB requires the supplier's and the customer's name and address
+   * on the invoice, and both used to be read live at render time — from
+   * invoice_settings and organisations. That made an issued invoice depend on two
+   * rows that can be edited, and on one that anonymisation deletes.
+   *
+   * It also made migration 028's justification for deleting invoice_settings
+   * false ("an issued invoice carries its own copy of what it needed"), which
+   * forced 030 to refuse erasure while any invoice was unsent — a refusal a third
+   * party could hold open forever. See migration 032.
+   *
+   * Nullable, because invoices issued before 032 have no snapshot; the renderer
+   * falls back to the live rows for those, which is what they always did.
+   */
+  supplier_name text,
+  supplier_address_line text,
+  supplier_postcode text,
+  supplier_city text,
+  supplier_vat_number text,
+  supplier_iban text,
+  supplier_account_holder text,
+  customer_name text,
+  customer_address_line text,
+  customer_postcode text,
+  customer_city text,
+  customer_kvk text,
   pdf_path text,
   sent_at timestamptz,
   paid_at timestamptz,

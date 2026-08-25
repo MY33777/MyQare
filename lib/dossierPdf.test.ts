@@ -16,6 +16,7 @@ function entry(overrides: Partial<DossierEntry> = {}): DossierEntry {
     kvk: "12345678",
     bigNumber: "91234567890",
     bigVerifiedAt: "2026-06-01",
+    cancelled: false,
     documents: [
       { kind: "vog", issuedOn: "2026-01-10", expiresOn: "2029-01-10", reviewedAt: "2026-01-12" },
       { kind: "diploma", issuedOn: null, expiresOn: null, reviewedAt: "2026-01-12" },
@@ -263,5 +264,48 @@ describe("the documents the facility had accepted", () => {
 
     expect(text).toContain("niet vastgelegd voor deze opdracht");
     expect(text).not.toContain("geen goedgekeurde documenten op dat moment");
+  });
+});
+
+/*
+ * A cancelled assignment is part of the record and must say so.
+ *
+ * It printed as a full evidence entry — name, date, duration, rate, papers — with
+ * nothing marking it. And because the active-assignment index is partial and
+ * cancel_assignment reopens a future shift, one night can carry two compliance
+ * records: the dossier listed two people for one shift and no way to tell which
+ * of them worked it.
+ */
+describe("a cancelled assignment", () => {
+  it("is marked in the heading and stated as a line", async () => {
+    const text = extractPdfText(await renderDossierPdf(dossier([entry({ cancelled: true })])));
+
+    expect(text).toContain("(geannuleerd — niet gewerkt)");
+    expect(text).toContain("aangenomen maar niet gewerkt");
+  });
+
+  it("says nothing of the kind for work that went ahead", async () => {
+    const text = extractPdfText(await renderDossierPdf(dossier([entry()])));
+
+    expect(text).not.toContain("geannuleerd");
+    expect(text).not.toContain("Geannuleerd");
+  });
+
+  /*
+   * The two-names-for-one-night case, which is the one an inspector notices.
+   */
+  it("distinguishes the two records a reopened shift produces", async () => {
+    const text = extractPdfText(
+      await renderDossierPdf(
+        dossier([
+          entry({ freelancerName: "A. Bakker", cancelled: true }),
+          entry({ freelancerName: "C. de Wit" }),
+        ]),
+      ),
+    );
+
+    expect(text).toContain("A. Bakker — Verzorgende IG  (geannuleerd — niet gewerkt)");
+    expect(text).toContain("C. de Wit — Verzorgende IG");
+    expect(text.match(/geannuleerd/g)?.length).toBe(1);
   });
 });

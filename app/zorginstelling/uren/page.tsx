@@ -60,6 +60,7 @@ export default async function TimesheetsPage({
     uninvoiced?: string;
     /** How many invoices were made and numbered but could not be sent. */
     undelivered?: string;
+  held?: string;
     invoiced?: string;
     disputed?: string;
     rated?: string;
@@ -241,6 +242,20 @@ export default async function TimesheetsPage({
         and they would have it shortly — neither of which was true, and neither
         of which anything in the product was going to make true.
       */}
+      {/*
+        Made, numbered, and waiting on the freelancer to release it. Said plainly,
+        because the facility's own payables list filters on sent_at and will not
+        show these — so silence here turns into a phone call.
+      */}
+      {params.approved && Number(params.held) > 0 ? (
+        <FormMessage kind="ok">
+          {Number(params.held) > 1
+            ? `${params.held} facturen zijn opgemaakt en wachten nog op de zorgprofessional`
+            : "De factuur is opgemaakt en wacht nog op de zorgprofessional"}
+          {" — zij kijkt hem eerst na en verstuurt hem zelf. Je ziet hem in je factuuroverzicht zodra dat gebeurd is."}
+        </FormMessage>
+      ) : null}
+
       {params.approved && params.undelivered ? (
         <FormMessage kind="warn">
           {Number(params.undelivered) > 1

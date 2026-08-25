@@ -207,6 +207,39 @@ const MESSAGES: Record<string, string> = {
     "Deze bevestigingslink is verlopen of al gebruikt. Vraag hieronder een nieuwe aan — " +
     "als je account al bevestigd is, kun je gewoon inloggen.",
 
+  /*
+   * One code, five completely different limits.
+   *
+   * MESSAGES.rate_limited is written for the sign-in limiter and its comment says
+   * so — it names a fifteen-minute window over failed attempts and offers a
+   * password reset. Four in-app actions with their own buckets redirected with
+   * the same code: uploading a document (20 per 24 hours), accepting a shift (30
+   * per 5 minutes), posting a shift (40 per hour) and inviting a colleague (20
+   * per hour). None counts failures, none has a fifteen-minute window, and none
+   * is fixable by resetting a password.
+   *
+   * A freelancer who re-uploads papers after a rejection and spends her budget
+   * was told nothing failed had failed, to wait a quarter of an hour that changes
+   * nothing, and to consider resetting her password. She cannot upload the VOG a
+   * facility is waiting on and has no way to learn why.
+   */
+  rate_limited_upload:
+    "Je hebt vandaag veel documenten geüpload. Probeer het morgen weer — of neem contact op als " +
+    "het dringend is, dan helpen we je verder.",
+
+  rate_limited_accept:
+    "Je hebt net veel diensten aangenomen of geweigerd. Wacht een paar minuten en probeer het dan opnieuw.",
+
+  rate_limited_shift:
+    "Je hebt dit uur veel diensten geplaatst. Wacht even en probeer het daarna opnieuw; " +
+    "de diensten die al staan blijven gewoon staan.",
+
+  rate_limited_invite:
+    "Je hebt dit uur veel collega's uitgenodigd. Wacht even en probeer het daarna opnieuw.",
+
+  rate_limited_contact:
+    "Je hebt net al een bericht gestuurd. Wacht even voor je er nog een stuurt — we lezen ze allemaal.",
+
   needs_recovery_link:
     "Een nieuw wachtwoord instellen kan alleen via de link uit de herstelmail. " +
     "Vraag er hieronder een aan.",

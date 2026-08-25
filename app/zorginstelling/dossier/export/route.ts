@@ -30,6 +30,7 @@ type Row = {
   /** Everything as it was at acceptance, including the freelancer's name. */
   snapshot: unknown;
   assignments: {
+    status: string;
     agreed_rate_cents: number;
     agreed_break_minutes: number;
     freelancers: { profiles: { full_name: string } | null } | null;
@@ -69,7 +70,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from("compliance_records")
     .select(
-      "assignment_id, model_agreement_version, offered_at, accepted_at, could_decline, substitution_allowed, rate_set_by, declined_other_offers, snapshot, assignments!inner(agreed_rate_cents, agreed_break_minutes, org_id, freelancers(profiles(full_name)), shifts(profession, starts_at, ends_at))",
+      "assignment_id, model_agreement_version, offered_at, accepted_at, could_decline, substitution_allowed, rate_set_by, declined_other_offers, snapshot, assignments!inner(status, agreed_rate_cents, agreed_break_minutes, org_id, freelancers(profiles(full_name)), shifts(profession, starts_at, ends_at))",
     )
     .eq("assignments.org_id", admin.org.id)
     .order("accepted_at", { ascending: true })
@@ -105,11 +106,25 @@ export async function GET(request: NextRequest) {
     query = query.eq("assignments.freelancer_id", freelancerId);
   }
 
-  if (from) {
-    const fromIso = localInputToIso(`${from}T00:00`);
+  /*
+   * A date-only key, or null. Both the filter below and the header at the bottom
+   * read these, so an unparseable value can reach neither.
+   */
+  const dateKey = (value: string | null | undefined): string | null => {
+    if (!value) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const parsed = new Date(`${value}T12:00:00Z`);
+    return Number.isNaN(parsed.getTime()) ? null : value;
+  };
+
+  const fromKey = dateKey(from);
+  const toKey = dateKey(to);
+
+  if (fromKey) {
+    const fromIso = localInputToIso(`${fromKey}T00:00`);
     if (fromIso) query = query.gte("accepted_at", fromIso);
   }
-  if (to) {
+  if (toKey) {
     /*
      * Exclusive start of the NEXT day, which is inclusive of everything on the
      * chosen day without going near a 23:59:59.999 boundary.
@@ -121,7 +136,7 @@ export async function GET(request: NextRequest) {
      * an unhandled 500 on a GET anybody can type, on the route that produces the
      * document a facility hands an inspector.
      */
-    const parts = to.split("-").map(Number);
+    const parts = toKey.split("-").map(Number);
     const valid = parts.length === 3 && parts.every((n) => Number.isFinite(n));
 
     if (valid) {
@@ -261,6 +276,7 @@ type Snapshot = {
         rateSetBy: row.rate_set_by,
         declinedOtherOffers: row.declined_other_offers,
         modelAgreementVersion: row.model_agreement_version,
+        cancelled: assignment.status === "cancelled",
       };
     });
 
@@ -268,8 +284,18 @@ type Snapshot = {
     facilityName: admin.org.name,
     facilityKvk: admin.org.kvk,
     generatedAt: new Date(),
-    periodFrom: from,
-    periodTo: to,
+    /*
+     * The VALIDATED dates, not the raw query string.
+     *
+     * Round 11 fixed the arithmetic that builds the filter and left the same
+     * unparsed value going into the header, which renderDossierPdf formats. So
+     * ?to=x still produced an unhandled RangeError — a 500 on a GET anybody can
+     * type, on the route that produces the document a facility hands an
+     * inspector. Guarding one of the two consumers of a value is not guarding the
+     * value.
+     */
+    periodFrom: fromKey,
+    periodTo: toKey,
     // Says so when the cap bit, rather than letting a partial document pass as
     // a complete one.
     truncatedAt: entries.length >= DOSSIER_CAP ? DOSSIER_CAP : null,

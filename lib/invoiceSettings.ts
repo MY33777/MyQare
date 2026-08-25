@@ -202,3 +202,29 @@ export function formatIban(value: string | null | undefined): string {
   const compact = value.replace(/\s+/g, "").toUpperCase();
   return compact.replace(/(.{4})/g, "$1 ").trim();
 }
+
+/** The customer half of art. 35a: which of the facility's details are missing. */
+export type MissingFacilityField = "address_line" | "postcode" | "city";
+
+/**
+ * What the CUSTOMER's side of an invoice is missing.
+ *
+ * art. 35a Wet OB requires the name and address of both parties. This codebase
+ * enforced the supplier half through missingInvoiceFields and printed the
+ * customer half only `if (...)` — so a facility that never filled in an address
+ * received invoices with a "Factuuradres" heading and nothing under it, which it
+ * cannot deduct, under numbers spent from a sequence that cannot be reissued.
+ *
+ * The KvK number is NOT required. art. 35a asks for the customer's name and
+ * address; a KvK number is useful and the form asks for it, but refusing to
+ * invoice over a field the law does not require would block real work.
+ */
+export function missingFacilityFields(
+  facility: { address_line?: string | null; postcode?: string | null; city?: string | null } | null,
+): MissingFacilityField[] {
+  const missing: MissingFacilityField[] = [];
+  if (!facility?.address_line?.trim()) missing.push("address_line");
+  if (!facility?.postcode?.trim()) missing.push("postcode");
+  if (!facility?.city?.trim()) missing.push("city");
+  return missing;
+}

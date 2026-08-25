@@ -68,7 +68,27 @@ export function parseEurosToCents(input: string): number | null {
         ? cleaned.replace(/\./g, "").replace(",", ".")
         : cleaned.replace(/,/g, "");
   } else if (lastComma >= 0) {
-    normalised = cleaned.replace(",", ".");
+    /*
+     * A LONE separator followed by exactly three digits is thousands, not cents.
+     *
+     * With one separator this always treated it as the decimal point, so "5.000"
+     * — the format this product's own screens print, via formatEuros — parsed as
+     * € 5,00. A freelancer reading the hint "maximaal € 5.000,00" and typing
+     * "5.000" got a Stripe checkout for five euros, passed both the MIN and MAX
+     * guards on the way through, and ended up with a balance that still could not
+     * cover the shift she topped up for. "2.500" was worse: it became € 2,50 and
+     * was refused as below the minimum, telling somebody who asked for two and a
+     * half thousand euros that the lowest amount is € 5,00.
+     *
+     * Three digits is the whole test. A cent count has one or two; "1,5" is one
+     * and a half euros and stays that way. Anything else — "1.2345" — is not a
+     * number a person types on purpose, and the pattern check below rejects it.
+     */
+    normalised = /,\d{3}$/.test(cleaned)
+      ? cleaned.replace(/,/g, "")
+      : cleaned.replace(",", ".");
+  } else if (lastDot >= 0) {
+    normalised = /\.\d{3}$/.test(cleaned) ? cleaned.replace(/\./g, "") : cleaned;
   } else {
     normalised = cleaned;
   }

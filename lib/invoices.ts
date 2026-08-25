@@ -3,8 +3,10 @@ import { assertInvoiceable, invoiceAmounts } from "@/lib/vat";
 import { nextInvoiceNumber } from "@/lib/invoiceNumber";
 import {
   getInvoiceSettings,
+  missingFacilityFields,
   missingInvoiceFields,
   formatIban,
+  type MissingFacilityField,
   type MissingField,
 } from "@/lib/invoiceSettings";
 import { addDaysToDateKey, amsterdamDateKey, amsterdamYear } from "@/lib/timezone";
@@ -43,10 +45,18 @@ export type InvoiceOutcome =
         | "not_approved"
         | "number_race"
         | "invoice_details_missing"
+        /*
+         * The CUSTOMER half of art. 35a. Its own reason, not folded into the one
+         * above, because the two are fixed by different people on different
+         * screens: the supplier half is the freelancer's Facturatie page, this is
+         * the facility's Instellingen page. A message telling the wrong one of
+         * them to go and fill something in is worse than no message.
+         */
+        | "facility_details_missing"
         | "unknown";
       detail?: string;
       /** Which legally required fields are blank, for a message that names them. */
-      missing?: MissingField[];
+      missing?: MissingField[] | MissingFacilityField[];
     };
 
 /**
@@ -58,7 +68,30 @@ export type InvoiceOutcome =
  * (see lib/vat.ts). Bundling the two would mean a VAT question no one has
  * answered yet also blocks the fee settlement.
  */
+/**
+ * The whole of invoicing, wrapped so it can only ever RETURN.
+ *
+ * Every caller — both approval paths and the freelancer's own button — is a
+ * Server Action that reports a per-row outcome, and each was written against a
+ * result type. A throw escaping this function bypasses all of that: the bulk loop
+ * dies mid-batch with fees settled and invoices already sent, no counter is
+ * written, no revalidate runs, and the coordinator gets the generic error
+ * boundary with no idea which of the twelve went through.
+ *
+ * That became reachable when getInvoiceSettings started throwing. The throw is
+ * right — a settings read failure must never quietly produce an invoice with no
+ * supplier address — and turning it into an outcome is THIS function's job.
+ */
 export async function createInvoiceForAssignment(assignmentId: string): Promise<InvoiceOutcome> {
+  try {
+    return await createInvoiceForAssignmentInner(assignmentId);
+  } catch (cause) {
+    console.error(`[invoice] assignment ${assignmentId} threw: ${String(cause)}`);
+    return { ok: false, reason: "unknown" };
+  }
+}
+
+async function createInvoiceForAssignmentInner(assignmentId: string): Promise<InvoiceOutcome> {
   const admin = getSupabaseAdmin();
 
   const { data: assignment } = await admin
@@ -164,6 +197,27 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
   }
 
   /*
+   * AND THE CUSTOMER'S ADDRESS. art. 35a Wet OB names both parties.
+   *
+   * The gate above inspects the freelancer's invoice_settings only. This function
+   * reads the organisation's address in the same statement and never looked at
+   * it — and organisations.address_line, postcode and city are nullable,
+   * onboarding never writes them, and the settings form marks only the name
+   * required. So a facility can be verified and fully live with no address at
+   * all, and every invoice raised against it was issued, numbered, rendered and
+   * mailed under the heading "Factuuradres" with nothing but a name beneath it.
+   *
+   * That invoice is not deductible for the facility, the number is spent from a
+   * sequential series that cannot be reissued, and neither party was told. The
+   * asymmetry is the defect: one half of art. 35a was enforced and the other was
+   * printed if present.
+   */
+  const facilityMissing = missingFacilityFields(org);
+  if (facilityMissing.length > 0) {
+    return { ok: false, reason: "facility_details_missing", missing: facilityMissing };
+  }
+
+  /*
    * Calendar dates in Amsterdam, not UTC. An invoice approved at 00:30 local was
    * previously dated the day before, while the PDF beside it printed the Amsterdam
    * date — the document contradicted its own record. On New Year's Eve the number
@@ -253,6 +307,27 @@ export async function createInvoiceForAssignment(assignmentId: string): Promise<
         total_cents: amounts.totalCents,
         vat_treatment: amounts.treatment,
         vat_note: amounts.vatNote,
+        /*
+         * THE PARTIES, COPIED ONTO THE INVOICE. See migration 032.
+         *
+         * Both halves used to be read live at render time, which meant an issued
+         * invoice depended on two editable rows and one that anonymisation
+         * deletes — so a re-render months later could produce a different
+         * document under a number already sent, or one with no supplier details
+         * at all. Written here, an invoice reproduces as issued.
+         */
+        supplier_name: settings.businessName?.trim() || profile?.full_name || null,
+        supplier_address_line: settings.addressLine ?? null,
+        supplier_postcode: settings.postcode ?? null,
+        supplier_city: settings.city ?? null,
+        supplier_vat_number: settings.vatNumber ?? null,
+        supplier_iban: settings.iban ?? null,
+        supplier_account_holder: settings.accountHolder ?? null,
+        customer_name: org?.name ?? null,
+        customer_address_line: org?.address_line ?? null,
+        customer_postcode: org?.postcode ?? null,
+        customer_city: org?.city ?? null,
+        customer_kvk: org?.kvk ?? null,
       })
       .select("id, number")
       .single<{ id: string; number: string }>();
@@ -358,7 +433,7 @@ async function deliverInvoice(
   const { data: invoice, error: readError } = await admin
     .from("invoices")
     .select(
-      "id, number, total_cents, due_on, sent_at, freelancer_id, organisations(name, billing_email), freelancers(profiles(full_name))",
+      "id, number, total_cents, due_on, sent_at, pdf_path, freelancer_id, organisations(name, billing_email), freelancers(profiles(full_name))",
     )
     .eq("id", invoiceId)
     .maybeSingle<{
@@ -367,6 +442,7 @@ async function deliverInvoice(
       total_cents: number;
       due_on: string;
       sent_at: string | null;
+      pdf_path: string | null;
       freelancer_id: string;
       organisations: { name: string; billing_email: string | null } | null;
       freelancers: { profiles: { full_name: string } | null } | null;
@@ -386,6 +462,38 @@ async function deliverInvoice(
    * Facilities route invoices to a shared accounts-payable mailbox, and a document
    * that lands in a coordinator's personal inbox gets paid late.
    */
+  /*
+   * THE DOCUMENT ITSELF, downloaded once and attached to both mails.
+   *
+   * Without this the invoice never leaves MyQare. The mail went to
+   * organisations.billing_email — which the schema and the settings hint both
+   * describe as a shared crediteuren@ mailbox, "not the coordinator who happened
+   * to post the shift" — carrying a sentence saying an invoice exists and a
+   * button to a page behind requireFacilityAdmin. A mailbox has no login. The
+   * bookkeeping got a notice, then a reminder, then a final notice, and never the
+   * invoice; the freelancer's screen said "verstuurd" throughout.
+   *
+   * Best effort. A missing pdf_path or a failed download must not stop the
+   * delivery — the mail still tells them what they owe and where to find it, and
+   * sent_at still moves, which is what stops the reminder cron chasing an invoice
+   * that has in fact arrived.
+   */
+  let pdf: Buffer | null = null;
+
+  if (invoice.pdf_path) {
+    const { data: file, error: fileError } = await admin.storage
+      .from(INVOICE_BUCKET)
+      .download(invoice.pdf_path);
+
+    if (fileError || !file) {
+      console.error(
+        `[invoice] ${invoice.number}: pdf could not be attached: ${fileError?.message ?? "not found"}`,
+      );
+    } else {
+      pdf = Buffer.from(await file.arrayBuffer());
+    }
+  }
+
   const ok = await sendInvoiceEmail({
     to,
     facilityName: invoice.organisations?.name ?? "",
@@ -393,6 +501,7 @@ async function deliverInvoice(
     invoiceNumber: invoice.number,
     totalCents: invoice.total_cents,
     dueOn: invoice.due_on,
+    pdf,
   });
 
   if (!ok) return { ok: false, reason: "send_failed" };
@@ -410,10 +519,29 @@ async function deliverInvoice(
    */
   if (sentError) return { ok: false, reason: "unknown" };
 
-  // The freelancer's own copy, if they asked for one. Failure here is not failure
-  // of the invoice: the document reached the party that has to pay it.
-  const settings = await getInvoiceSettings(invoice.freelancer_id);
-  if (settings.copyToSelf) {
+  /*
+   * The freelancer's own copy, if they asked for one. Failure here is not failure
+   * of the invoice: the document reached the party that has to pay it.
+   *
+   * And that sentence has to be true in the code, not only in this comment.
+   * getInvoiceSettings THROWS on a read error now — deliberately, because
+   * anywhere else a settings read failure would produce an invoice with no
+   * supplier address. Here it is the last, optional step, AFTER the mail has gone
+   * and sent_at is committed, and an uncaught throw at this point unwound the
+   * whole Server Action: in the bulk path it abandoned the rest of the batch with
+   * fees already settled and invoices already sent, and reported none of it.
+   */
+  let settings: Awaited<ReturnType<typeof getInvoiceSettings>> | null = null;
+
+  try {
+    settings = await getInvoiceSettings(invoice.freelancer_id);
+  } catch (cause) {
+    console.error(
+      `[invoice] ${invoice.number}: sent, but the copy-to-self setting could not be read: ${String(cause)}`,
+    );
+  }
+
+  if (settings?.copyToSelf) {
     const { data: user } = await admin.auth.admin.getUserById(invoice.freelancer_id);
     const own = user?.user?.email;
     if (own) {
@@ -424,6 +552,9 @@ async function deliverInvoice(
         invoiceNumber: invoice.number,
         totalCents: invoice.total_cents,
         dueOn: invoice.due_on,
+        pdf,
+        // Her copy, written for her. See sendInvoiceEmail.
+        copyToSelf: true,
       });
     }
   }
@@ -484,6 +615,9 @@ export async function renderAndStoreInvoicePdf(invoiceId: string): Promise<boole
       .select(
         "id, number, issued_on, due_on, minutes_billed, rate_cents, amount_ex_vat_cents, " +
           "vat_rate_bp, vat_amount_cents, total_cents, vat_note, freelancer_id, org_id, " +
+          "supplier_name, supplier_address_line, supplier_postcode, supplier_city, " +
+          "supplier_vat_number, supplier_iban, supplier_account_holder, " +
+          "customer_name, customer_address_line, customer_postcode, customer_city, customer_kvk, " +
           "assignments(shifts(profession, starts_at)), " +
           "freelancers!invoices_freelancer_id_fkey(kvk, big_number, profiles(full_name)), " +
           "organisations(name, kvk, address_line, postcode, city)",
@@ -503,27 +637,44 @@ export async function renderAndStoreInvoicePdf(invoiceId: string): Promise<boole
       // Midday UTC, so neither end of the Amsterdam day lands on the day before.
       issuedOn: new Date(`${invoice.issued_on}T12:00:00Z`),
       dueOn: new Date(`${invoice.due_on}T12:00:00Z`),
+      /*
+       * THE STORED PARTIES FIRST, the live rows only as a fallback.
+       *
+       * Both halves used to be read live, which meant re-rendering an invoice
+       * months later produced a document that did not match the one that was
+       * sent — a different address, a changed trading name, or nothing at all
+       * once the person was anonymised and invoice_settings was deleted. An
+       * invoice is a legal document about a moment; it has to reproduce as
+       * issued. See migration 032.
+       *
+       * The fallback covers everything issued before 032, which had no snapshot
+       * and always behaved this way.
+       */
       freelancer: {
         // The trading name if they gave one — a zzp'er often invoices under a
         // business name that is not their own — otherwise the person's name.
-        name: settings.businessName?.trim() || invoice.freelancers?.profiles?.full_name || "Zorgprofessional",
+        name:
+          invoice.supplier_name ??
+          settings.businessName?.trim() ??
+          invoice.freelancers?.profiles?.full_name ??
+          "Zorgprofessional",
         kvk: invoice.freelancers?.kvk ?? null,
         bigNumber: invoice.freelancers?.big_number ?? null,
         email: null,
-        address: settings.addressLine,
-        postcode: settings.postcode,
-        city: settings.city,
-        vatNumber: settings.vatNumber,
-        iban: formatIban(settings.iban),
-        accountHolder: settings.accountHolder,
+        address: invoice.supplier_address_line ?? settings.addressLine,
+        postcode: invoice.supplier_postcode ?? settings.postcode,
+        city: invoice.supplier_city ?? settings.city,
+        vatNumber: invoice.supplier_vat_number ?? settings.vatNumber,
+        iban: formatIban(invoice.supplier_iban ?? settings.iban),
+        accountHolder: invoice.supplier_account_holder ?? settings.accountHolder,
       },
       paymentNote: settings.paymentNote,
       facility: {
-        name: invoice.organisations?.name ?? "",
-        kvk: invoice.organisations?.kvk ?? null,
-        address: invoice.organisations?.address_line ?? null,
-        postcode: invoice.organisations?.postcode ?? null,
-        city: invoice.organisations?.city ?? null,
+        name: invoice.customer_name ?? invoice.organisations?.name ?? "",
+        kvk: invoice.customer_kvk ?? invoice.organisations?.kvk ?? null,
+        address: invoice.customer_address_line ?? invoice.organisations?.address_line ?? null,
+        postcode: invoice.customer_postcode ?? invoice.organisations?.postcode ?? null,
+        city: invoice.customer_city ?? invoice.organisations?.city ?? null,
       },
       line: {
         description: qualificationLabel(invoice.assignments?.shifts?.profession ?? ""),
@@ -597,6 +748,22 @@ type StoredInvoice = {
   vat_note: string | null;
   freelancer_id: string;
   org_id: string;
+  /*
+   * The parties as at issue. Null on anything issued before migration 032, which
+   * is why every read below falls back to the live row.
+   */
+  supplier_name: string | null;
+  supplier_address_line: string | null;
+  supplier_postcode: string | null;
+  supplier_city: string | null;
+  supplier_vat_number: string | null;
+  supplier_iban: string | null;
+  supplier_account_holder: string | null;
+  customer_name: string | null;
+  customer_address_line: string | null;
+  customer_postcode: string | null;
+  customer_city: string | null;
+  customer_kvk: string | null;
   assignments: { shifts: { profession: string; starts_at: string } | null } | null;
   freelancers: {
     kvk: string | null;

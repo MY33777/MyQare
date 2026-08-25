@@ -110,11 +110,25 @@ export async function setPoolStatusAction(formData: FormData) {
   if (!["member", "star", "hidden"].includes(status)) redirect(`${POOL_PATH}?error=unknown`);
 
   const service = getSupabaseAdmin();
+
+  /*
+   * UPSERT, because the row may not exist yet.
+   *
+   * This was an UPDATE, and an UPDATE that matches nothing returns error:null —
+   * so the redirect below reported success for a write that did nothing. That
+   * became reachable the moment /zorginstelling/pool/[id] started admitting
+   * people who have an assignment but no pool row: somebody hired through a
+   * region-wide shift, for whom the page offers "Toevoegen aan je pool". The
+   * button could not do the one thing it is named after, and said it had.
+   *
+   * onConflict on the composite primary key, so setting a status on somebody who
+   * IS already in the pool still updates rather than colliding.
+   */
   const { error } = await service
     .from("pools")
-    .update({ status })
-    .eq("org_id", admin.org.id)
-    .eq("freelancer_id", freelancerId);
+    .upsert({ org_id: admin.org.id, freelancer_id: freelancerId, status }, {
+      onConflict: "org_id,freelancer_id",
+    });
 
   /*
    * The error was destructured and never read — which is worse than not checking

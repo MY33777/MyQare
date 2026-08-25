@@ -23,7 +23,7 @@ export async function uploadDocumentAction(formData: FormData) {
   // Storage costs money and review costs attention. Twenty a day is far more than
   // anyone legitimately needs and still stops a script filling the bucket.
   const allowed = await checkRateLimit(bucketKey("upload", freelancer.userId), 20, 86_400);
-  if (!allowed) redirect(`${DOCS_PATH}?error=rate_limited`);
+  if (!allowed) redirect(`${DOCS_PATH}?error=rate_limited_upload`);
 
   const file = formData.get("file");
   if (!(file instanceof File)) redirect(`${DOCS_PATH}?error=no_file`);

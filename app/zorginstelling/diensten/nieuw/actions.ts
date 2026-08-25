@@ -46,7 +46,7 @@ export async function createShiftAction(formData: FormData) {
   await saveFormDraft(DRAFT_KEY, formData, NEW_SHIFT_PATH);
 
   const allowed = await checkRateLimit(bucketKey("shift_create", admin.org.id), 40, 3600);
-  if (!allowed) redirect(`${NEW_SHIFT_PATH}?error=rate_limited`);
+  if (!allowed) redirect(`${NEW_SHIFT_PATH}?error=rate_limited_shift`);
 
   const qualification = String(formData.get("qualification") ?? "").trim();
   const startsAt = localInputToIso(String(formData.get("starts_at") ?? ""));

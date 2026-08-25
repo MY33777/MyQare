@@ -29,7 +29,7 @@ export async function submitContactAction(formData: FormData) {
   // Keyed on the sender's address: enough to stop one script hammering the form,
   // without letting one abuser behind a shared IP silence a whole hospital.
   const allowed = await checkRateLimit(bucketKey("contact", email), 5, 3600);
-  if (!allowed) redirect("/contact?error=rate_limited");
+  if (!allowed) redirect("/contact?error=rate_limited_contact");
 
   /*
    * Reports honestly when there is nowhere to send it.

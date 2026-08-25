@@ -102,7 +102,7 @@ export async function inviteColleagueAction(formData: FormData) {
    * organisation inviting forty people in an hour is not onboarding a team.
    */
   const allowed = await checkRateLimit(bucketKey("invite", admin.org.id), 20, 3600);
-  if (!allowed) redirect(`${SETTINGS_PATH}?error=rate_limited`);
+  if (!allowed) redirect(`${SETTINGS_PATH}?error=rate_limited_invite`);
 
   const service = getSupabaseAdmin();
 

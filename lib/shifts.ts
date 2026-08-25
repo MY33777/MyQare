@@ -375,6 +375,27 @@ async function findRecipients(input: NewShift): Promise<string[]> {
         admin
           .from("freelancers")
           .select("profile_id, profession, specialisations, region_codes")
+          /*
+           * THE REGION FILTER RUNS HERE, not in JavaScript.
+           *
+           * freelancers_region_codes_idx is a GIN index whose comment says it is
+           * "read only by the region fan-out" — and the fan-out asked for every
+           * freelancer on the platform and threw away the non-matches in
+           * application code, so the planner never had a predicate to use it on.
+           * A documented index serving nothing, and a walk over the whole table
+           * for every region-wide shift posted.
+           *
+           * `contains` is `region_codes @> ARRAY[code]`, which is exactly what
+           * regionMatches asks in JavaScript and exactly what the index answers.
+           * The QUALIFICATION match stays in application code: it has to look in
+           * two columns with different meanings, and expressing that as SQL would
+           * be the unreadable or-chain the comment above already refuses.
+           *
+           * regionMatches still runs below. It is cheap, it is tested, and having
+           * the authority in one place means a change to the matching rule cannot
+           * silently disagree with the query that feeds it.
+           */
+          .contains("region_codes", [input.regionCode])
           .order("profile_id", { ascending: true })
           .range(from, to)
           .returns<Candidate[]>(),

@@ -530,7 +530,41 @@ function findSelects(source) {
      * columns, which resolves trivially and would read as covered.
      */
     const joined = literals.join("");
-    found.push({ table, select: joined === "" ? null : joined, line });
+
+    /*
+     * And a PARTIAL resolution is not a resolution either.
+     *
+     * `.select("id, name, " + COLUMNS)` yields one literal and drops COLUMNS
+     * entirely — so the fields that were actually going to be sent were never
+     * checked, while the select was counted among those that resolve. Silent
+     * truncation reading as coverage is the failure mode this script exists to
+     * prevent, and it had it about itself.
+     *
+     * An identifier is resolved from the bindings where possible; where it is
+     * not, the whole select goes on the unchecked list. Concatenation is detected
+     * on the `+` between a literal and a name, which is the only form in the repo.
+     */
+    /*
+     * The FIRST argument only. `.select("...", { count: "exact", head: true })`
+     * is a select with an options object, and reading identifiers out of the
+     * whole argument list turned `count`, `exact` and `head` into unresolved
+     * names — which pushed seven perfectly readable selects onto the unchecked
+     * list. A guard that cries wolf gets ignored, which is its own failure.
+     */
+    const firstArg = splitTopLevel(arg)[0] ?? "";
+    const stripped = firstArg.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^\`\\]|\\.)*`/g, "");
+    const names = [...stripped.matchAll(/[A-Za-z_$][\w$]*/g)].map((m) => m[0]);
+    const unresolvedName = names.find((n) => bindings.get(n) === undefined);
+
+    if (names.length > 0 && unresolvedName !== undefined) {
+      found.push({ table, select: null, line });
+      continue;
+    }
+
+    const withNames =
+      names.length > 0 ? joined + ", " + names.map((n) => bindings.get(n)).join(", ") : joined;
+
+    found.push({ table, select: withNames === "" ? null : withNames, line });
   }
 
   return found;
@@ -674,9 +708,27 @@ function walk(parent, select, graph, problems, where) {
   if (known) {
     for (const column of asked) {
       if (known.has(column)) continue;
-      // A relationship can be selected by name without parentheses too; that is
-      // an embed, not a missing column.
-      if (tables.has(column)) continue;
+
+      /*
+       * A relationship can be selected by name without parentheses too — that is
+       * an embed asking for the whole related row, not a missing column.
+       *
+       * This said exactly that and then `continue`d, so it identified what the
+       * field was and checked nothing about it. A bare name that IS a real table
+       * with NO foreign key to the parent passed the column check on this line
+       * and never reached the embed check below, which only sees fields
+       * containing "(". That is the same shape as the invoices→profiles defect
+       * this whole script exists for: PostgREST answers PGRST200 and the entire
+       * query returns null.
+       */
+      if (tables.has(column)) {
+        const bare = resolve(parent, `${column}()`, keys, tables);
+        if (!bare.ok) {
+          problems.push({ ...where, path: `${parent} → ${column}`, why: bare.why });
+        }
+        continue;
+      }
+
       problems.push({
         ...where,
         path: `${parent}.${column}`,

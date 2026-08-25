@@ -36,6 +36,17 @@ type SendInput = {
   body: string[];
   cta?: { label: string; href: string };
   footnote?: string;
+  /**
+   * A document the recipient needs to KEEP, not to look at on a screen.
+   *
+   * The invoice mail had no attachment and a button to /zorginstelling/facturen,
+   * which is behind requireFacilityAdmin. It is sent to organisations.billing_email
+   * — which the schema and the settings form both describe as a shared
+   * crediteuren@ mailbox rather than a person's login. So the bookkeeping received
+   * a notice that an invoice existed and a link they could not open, three times,
+   * escalating to a final notice, while the document itself never left MyQare.
+   */
+  attachment?: { filename: string; content: Buffer };
 };
 
 /**
@@ -109,6 +120,13 @@ async function send(input: SendInput): Promise<boolean> {
       subject: input.subject,
       html,
       text,
+      ...(input.attachment
+        ? {
+            attachments: [
+              { filename: input.attachment.filename, content: input.attachment.content },
+            ],
+          }
+        : {}),
     });
 
     if (error) {
@@ -188,7 +206,40 @@ export async function sendInvoiceEmail(input: {
   invoiceNumber: string;
   totalCents: number;
   dueOn: string;
+  /** The invoice itself. Without it this mail is a notification, not a delivery. */
+  pdf?: Buffer | null;
+  /**
+   * Whether this is the freelancer's own copy.
+   *
+   * The same function sent both, so the freelancer received a message written for
+   * the party that owes the money — subject "Factuur X van <her own name>", body
+   * "<her own name> heeft een factuur opgemaakt", a footnote addressed to the
+   * payer, and a button to /zorginstelling/facturen, which redirects her to
+   * /geen-toegang. That is the first mail she gets after her first shift.
+   */
+  copyToSelf?: boolean;
 }): Promise<boolean> {
+  const attachment = input.pdf ? { filename: `factuur-${input.invoiceNumber}.pdf`, content: input.pdf } : undefined;
+
+  if (input.copyToSelf) {
+    return send({
+      to: input.to,
+      subject: `Je factuur ${input.invoiceNumber} is verstuurd`,
+      heading: `Factuur ${input.invoiceNumber} is de deur uit`,
+      body: [
+        `Je factuur van ${formatEuros(input.totalCents)} voor gewerkte uren bij ${input.facilityName} is verstuurd.`,
+        `${input.facilityName} moet hem voor ${input.dueOn} voldoen. Betaling loopt rechtstreeks tussen jullie; wij innen niets.`,
+        input.pdf
+          ? "De factuur zit als pdf bij dit bericht, zodat je hem meteen in je eigen administratie kunt opbergen."
+          : "De pdf is nog niet klaar — je kunt hem straks downloaden vanaf je factuuroverzicht.",
+      ],
+      cta: { label: "Mijn facturen", href: absoluteUrl("/professional/facturen") },
+      footnote:
+        "Je krijgt deze kopie omdat 'Stuur mij een kopie' aanstaat bij Facturatie. Daar kun je dat uitzetten.",
+      attachment,
+    });
+  }
+
   return send({
     to: input.to,
     subject: `Factuur ${input.invoiceNumber} van ${input.freelancerName}`,
@@ -196,9 +247,18 @@ export async function sendInvoiceEmail(input: {
     body: [
       `${input.freelancerName} heeft een factuur van ${formatEuros(input.totalCents)} opgemaakt voor gewerkte uren bij ${input.facilityName}.`,
       `Te voldoen voor ${input.dueOn}.`,
+      input.pdf
+        ? "De factuur zit als pdf bij dit bericht."
+        : "De pdf volgt zodra hij klaar is; je kunt hem ook downloaden in MyQare.",
     ],
-    cta: { label: "Factuur bekijken", href: absoluteUrl("/zorginstelling/facturen") },
+    /*
+     * The document travels WITH the mail. The button is a convenience for
+     * somebody who happens to have a login, not the delivery mechanism — this
+     * address is usually a shared crediteuren mailbox that has none.
+     */
+    cta: { label: "Bekijk in MyQare", href: absoluteUrl("/zorginstelling/facturen") },
     footnote: `Deze factuur is namens ${input.freelancerName} automatisch opgemaakt via MyQare. MyQare is geen partij bij de opdracht en brengt je niets in rekening.`,
+    attachment,
   });
 }
 
@@ -269,9 +329,17 @@ export async function sendDocumentExpiryEmail(input: {
       : `Je ${input.documentLabel} verloopt vandaag`,
     heading: soon ? "Tijd om dit te vernieuwen" : "Dit document verloopt vandaag",
     body: [
+      /*
+       * The BODY too. The subject and the heading were corrected to "verloopt
+       * vandaag" and this line was left saying the document had already expired,
+       * so one mail contradicted itself in two places — and the facility got a
+       * third version saying it was still valid. A document that expires today is
+       * valid today; telling somebody otherwise invites her to turn down a shift
+       * she is entitled to work.
+       */
       soon
         ? `Je ${input.documentLabel} verloopt op ${input.expiresOn}. Een nieuwe aanvragen duurt vaak weken, dus begin er op tijd aan.`
-        : `Je ${input.documentLabel} is verlopen op ${input.expiresOn}.`,
+        : `Je ${input.documentLabel} verloopt vandaag (${input.expiresOn}). Vandaag kun je nog werken; morgen niet meer.`,
       "Zorginstellingen controleren dit voor hun eigen kwaliteitsverplichting. Een verlopen document betekent meestal dat je geen diensten meer aangeboden krijgt.",
     ],
     cta: { label: "Document vervangen", href: absoluteUrl("/professional/documenten") },

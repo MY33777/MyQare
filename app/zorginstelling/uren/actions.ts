@@ -300,8 +300,33 @@ export async function approveTimesheetsAction(formData: FormData) {
    */
   const undelivered: string[] = [];
 
+  /*
+   * Made, numbered, and deliberately not sent: the freelancer releases it herself.
+   * Its own counter, because "gefactureerd" is a claim the facility can check and
+   * find false.
+   */
+  let held = 0;
+
   for (const id of approvable) {
-    const result = await approveTimesheet(id, admin.userId);
+    /*
+     * One row cannot take the batch down.
+     *
+     * approveTimesheet and createInvoiceForAssignment both return outcomes rather
+     * than throwing, and this belt exists because that is a property of two
+     * functions rather than of the language: anything either of them calls can
+     * still throw, and every row processed before it has already moved money.
+     * Losing one row's outcome is recoverable; losing eleven rows' outcomes while
+     * their fees are settled and their invoices are sent is not.
+     */
+    let result: Awaited<ReturnType<typeof approveTimesheet>>;
+
+    try {
+      result = await approveTimesheet(id, admin.userId);
+    } catch (cause) {
+      console.error(`[uren] approval threw for ${id}: ${String(cause)}`);
+      failed.push("unknown");
+      continue;
+    }
 
     if (!result.ok) {
       failed.push(result.reason);
@@ -330,7 +355,19 @@ export async function approveTimesheetsAction(formData: FormData) {
     const invoice = await createInvoiceForAssignment(id);
 
     if (invoice.ok) {
+      /*
+       * THREE outcomes, not two.
+       *
+       * `held` — the freelancer has auto_send off and releases it herself — fell
+       * into `invoiced++`, so a run of twelve reported "12 urenbriefjes
+       * goedgekeurd en gefactureerd" for twelve invoices the facility does not
+       * have and cannot find: /zorginstelling/facturen filters on sent_at, and so
+       * does the reminder cron. The single-row path and the freelancer's own
+       * button both distinguish this; the bulk path was the one consumer that
+       * never learned it, under a comment claiming both approval paths had.
+       */
       if (invoice.undelivered) undelivered.push(invoice.undelivered);
+      else if (invoice.held) held++;
       else invoiced++;
       continue;
     }
@@ -375,8 +412,17 @@ export async function approveTimesheetsAction(formData: FormData) {
   // facility that is told to expect an invoice and never receives one chases us.
   if (undelivered.length > 0) {
     redirect(
-      `${UREN_PATH}?approved=${approved}&invoiced=${invoiced}&undelivered=${undelivered.length}`,
+      `${UREN_PATH}?approved=${approved}&invoiced=${invoiced}&undelivered=${undelivered.length}&held=${held}`,
     );
+  }
+
+  /*
+   * Held is carried on the success path too. It is not a failure — the freelancer
+   * asked to release her own invoices — but "N goedgekeurd en gefactureerd" is a
+   * claim the facility can check against its own payables list and find false.
+   */
+  if (held > 0) {
+    redirect(`${UREN_PATH}?approved=${approved}&invoiced=${invoiced}&held=${held}`);
   }
 
   redirect(`${UREN_PATH}?approved=${approved}&invoiced=${invoiced}`);

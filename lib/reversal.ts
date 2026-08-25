@@ -117,8 +117,12 @@ export function computeReversal(input: {
 /**
  * The prior movements belonging to one cause.
  *
- * A dispute owns its own reversals AND its restore, so a won-then-reopened
- * dispute nets back to zero and can reverse again. A refund owns every
+ * A dispute owns its own reversals AND EVERY ONE of its restores, so a
+ * won-then-reopened dispute nets back to zero and can reverse again — however
+ * many times the card network reopens it.
+ *
+ * "its restore", singular, is what this said, and it was true only until
+ * restoreKey learned to number them. A refund owns every
  * `:refund:` reversal on the payment, because Stripe reports refunds as one
  * cumulative figure rather than individually.
  */
@@ -137,9 +141,31 @@ function priorForCause(
    */
   if (!causeId) return [];
 
-  return prior.filter(
-    (row) => row.key.includes(`:dispute:${causeId}:`) || row.key.endsWith(`:${causeId}`),
-  );
+  /*
+   * A restore may carry an ordinal, and this could not see one.
+   *
+   * `endsWith(":dp_1")` matches `restored:pi:dp_1` and NOT `restored:pi:dp_1:2`.
+   * restoreKey grew that ordinal one round ago — to fix this exact defect on the
+   * reversal side — and this function was left on the old contract, which is the
+   * same class (f) drift, one function further down the same file. From the third
+   * withdrawal on a single dispute onwards, the netting saw one restore too few,
+   * concluded the cause was settled, and refused to remove money Stripe had
+   * already taken back. The webhook then answered 200, so nothing retried.
+   *
+   * Matched on the restore PREFIX, exactly as computeRestore does, and with the
+   * same boundary: "restored:pi:dp_1" is a prefix of "restored:pi:dp_10", so a
+   * bare startsWith would net one dispute's restores against another's.
+   */
+  const restorePrefix = `restored:`;
+
+  return prior.filter((row) => {
+    if (row.key.includes(`:dispute:${causeId}:`)) return true;
+    if (!row.key.startsWith(restorePrefix)) return false;
+
+    // restored:<pi>:<disputeId>[:<attempt>] — the id is the third segment.
+    const parts = row.key.split(":");
+    return parts.length >= 3 && parts[2] === causeId;
+  });
 }
 
 export type RestoreDecision =

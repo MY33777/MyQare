@@ -19,6 +19,14 @@ export const metadata: Metadata = { title: "Dossier" };
  */
 const DOSSIER_PAGE_CAP = 100;
 
+/**
+ * How many records the EXPORT reads, and therefore how far the person filter
+ * beside it has to see. Kept equal to the export route's own cap on purpose: a
+ * dropdown that offers fewer people than the document can contain is the defect
+ * this constant exists to prevent.
+ */
+const DOSSIER_EXPORT_CAP = 1000;
+
 type DossierRow = {
   assignment_id: string;
   model_agreement_version: string;
@@ -80,17 +88,40 @@ export default async function DossierPage() {
   const dossierFailed = Boolean(recordsError);
 
   /*
-   * Everybody who appears in this dossier, once each.
+   * Everybody who appears in the EXPORTABLE dossier, once each.
    *
-   * Built from the records already on screen rather than from a second query:
-   * the point of the filter is to narrow THIS document, so offering a name that
-   * has no records in it would produce an empty pdf and no explanation. Snapshot
-   * name first, for the same reason the table below uses it — an anonymised
-   * profile must not turn a historical entry into "Onbekend".
+   * This was built from `records` — the newest 100, which is what the table shows
+   * — while the export it feeds reads up to 1000 over the whole history. The
+   * comment justified that as "offering a name that has no records in it would
+   * produce an empty pdf", but the failure that existed was the reverse: a nurse
+   * who last worked here 150 assignments ago was simply absent from the dropdown,
+   * so the only export available was "Iedereen" — a document naming up to a
+   * thousand other people, their KvK and BIG numbers and their papers. Strictly
+   * more personal data than the question asked for, which is the outcome the
+   * filter exists to prevent.
+   *
+   * Its own query, over the same set the export reads, selecting only what a
+   * dropdown needs.
    */
+  const { data: everyone } = await supabase
+    .from("compliance_records")
+    .select("snapshot, assignments!inner(freelancer_id, org_id, freelancers(profiles(full_name)))")
+    .eq("assignments.org_id", org.id)
+    .order("accepted_at", { ascending: false })
+    .limit(DOSSIER_EXPORT_CAP)
+    .returns<
+      {
+        snapshot: unknown;
+        assignments: {
+          freelancer_id: string;
+          freelancers: { profiles: { full_name: string } | null } | null;
+        } | null;
+      }[]
+    >();
+
   const people = [
     ...new Map(
-      (records ?? [])
+      (everyone ?? [])
         .map((record) => {
           const snap = record.snapshot as { freelancer?: { full_name?: string | null } } | null;
           const id = record.assignments?.freelancer_id;
@@ -252,6 +283,16 @@ export default async function DossierPage() {
                   <tr key={record.assignment_id}>
                     <td className="font-medium">
                       {snap?.freelancer?.full_name ?? assignment?.freelancers?.profiles?.full_name ?? "—"}
+                      {/*
+                        The row stays and says what it is. One night can carry two
+                        records — cancel_assignment reopens a future shift and the
+                        active-assignment index is partial — so without this the
+                        table lists two people for one shift and no way to tell
+                        which of them worked it.
+                      */}
+                      {assignment?.status === "cancelled" ? (
+                        <span className="badge badge-danger ml-2">Geannuleerd</span>
+                      ) : null}
                     </td>
                     <td>
                       {qualificationLabel(

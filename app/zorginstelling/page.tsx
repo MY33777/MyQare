@@ -89,6 +89,7 @@ export default async function FacilityDashboard() {
   const checklist = facilityChecklist({
     verified: Boolean(org.verified_at),
     hasBillingEmail: Boolean(org.billing_email),
+    hasBillingAddress: Boolean(org.address_line && org.postcode && org.city),
     poolCount: poolCount ?? 0,
     shiftCount: shiftTotal ?? 0,
     assignmentCount: 0,

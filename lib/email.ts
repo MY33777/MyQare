@@ -517,3 +517,119 @@ export async function sendColleagueInviteEmail(input: {
     cta: { label: "Account aanmaken", href: absoluteUrl("/registreren") },
   });
 }
+
+/**
+ * A document was rejected, and only she can fix it.
+ *
+ * A rejection is not "in progress" — it is a finished decision that requires her
+ * to act, and it is the thing standing between her and being offered work. It
+ * reached her nowhere: reviewDocumentAction wrote the status and redirected the
+ * REVIEWER, and her dashboard banners only approved documents that have already
+ * lapsed. She would find out by opening a screen she has no reason to open.
+ */
+export async function sendDocumentRejectedEmail(input: {
+  to: string;
+  documentLabel: string;
+  reason: string | null;
+}): Promise<boolean> {
+  return send({
+    to: input.to,
+    subject: `Je ${input.documentLabel} is afgekeurd`,
+    heading: `We konden je ${input.documentLabel} niet goedkeuren`,
+    body: [
+      input.reason?.trim()
+        ? `Reden: ${input.reason.trim()}`
+        : "Er is geen reden bij vermeld. Neem contact met ons op als je niet weet wat er mis is.",
+      "Upload een nieuwe versie, dan kijken we er meestal binnen één werkdag opnieuw naar. " +
+        "Zolang dit document ontbreekt, kunnen zorginstellingen je niet inzetten.",
+    ],
+    cta: { label: "Nieuwe versie uploaden", href: absoluteUrl("/professional/documenten") },
+  });
+}
+
+/**
+ * A facility has questioned the hours she submitted.
+ *
+ * The assignment leaves the approval queue and sits still: no fee settled, no
+ * invoice, and she is the only person who can move it. Submitting hours mails the
+ * facility for exactly this reason; the same argument in the other direction
+ * produced nothing, and the only trace was a badge on a screen she has to think
+ * to open.
+ */
+export async function sendTimesheetDisputedEmail(input: {
+  to: string;
+  facilityName: string;
+  reason: string | null;
+  assignmentId: string;
+}): Promise<boolean> {
+  return send({
+    to: input.to,
+    subject: `${input.facilityName} heeft een vraag over je uren`,
+    heading: "Er is een vraag over je ingediende uren",
+    body: [
+      `${input.facilityName} heeft je urenbriefje teruggestuurd met een vraag.`,
+      input.reason?.trim() ? `Wat ze schrijven: "${input.reason.trim()}"` : "Er staat geen toelichting bij.",
+      "Pas je uren aan of neem contact met ze op. Tot dit is opgelost wordt er geen factuur opgemaakt, " +
+        "dus dit is wat er tussen jou en je betaling staat.",
+    ],
+    cta: {
+      label: "Uren bekijken",
+      href: absoluteUrl(`/professional/diensten/${input.assignmentId}`),
+    },
+  });
+}
+
+/**
+ * A confirmed assignment was cancelled, told to whoever did not do the cancelling.
+ *
+ * Nobody was told at all. The facility lost its night cover and found out the
+ * next morning, or when nobody turned up — which is the moment a coordinator
+ * phones an agency instead. The freelancer had kept the evening free.
+ *
+ * Both cancel screens already promise this in their own copy ("Laat het ze zo
+ * vroeg mogelijk weten — ze hebben die dag vrijgehouden"), and /professional says
+ * "verschijnt die hier en krijg je een e-mail".
+ */
+export async function sendAssignmentCancelledEmail(input: {
+  to: string;
+  /** Who is being told, which decides what they need to do next. */
+  audience: "facility" | "freelancer";
+  facilityName: string;
+  freelancerName: string;
+  qualification: string;
+  startsAt: string;
+  endsAt: string;
+  reason: string | null;
+  reopened: boolean;
+}): Promise<boolean> {
+  const when = formatShiftWindow(input.startsAt, input.endsAt);
+
+  if (input.audience === "facility") {
+    return send({
+      to: input.to,
+      subject: `Afgezegd: ${input.qualification} ${when}`,
+      heading: "Een aangenomen dienst is afgezegd",
+      body: [
+        `${input.freelancerName} kan de dienst van ${when} niet doen.`,
+        input.reason?.trim() ? `Reden: ${input.reason.trim()}` : "Er is geen reden bij vermeld.",
+        input.reopened
+          ? "De dienst staat weer open en is opnieuw aangeboden aan iedereen die er eerder voor in aanmerking kwam. Je hoeft hem niet opnieuw te plaatsen."
+          : "De dienst is inmiddels begonnen of voorbij, dus hij is niet opnieuw aangeboden. Neem contact op als je alsnog iemand nodig hebt.",
+      ],
+      cta: { label: "Bekijk de dienst", href: absoluteUrl("/zorginstelling/diensten") },
+    });
+  }
+
+  return send({
+    to: input.to,
+    subject: `Afgezegd: ${input.qualification} ${when}`,
+    heading: `${input.facilityName} heeft deze dienst afgezegd`,
+    body: [
+      `De dienst van ${when} gaat niet door.`,
+      input.reason?.trim() ? `Reden: ${input.reason.trim()}` : "Er is geen reden bij vermeld.",
+      "De bemiddelingsvergoeding is teruggestort op je saldo. Je hebt die avond dus weer vrij — " +
+        "kijk of er ander aanbod staat.",
+    ],
+    cta: { label: "Bekijk het aanbod", href: absoluteUrl("/professional/aanbod") },
+  });
+}

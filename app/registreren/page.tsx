@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { FEE_PERCENT_LABEL } from "@/lib/fees";
 import { AuthShell, FormMessage } from "@/components/AuthShell";
 import { authErrorMessage } from "@/lib/authErrors";
 import { RoleFields } from "./RoleFields";
@@ -30,7 +31,27 @@ export default async function RegisterPage({
       subtitle="Kies waar je account voor is. Dit bepaalt wat je in MyQare ziet."
       footer={
         <>
-          Heb je al een account? <Link href="/login">Inloggen</Link>
+          {/*
+            /registreren is a sibling of app/(public), so PublicHeader and
+            PublicFooter never wrap it — and AuthShell renders the brand as a
+            span, not a link. So the funnel that collects a name, an email
+            address and shortly a phone number and a KvK number presented no
+            terms, no privacy statement, no price and no way back to the site.
+            PublicFooter's own comment claims otherwise ("which is the signup
+            form, which links here"), which is how it stayed unnoticed.
+          */}
+          <p className="mb-3">
+            Aanmelden is gratis. Zorgprofessionals betalen {FEE_PERCENT_LABEL}% van de
+            opdrachtwaarde plus btw wanneer ze een dienst aannemen — verder niets, en
+            zorginstellingen betalen niets. <Link href="/tarieven">Bekijk de tarieven</Link>.
+          </p>
+          <p className="mb-3">
+            Door een account aan te maken ga je akkoord met onze{" "}
+            <Link href="/voorwaarden">voorwaarden</Link> en de{" "}
+            <Link href="/privacy">privacyverklaring</Link>.
+          </p>
+          Heb je al een account? <Link href="/login">Inloggen</Link> · Terug naar{" "}
+          <Link href="/">myqare.nl</Link>
         </>
       }
     >

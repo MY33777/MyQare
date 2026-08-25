@@ -20,9 +20,27 @@ export function Checklist({ steps, next }: { steps: ChecklistStep[]; next: Check
         </span>
       </div>
 
+      {/*
+        "Begin bij X" is an instruction, and it must only appear when X is
+        something they can actually begin.
+
+        nextStep() falls back to the first unfinished step when nothing is
+        actionable, which for a brand-new facility is "account geverifieerd" — so
+        this read "Begin bij account geverifieerd", telling a coordinator to go and
+        do the thing she is waiting on us for. When the next step is one of ours,
+        the honest line is that there is nothing for her to do.
+      */}
       {next ? (
         <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
-          Begin bij <strong>{next.title.toLowerCase()}</strong>.
+          {next.waiting ? (
+            <>
+              Wij zijn aan zet. Je hoeft nu niets te doen — je krijgt bericht zodra dit rond is.
+            </>
+          ) : (
+            <>
+              Begin bij <strong>{next.title.toLowerCase()}</strong>.
+            </>
+          )}
         </p>
       ) : null}
 

@@ -130,7 +130,20 @@ export default async function OrganisationSettingsPage({
             name="address_line"
             type="text"
             defaultValue={full?.address_line ?? ""}
+              required
           />
+            {/*
+              Said here because nothing said it anywhere.
+              missingFacilityFields() refuses to create ANY invoice while these
+              three are blank — art. 35a Wet OB requires the customer's address —
+              and the fields carried no `required`, no hint and no warning, while
+              the setup checklist reported "4 van 4 klaar". The first she heard of
+              it was a banner after approving hours telling her to contact us.
+            */}
+            <p className="hint">
+              Verplicht voor de btw: zonder volledig adres kan er geen geldige factuur naar je
+              worden gestuurd, en blijft goedgekeurd werk onbetaald staan.
+            </p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -144,13 +157,15 @@ export default async function OrganisationSettingsPage({
               name="postcode"
               type="text"
               defaultValue={full?.postcode ?? ""}
+              required
             />
           </div>
           <div>
             <label className="label" htmlFor="city">
               Plaats
             </label>
-            <input className="input" id="city" name="city" type="text" defaultValue={full?.city ?? ""} />
+            <input className="input" id="city" name="city" type="text" defaultValue={full?.city ?? ""}
+              required />
           </div>
         </div>
 

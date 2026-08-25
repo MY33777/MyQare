@@ -1,6 +1,9 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { sendAssignmentCancelledEmail } from "@/lib/email";
+import { facilityCoordinatorEmails, freelancerEmail } from "@/lib/notify";
+import { qualificationLabel } from "@/lib/qualifications";
 import { revalidatePath } from "next/cache";
 import { getSessionUser } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
@@ -38,7 +41,11 @@ export async function cancelAssignmentAction(formData: FormData) {
     .from("assignments")
     // claimed_at, not just approved_at: the existence of a timesheet row is the
     // system's own record that the shift was worked.
-    .select("id, freelancer_id, org_id, status, timesheets(claimed_at, approved_at)")
+    .select(
+      "id, freelancer_id, org_id, status, timesheets(claimed_at, approved_at), " +
+        // Everything the notification below needs, in the read that already runs.
+        "shifts(profession, starts_at, ends_at), organisations(name), freelancers(profiles(full_name))",
+    )
     .eq("id", assignmentId)
     .maybeSingle<{
       id: string;
@@ -46,6 +53,9 @@ export async function cancelAssignmentAction(formData: FormData) {
       org_id: string;
       status: string;
       timesheets: { claimed_at: string | null; approved_at: string | null } | null;
+      shifts: { profession: string; starts_at: string; ends_at: string } | null;
+      organisations: { name: string } | null;
+      freelancers: { profiles: { full_name: string } | null } | null;
     }>();
 
   if (!assignment) redirect("/");
@@ -121,6 +131,60 @@ export async function cancelAssignmentAction(formData: FormData) {
       action: "assignment_cancelled",
       note: reason ? assignmentId + " — " + reason : assignmentId,
     });
+  }
+
+  /*
+   * BOTH SIDES ARE TOLD. Neither was.
+   *
+   * This ended with seven revalidatePath calls and a redirect. cancel_assignment
+   * sets the shift back to 'open' and reopens every offer that was closed when it
+   * filled — so the ward's night cover has silently evaporated, and the
+   * coordinator finds out the next morning or when nobody turns up. That is the
+   * moment she phones an agency instead, and the product gave her no chance to
+   * react while there was still time to fill it.
+   *
+   * The other direction is as bad: a freelancer who kept the evening free is told
+   * nothing. Both cancel screens already promise otherwise in their own copy —
+   * "Laat het ze zo vroeg mogelijk weten, ze hebben die dag vrijgehouden" — and
+   * /professional says "verschijnt die hier en krijg je een e-mail".
+   *
+   * Whoever did the cancelling is not mailed: they were just looking at the
+   * confirmation. Best effort, after the cancellation has already succeeded.
+   */
+  try {
+    const shift = assignment.shifts;
+
+    if (shift) {
+      const reopened = new Date(shift.starts_at).getTime() > Date.now();
+      const facilityName = assignment.organisations?.name ?? "De zorginstelling";
+      const freelancerName = assignment.freelancers?.profiles?.full_name ?? "De zorgprofessional";
+
+      const common = {
+        facilityName,
+        freelancerName,
+        qualification: qualificationLabel(shift.profession),
+        startsAt: shift.starts_at,
+        endsAt: shift.ends_at,
+        reason,
+        reopened,
+      };
+
+      if (!isFacility) {
+        const coordinators = await facilityCoordinatorEmails(assignment.org_id);
+        await Promise.all(
+          coordinators.map((to) =>
+            sendAssignmentCancelledEmail({ ...common, to, audience: "facility" }),
+          ),
+        );
+      }
+
+      if (!isFreelancer) {
+        const to = await freelancerEmail(assignment.freelancer_id);
+        if (to) await sendAssignmentCancelledEmail({ ...common, to, audience: "freelancer" });
+      }
+    }
+  } catch (cause) {
+    console.error(`[cancel] notification not sent for ${assignmentId}: ${String(cause)}`);
   }
 
   revalidatePath(backTo);

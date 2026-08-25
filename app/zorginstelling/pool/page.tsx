@@ -59,28 +59,53 @@ export default async function PoolPage({
       {params.error ? <FormMessage kind="error">{authErrorMessage(params.error)}</FormMessage> : null}
       {params.added ? <FormMessage kind="ok">Toegevoegd aan je pool.</FormMessage> : null}
 
-      <form action={addToPoolAction} className="card p-4 mb-6 flex flex-wrap items-end gap-3">
-        <div className="flex-1 min-w-64">
-          <label className="label" htmlFor="email">
-            Zorgprofessional toevoegen
-          </label>
-          <input
-            className="input"
-            id="email"
-            name="email"
-            type="email"
-            placeholder="e-mailadres van de zzp'er"
-            required
-          />
-          <p className="hint">
-            Zij moeten al een MyQare-account hebben. Nog niet? Stuur ze de uitnodiging om zich aan te
-            melden.
+      {/*
+        The form is not offered while the gate is closed.
+
+        addToPoolAction refuses until the organisation is verified, and so does the
+        policy behind it. Rendering the form anyway meant she typed a colleague's
+        address and was refused afterwards, which is the worst order to find out.
+        And "Mijn pool" is an unconditional nav item, so fixing the dashboard
+        checklist alone would have left this reachable and still broken.
+      */}
+      {!org.verified_at ? (
+        <div className="card p-5 mb-6">
+          <h2 className="font-bold mb-2">Nog even geduld</h2>
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+            Je pool kun je opbouwen zodra we je KvK-inschrijving hebben gecontroleerd — meestal
+            binnen één werkdag. Je krijgt bericht zodra dat rond is; je hoeft nu niets te doen.
           </p>
         </div>
-        <SubmitButton className="btn btn-primary">
-          Toevoegen
-        </SubmitButton>
-      </form>
+      ) : (
+        <form action={addToPoolAction} className="card p-4 mb-6 flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-64">
+            <label className="label" htmlFor="email">
+              Zorgprofessional toevoegen
+            </label>
+            <input
+              className="input"
+              id="email"
+              name="email"
+              type="email"
+              placeholder="e-mailadres van de zzp'er"
+              required
+            />
+            {/*
+              "Stuur ze de uitnodiging" named an action that does not exist: there
+              is no invite-a-freelancer path anywhere in the product. The invite
+              flow on /zorginstelling/instellingen is for COLLEAGUES at the same
+              facility, which is a different thing entirely.
+            */}
+            <p className="hint">
+              Zij moeten al een MyQare-account hebben. Nog niet? Vraag ze zich aan te melden op
+              myqare.nl — zodra dat is gebeurd kun je ze hier toevoegen.
+            </p>
+          </div>
+          <SubmitButton className="btn btn-primary">
+            Toevoegen
+          </SubmitButton>
+        </form>
+      )}
 
       {/*
         What the three states actually DO, said on the screen that sets them.

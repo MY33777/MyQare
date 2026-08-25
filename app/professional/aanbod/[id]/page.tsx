@@ -44,10 +44,10 @@ export default async function OfferDetailPage({
 }: {
   // Both are Promises in Next 16.
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; topup?: string }>;
 }) {
   const { id } = await params;
-  const { error: errorCode } = await searchParams;
+  const { error: errorCode, topup } = await searchParams;
   const { userId } = await requireFreelancer(`/professional/aanbod/${id}`);
 
   const supabase = await createClient();
@@ -283,13 +283,47 @@ export default async function OfferDetailPage({
         ) : alreadyStarted ? (
           <FormMessage kind="error">Deze dienst is inmiddels begonnen.</FormMessage>
         ) : balance < fee.feeTotalCents ? (
+          /*
+           * SHE HAS JUST PAID, and this said she was short.
+           *
+           * startTopupAction sends her back here with ?topup=success, and this
+           * page did not read the parameter — only /professional/saldo did. So she
+           * returned from iDEAL to the shift with no acknowledgement at all, and
+           * because the balance is credited by the Stripe webhook and not by the
+           * redirect, there is a real race in which she reads "Je komt EUR 7,26
+           * tekort" seconds after money left her account, beside a live link
+           * inviting her to pay again.
+           *
+           * The shortfall wording is only used when she did NOT just pay. When
+           * she did, this says what is actually happening and offers a reload
+           * rather than a second payment.
+           */
+          topup === "success" ? (
+            <FormMessage kind="ok">
+              Betaling ontvangen. Je saldo wordt binnen een paar seconden bijgewerkt — ververs deze
+              pagina en je kunt de dienst aannemen.{" "}
+              <Link href={`/professional/aanbod/${shift.id}`}>Vernieuwen</Link>
+            </FormMessage>
+          ) : (
+            <FormMessage kind="warn">
+              Je komt {formatEuros(fee.feeTotalCents - balance)} tekort voor de
+              bemiddelingsvergoeding, dus aannemen kan nu niet.{" "}
+              <Link href={`/professional/saldo?next=${encodeURIComponent(`/professional/aanbod/${shift.id}`)}`}>
+                Saldo opwaarderen
+              </Link>{" "}
+              — daarna kom je terug op deze dienst.
+            </FormMessage>
+          )
+        ) : topup === "success" ? (
+          // Paid, and the balance has landed. Says so, so the tap she just made
+          // has a visible result rather than a page that looks unchanged.
+          <FormMessage kind="ok">
+            Betaling ontvangen en bijgeschreven. Je kunt de dienst nu aannemen.
+          </FormMessage>
+        ) : topup === "cancelled" ? (
+          // Cancelling a payment is a choice, not a failure. Red would say otherwise.
           <FormMessage kind="warn">
-            Je komt {formatEuros(fee.feeTotalCents - balance)} tekort voor de
-            bemiddelingsvergoeding, dus aannemen kan nu niet.{" "}
-            <Link href={`/professional/saldo?next=${encodeURIComponent(`/professional/aanbod/${shift.id}`)}`}>
-              Saldo opwaarderen
-            </Link>{" "}
-            — daarna kom je terug op deze dienst.
+            Betaling geannuleerd. Er is niets afgeschreven.
           </FormMessage>
         ) : null}
 

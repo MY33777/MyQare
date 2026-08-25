@@ -57,6 +57,13 @@ export type Organisation = {
   name: string;
   kvk: string | null;
   billing_email: string | null;
+  /*
+   * The invoicing address. Required by art. 35a Wet OB and by
+   * missingFacilityFields(), and it was carried nowhere — so the dashboard could
+   * not tell a facility that every invoice against it was impossible.
+   */
+  address_line: string | null;
+  postcode: string | null;
   city: string | null;
   verified_at: string | null;
 };
@@ -171,7 +178,7 @@ export async function requireFacilityAdmin(
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organisations")
-    .select("id, name, kvk, billing_email, city, verified_at")
+    .select("id, name, kvk, billing_email, address_line, postcode, city, verified_at")
     .eq("id", profile.org_id)
     .maybeSingle<Organisation>();
 
@@ -273,7 +280,7 @@ export async function getFacilityAdmin(): Promise<{
 
   const { data: org } = await supabase
     .from("organisations")
-    .select("id, name, kvk, billing_email, city, verified_at")
+    .select("id, name, kvk, billing_email, address_line, postcode, city, verified_at")
     .eq("id", profile.org_id)
     .maybeSingle<Organisation>();
   if (!org) return null;

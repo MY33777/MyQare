@@ -6,7 +6,8 @@ import { getFacilityAdmin } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { approveTimesheet } from "@/lib/assignments";
 import { createInvoiceForAssignment } from "@/lib/invoices";
-import { sendInvoiceBlockedEmail } from "@/lib/email";
+import { sendInvoiceBlockedEmail, sendTimesheetDisputedEmail } from "@/lib/email";
+import { freelancerEmail } from "@/lib/notify";
 import { MISSING_FIELD_LABELS, type MissingField } from "@/lib/invoiceSettings";
 
 const UREN_PATH = "/zorginstelling/uren";
@@ -127,11 +128,12 @@ export async function disputeTimesheetAction(formData: FormData) {
   const service = getSupabaseAdmin();
   const { data: assignment } = await service
     .from("assignments")
-    .select("id, org_id, status, timesheets(approved_at)")
+    .select("id, org_id, status, freelancer_id, timesheets(approved_at)")
     .eq("id", assignmentId)
     .maybeSingle<{
       id: string;
       org_id: string;
+      freelancer_id: string;
       status: string;
       timesheets: { approved_at: string | null } | null;
     }>();
@@ -189,7 +191,31 @@ export async function disputeTimesheetAction(formData: FormData) {
     .eq("id", assignmentId);
   if (statusError) redirect(`${UREN_PATH}?error=unknown`);
 
+  /*
+   * SHE IS TOLD, because she is the only one who can move it.
+   *
+   * A disputed timesheet leaves the approval queue and sits still: no fee
+   * settled, no invoice, no payment. Submitting hours mails the facility for
+   * exactly this reason — unapproved hours delay the freelancer being paid — and
+   * the identical argument pointed the other way produced nothing at all. The
+   * only trace was a badge on a screen she has to think to open.
+   */
+  try {
+    const to = await freelancerEmail(assignment.freelancer_id);
+    if (to) {
+      await sendTimesheetDisputedEmail({
+        to,
+        facilityName: admin.org.name,
+        reason,
+        assignmentId,
+      });
+    }
+  } catch (cause) {
+    console.error(`[uren] dispute mail not sent for ${assignmentId}: ${String(cause)}`);
+  }
+
   revalidatePath(UREN_PATH);
+  revalidatePath("/professional/diensten");
   redirect(`${UREN_PATH}?disputed=1`);
 }
 

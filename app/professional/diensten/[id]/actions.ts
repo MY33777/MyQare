@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getFreelancer } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendTimesheetSubmittedEmail } from "@/lib/email";
+import { facilityCoordinatorEmails } from "@/lib/notify";
 
 /**
  * The freelancer states the hours they actually worked.
@@ -136,20 +137,39 @@ export async function submitTimesheetAction(formData: FormData) {
   try {
     const { data: full } = await service
       .from("assignments")
-      .select("org_id, freelancers(profiles(full_name)), organisations(name, billing_email)")
+      .select("org_id, freelancers(profiles(full_name)), organisations(name)")
       .eq("id", assignmentId)
-      .maybeSingle();
-    const billingEmail = (full as { organisations?: { billing_email?: string | null } } | null)?.organisations?.billing_email;
-    if (billingEmail) {
-      await sendTimesheetSubmittedEmail({
-        to: billingEmail,
-        facilityName: (full as { organisations?: { name?: string } } | null)?.organisations?.name ?? "",
-        freelancerName: (full as { freelancers?: { profiles?: { full_name?: string } | null } } | null)?.freelancers
-            ?.profiles?.full_name ?? "Een zorgprofessional",
-        minutes: totalMinutes - Math.round(breakMinutes),
-        assignmentId,
-      });
-    }
+      .maybeSingle<{
+        org_id: string;
+        freelancers: { profiles: { full_name: string } | null } | null;
+        organisations: { name: string } | null;
+      }>();
+
+    /*
+     * THE COORDINATORS, not the billing mailbox.
+     *
+     * This went to organisations.billing_email — the address the settings form
+     * itself says should be "een gedeelde crediteuren-mailbox, niet je eigen
+     * adres". So the only operational alert in the product, the one saying a
+     * human has to press Goedkeuren, landed in accounts payable, with a button to
+     * a page behind requireFacilityAdmin that an AP clerk cannot open. Nothing
+     * else backstops it: there is no cron for unapproved hours and no badge in
+     * the navigation, so the hours sat until somebody opened the queue on spec.
+     * No approval means no invoice, which means she is not paid.
+     */
+    const recipients = full ? await facilityCoordinatorEmails(full.org_id) : [];
+
+    await Promise.all(
+      recipients.map((to) =>
+        sendTimesheetSubmittedEmail({
+          to,
+          facilityName: full?.organisations?.name ?? "",
+          freelancerName: full?.freelancers?.profiles?.full_name ?? "Een zorgprofessional",
+          minutes: totalMinutes - Math.round(breakMinutes),
+          assignmentId,
+        }),
+      ),
+    );
   } catch {
     // Notification only.
   }

@@ -26,6 +26,12 @@ export type ChecklistStep = {
 export type FacilityState = {
   verified: boolean;
   hasBillingEmail: boolean;
+  /**
+   * Street, postcode and city. Required by art. 35a Wet OB and enforced by
+   * missingFacilityFields() — an invoice cannot be created without them, and
+   * nothing on any screen said so while the checklist reported everything done.
+   */
+  hasBillingAddress: boolean;
   poolCount: number;
   shiftCount: number;
   assignmentCount: number;
@@ -53,7 +59,9 @@ export function facilityChecklist(state: FacilityState): ChecklistStep[] {
       body:
         state.poolCount > 0
           ? `${state.poolCount} ${state.poolCount === 1 ? "zorgprofessional" : "zorgprofessionals"} in je pool.`
-          : "Voeg de zzp'ers toe waar je nu al mee werkt. Zonder pool wordt een dienst aan niemand aangeboden — die komt dan stil te staan.",
+          : state.verified
+            ? "Voeg de zzp'ers toe waar je nu al mee werkt. Zij krijgen je diensten als eerste te zien."
+            : "Zodra je account is geverifieerd kun je hier de zzp'ers toevoegen waar je al mee werkt.",
       href: "/zorginstelling/pool",
       cta: "Pool opbouwen",
       done: state.poolCount > 0,
@@ -63,17 +71,45 @@ export function facilityChecklist(state: FacilityState): ChecklistStep[] {
        * either way. That silent failure is the reason this checklist exists.
        */
       blocking: state.poolCount === 0,
+      /*
+       * WAITING, until verification lands.
+       *
+       * addToPoolAction refuses while the organisation is unverified, and so does
+       * the policy behind it — pool membership grants a facility read access to a
+       * stranger's approved VOG and diploma without her being asked, so that gate
+       * is deliberate and stays.
+       *
+       * This step did not know about it. nextStep() picks the first BLOCKING step
+       * that is not waiting, so a brand-new facility was told "Begin bij
+       * zorgprofessionals in je pool", followed the link, typed the address of
+       * somebody she has worked with for two years, and was refused — by a message
+       * telling her to go and build her pool. Told to do a thing, refused, told
+       * again. That is the moment she rings an agency instead.
+       */
+      waiting: !state.verified,
     },
     {
       key: "billing",
-      title: "Factuuradres ingesteld",
-      body: state.hasBillingEmail
-        ? "Facturen gaan naar je administratie."
-        : "Zonder factuur-e-mailadres kunnen we facturen niet bij je administratie afleveren. Meestal een gedeelde crediteuren-mailbox, niet een persoonlijk adres.",
+      title: "Factuurgegevens compleet",
+      body:
+        state.hasBillingEmail && state.hasBillingAddress
+          ? "Facturen gaan naar je administratie."
+          : !state.hasBillingAddress
+            ? "Vul het adres van je organisatie in. Zonder straat, postcode en plaats kan er geen geldige factuur worden opgemaakt — goedgekeurd werk blijft dan onbetaald staan."
+            : "Zonder factuur-e-mailadres kunnen we facturen niet bij je administratie afleveren. Meestal een gedeelde crediteuren-mailbox, niet een persoonlijk adres.",
       href: "/zorginstelling/instellingen",
-      cta: "Adres instellen",
-      done: state.hasBillingEmail,
-      blocking: false,
+      cta: "Gegevens invullen",
+      done: state.hasBillingEmail && state.hasBillingAddress,
+      /*
+       * BLOCKING, and it was not.
+       *
+       * A missing address does not stop a shift being posted — it stops every
+       * invoice against this facility from ever being created, which surfaces
+       * weeks later as "de factuur kon niet worden opgemaakt, neem contact met
+       * ons op" after hours have already been approved and a fee already charged.
+       * That is the same silent-failure shape the pool step exists for.
+       */
+      blocking: !state.hasBillingAddress,
     },
     {
       key: "shift",
@@ -81,11 +117,16 @@ export function facilityChecklist(state: FacilityState): ChecklistStep[] {
       body:
         state.shiftCount > 0
           ? `${state.shiftCount} ${state.shiftCount === 1 ? "dienst" : "diensten"} geplaatst.`
-          : "Plaats een dienst. De zorgprofessionals in je pool krijgen direct een melding en kunnen aannemen — of weigeren.",
+          : state.verified
+            ? "Plaats een dienst. Wie ervoor in aanmerking komt krijgt direct een melding en kan aannemen — of weigeren."
+            : "Zodra je account is geverifieerd kun je je eerste dienst plaatsen.",
       href: "/zorginstelling/diensten/nieuw",
       cta: "Dienst plaatsen",
       done: state.shiftCount > 0,
       blocking: false,
+      // Same gate, same reason. /diensten/nieuw redirects straight back to the
+      // dashboard while unverified, so pointing at it is a loop of one screen.
+      waiting: !state.verified,
     },
   ];
 }

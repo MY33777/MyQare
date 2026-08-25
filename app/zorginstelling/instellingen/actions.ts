@@ -15,8 +15,27 @@ export async function updateOrganisationAction(formData: FormData) {
 
   const name = String(formData.get("name") ?? "").trim();
   const billingEmail = String(formData.get("billing_email") ?? "").trim().toLowerCase();
+  const addressLine = String(formData.get("address_line") ?? "").trim();
+  const postcode = String(formData.get("postcode") ?? "").trim();
+  const city = String(formData.get("city") ?? "").trim();
 
   if (!name) redirect(`${SETTINGS_PATH}?error=missing_fields`);
+
+  /*
+   * The address, for the same reason the name is required.
+   *
+   * art. 35a Wet OB names both parties, and missingFacilityFields() refuses to
+   * create an invoice without it — so leaving these blank does not fail here, it
+   * fails weeks later as "de factuur kon niet worden opgemaakt" after hours are
+   * approved and a fee is already charged. The fields carried no `required`, no
+   * hint and no warning, and the setup checklist reported everything done.
+   *
+   * Enforced in the action as well as in the markup, so a saved-but-empty
+   * address cannot come back through a direct post.
+   */
+  if (!addressLine || !postcode || !city) {
+    redirect(`${SETTINGS_PATH}?error=facility_details_missing`);
+  }
 
   /*
    * Validated because this is where every invoice is sent. A typo here means the
@@ -33,9 +52,9 @@ export async function updateOrganisationAction(formData: FormData) {
     .update({
       name,
       billing_email: billingEmail || null,
-      address_line: String(formData.get("address_line") ?? "").trim() || null,
-      postcode: String(formData.get("postcode") ?? "").trim() || null,
-      city: String(formData.get("city") ?? "").trim() || null,
+      address_line: addressLine,
+      postcode,
+      city,
       /*
        * KvK is deliberately NOT editable here. It is what a human checked to grant
        * verification, so letting it change afterwards would leave the facility

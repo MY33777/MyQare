@@ -51,7 +51,8 @@ const MESSAGES: Record<string, string> = {
     "tweede account.",
   not_verified:
     "We controleren je KvK-inschrijving nog. Zodra dat rond is — meestal binnen één " +
-    "werkdag — kun je diensten plaatsen. Je kunt intussen wel je pool opbouwen.",
+    "werkdag — kun je diensten plaatsen, je pool opbouwen en collega's uitnodigen. " +
+    "Je hoeft niets te doen: je krijgt bericht zodra het rond is.",
   missing_qualification: "Kies welke kwalificatie deze dienst vraagt.",
   invalid_times: "Vul een geldige begin- en eindtijd in.",
   /*

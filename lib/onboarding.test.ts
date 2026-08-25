@@ -10,6 +10,7 @@ function state(overrides: Partial<FacilityState> = {}): FacilityState {
   return {
     verified: false,
     hasBillingEmail: false,
+    hasBillingAddress: false,
     poolCount: 0,
     shiftCount: 0,
     assignmentCount: 0,
@@ -26,7 +27,7 @@ describe("facilityChecklist", () => {
 
   it("marks everything done once the facility is running", () => {
     const steps = facilityChecklist(
-      state({ verified: true, hasBillingEmail: true, poolCount: 4, shiftCount: 2 }),
+      state({ verified: true, hasBillingEmail: true, hasBillingAddress: true, poolCount: 4, shiftCount: 2 }),
     );
     expect(checklistComplete(steps)).toBe(true);
   });
@@ -58,7 +59,26 @@ describe("facilityChecklist", () => {
   it("treats an empty pool as blocking", () => {
     const pool = facilityChecklist(state({ verified: true })).find((step) => step.key === "pool")!;
     expect(pool.blocking).toBe(true);
-    expect(pool.body).toMatch(/niemand aangeboden/);
+    expect(pool.waiting).toBe(false);
+  });
+
+  /*
+   * And the gate the step did not know about.
+   *
+   * addToPoolAction refuses while the organisation is unverified. This step had
+   * no `waiting` flag, so nextStep() led a brand-new facility straight to a form
+   * the server would refuse — and the refusal told her to build her pool.
+   */
+  it("marks the pool as waiting while verification is pending", () => {
+    const pool = facilityChecklist(state()).find((step) => step.key === "pool")!;
+    expect(pool.waiting).toBe(true);
+    expect(pool.body).toMatch(/geverifieerd/);
+  });
+
+  it("marks posting as waiting while verification is pending", () => {
+    const shift = facilityChecklist(state()).find((step) => step.key === "shift")!;
+    expect(shift.waiting).toBe(true);
+    expect(shift.body).toMatch(/geverifieerd/);
   });
 
   it("stops flagging the pool once it has anyone in it", () => {
@@ -92,12 +112,32 @@ describe("facilityChecklist", () => {
 
 describe("nextStep", () => {
   /*
-   * While unverified there is nothing they can do about posting, so the useful
-   * next action is building the pool — which they can do meanwhile, and which is
-   * the step that otherwise fails silently later.
+   * While unverified there is nothing they can do at all, and saying so is the
+   * honest answer.
+   *
+   * This used to assert "pool", on the stated assumption that building a pool is
+   * something "they can do meanwhile". They cannot: addToPoolAction refuses until
+   * the organisation is verified, and the refusal told them to build their pool.
+   * So the test encoded the false premise and the dead end it produced.
+   *
+   * Only `billing` remains actionable, and onboarding seeds billing_email from
+   * the founder's own address — so for a real new facility this returns null and
+   * the checklist stops recommending anything, which is correct: there is nothing
+   * to do but wait one working day.
    */
-  it("points at the pool while verification is pending", () => {
-    expect(nextStep(facilityChecklist(state()))?.key).toBe("pool");
+  it("does not point at the pool while verification is pending", () => {
+    expect(nextStep(facilityChecklist(state()))?.key).not.toBe("pool");
+  });
+
+  /*
+   * When only we are holding things up, the step it lands on is ours — and
+   * components/Checklist.tsx reads `waiting` to say "wij zijn aan zet" instead of
+   * "begin bij…". What must not happen is landing on a step she cannot act on
+   * while presenting it as her next action.
+   */
+  it("lands on a waiting step when nothing is actionable", () => {
+    const next = nextStep(facilityChecklist(state({ hasBillingEmail: true, hasBillingAddress: true })));
+    expect(next?.waiting).toBe(true);
   });
 
   it("still points at the pool once verified but empty", () => {
@@ -112,7 +152,7 @@ describe("nextStep", () => {
 
   it("ends on posting a shift", () => {
     expect(
-      nextStep(facilityChecklist(state({ verified: true, poolCount: 2, hasBillingEmail: true })))
+      nextStep(facilityChecklist(state({ verified: true, poolCount: 2, hasBillingEmail: true, hasBillingAddress: true })))
         ?.key,
     ).toBe("shift");
   });
@@ -121,7 +161,7 @@ describe("nextStep", () => {
     expect(
       nextStep(
         facilityChecklist(
-          state({ verified: true, hasBillingEmail: true, poolCount: 1, shiftCount: 1 }),
+          state({ verified: true, hasBillingEmail: true, hasBillingAddress: true, poolCount: 1, shiftCount: 1 }),
         ),
       ),
     ).toBeNull();

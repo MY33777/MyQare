@@ -5,6 +5,9 @@ import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth";
 import type { Capability } from "@/lib/permissions";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { sendDocumentRejectedEmail } from "@/lib/email";
+import { freelancerEmail } from "@/lib/notify";
+import { DOCUMENT_KIND_LABELS, type DocumentKind } from "@/lib/documents";
 
 /**
  * Confirms staff before any of these run.
@@ -152,7 +155,7 @@ export async function reviewDocumentAction(formData: FormData) {
     redirect("/beheer/documenten?error=unknown");
   }
 
-  const { error: docError } = await getSupabaseAdmin()
+  const { data: document, error: docError } = await getSupabaseAdmin()
     .from("documents")
     .update({
       status,
@@ -160,13 +163,41 @@ export async function reviewDocumentAction(formData: FormData) {
       reviewed_at: new Date().toISOString(),
       review_note: note,
     })
-    .eq("id", documentId);
+    .eq("id", documentId)
+    // Selected back so the rejection can be told to the person it is about.
+    .select("freelancer_id, kind")
+    .maybeSingle<{ freelancer_id: string; kind: string }>();
 
   // The queue is driven by status = 'pending'. A failed write leaves the document
   // in it, so the reviewer sees the same one again and assumes they misclicked —
   // or, worse, approves a second time against a row that never moved.
   if (docError) redirect("/beheer/documenten?error=unknown");
 
+  /*
+   * SHE IS TOLD. Nothing reached her before this.
+   *
+   * A rejection is not "in progress" — it is a finished decision that only she
+   * can act on, and it is the thing standing between her and being offered work.
+   * The dashboard banners approved documents that have lapsed and deliberately
+   * skips this case, so the only trace was a status on a screen she has no reason
+   * to open. Best effort: the review itself stands either way.
+   */
+  if (status === "rejected" && document) {
+    try {
+      const to = await freelancerEmail(document.freelancer_id);
+      if (to) {
+        await sendDocumentRejectedEmail({
+          to,
+          documentLabel: DOCUMENT_KIND_LABELS[document.kind as DocumentKind] ?? "document",
+          reason: note,
+        });
+      }
+    } catch (cause) {
+      console.error(`[beheer] rejection mail not sent for ${documentId}: ${String(cause)}`);
+    }
+  }
+
   revalidatePath("/beheer/documenten");
+  revalidatePath("/professional/documenten");
   redirect("/beheer/documenten?saved=1");
 }

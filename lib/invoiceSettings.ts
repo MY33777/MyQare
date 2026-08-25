@@ -99,15 +99,35 @@ function fromRow(row: Row): InvoiceSettings {
  * Never returns null. A missing row means "has not customised anything", which is
  * a legitimate state and not an error — the backfill in migration 010 covers
  * existing accounts and this covers everyone created after it.
+ *
+ * A FAILED READ IS NOT THAT STATE, and this used to treat it as though it were.
+ * The error was discarded and DEFAULT_SETTINGS returned, which is indistinguishable
+ * from a freelancer who has filled nothing in. createInvoiceForAssignment survived
+ * that, because empty defaults trip missingInvoiceFields and it refuses — but
+ * renderAndStoreInvoicePdf calls this for the party details it PRINTS, and
+ * lib/invoicePdf.ts prints each of them only `if (...)`. So a dropped connection
+ * at the wrong second produced a PDF with no supplier address, no btw-id and no
+ * payment instruction, uploaded it, stored the path and returned true, and
+ * deliverInvoice mailed it: an invoice that fails art. 35a Wet OB, under a number
+ * already issued, with no route back — regenerateInvoicePdfAction refuses once
+ * pdf_path is set. Nothing on either screen said anything was wrong.
+ *
+ * Throwing is right here rather than returning a flag. Every caller is either
+ * creating or rendering an invoice, and there is no version of either that should
+ * proceed on settings nobody managed to read.
  */
 export async function getInvoiceSettings(profileId: string): Promise<InvoiceSettings> {
-  const { data } = await getSupabaseAdmin()
+  const { data, error } = await getSupabaseAdmin()
     .from("invoice_settings")
     .select(
       "profile_id, auto_send, number_prefix, number_start, payment_term_days, iban, account_holder, business_name, address_line, postcode, city, vat_number, payment_note, copy_to_self",
     )
     .eq("profile_id", profileId)
     .maybeSingle<Row>();
+
+  if (error) {
+    throw new Error(`invoice settings read failed for ${profileId}: ${error.message}`);
+  }
 
   return data ? fromRow(data) : { profileId, ...DEFAULT_SETTINGS };
 }

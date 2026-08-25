@@ -20,6 +20,23 @@ import {
 
 export const metadata: Metadata = { title: "Facturen" };
 
+/**
+ * A completed assignment, for the "approved but never invoiced" check.
+ *
+ * `invoices` is an OBJECT, not an array. invoices.assignment_id is UNIQUE, so
+ * PostgREST infers one-to-one. Typed as an array, `.length` was undefined, `?? 0`
+ * made it 0, and every approved assignment — invoiced or not — matched the "no
+ * invoice yet" filter forever. The exact mirror of migration 008, where DROPPING
+ * a unique constraint flipped an embed the other way.
+ */
+type BlockedRow = {
+  id: string;
+  status: string;
+  shifts: { starts_at: string; profession: string } | null;
+  timesheets: { approved_at: string | null } | null;
+  invoices: { id: string } | null;
+};
+
 type InvoiceRow = {
   id: string;
   number: string;
@@ -123,8 +140,9 @@ export default async function FreelancerInvoicesPage({
    * two imports away.
    */
   const invoices: InvoiceRow[] = [];
+  const blocked: BlockedRow[] = [];
 
-  const [invoicesComplete, { data: upcoming, error: upcomingError }, { data: blocked, error: blockedError }] =
+  const [invoicesComplete, { data: upcoming, error: upcomingError }, blockedComplete] =
     await Promise.all([
       forEachPage<InvoiceRow>(
         (from, to) =>
@@ -160,43 +178,47 @@ export default async function FreelancerInvoicesPage({
         }[]
       >(),
     /*
-     * Approved work with no invoice.
+     * Approved work with no invoice — paged, for the same reason the invoices
+     * above are.
      *
      * createInvoiceForAssignment refuses while the legally required fields are
      * blank (art. 35a Wet OB). The fee has already settled and the hours are
      * approved by then, so without this the work simply vanished: it left the
      * facility's queue, no code path retried, and the only person who could fix
      * it was never told. Round 3 found the same shape in the invoice-number race.
+     *
+     * This was an unbounded select, and the sweep that paged the invoices then
+     * wrote a comment justifying leaving it alone: "what is left here is the two
+     * smaller lists beside them". Completed assignments are not a smaller list.
+     * Approval is what creates both an assignment's completion and its invoice,
+     * so the two grow at exactly the same rate — a freelancer with 1,200 invoices
+     * has 1,200 completed assignments, and PostgREST truncates at max-rows with
+     * no error and in whatever order the planner picks.
+     *
+     * The one that falls off the end is the one that matters: an assignment whose
+     * invoice was blocked never appears in `uninvoiced`, so the orange banner
+     * never lists it and the "Factuur opmaken" button — the only route to issuing
+     * it — is never rendered. The 1,5% fee was taken at acceptance and the work is
+     * billed to nobody, permanently, with no banner because there was no error.
      */
-    supabase
-      .from("assignments")
-      .select("id, status, shifts(starts_at, profession), timesheets(approved_at), invoices(id)")
-      .eq("freelancer_id", userId)
-      .eq("status", "completed")
-      .returns<
-        {
-          id: string;
-          status: string;
-          shifts: { starts_at: string; profession: string } | null;
-          timesheets: { approved_at: string | null } | null;
-          /*
-           * An OBJECT, not an array. invoices.assignment_id is UNIQUE, so
-           * PostgREST infers one-to-one. Typed as an array, `.length` was
-           * undefined, `?? 0` made it 0, and every approved assignment — invoiced
-           * or not — matched the "no invoice yet" filter forever.
-           *
-           * The exact mirror of migration 008, where DROPPING a unique constraint
-           * flipped an embed the other way. Same trap, opposite direction.
-           */
-          invoices: { id: string } | null;
-        }[]
-      >(),
+    forEachPage<BlockedRow>(
+      (from, to) =>
+        supabase
+          .from("assignments")
+          .select("id, status, shifts(starts_at, profession), timesheets(approved_at), invoices(id)")
+          .eq("freelancer_id", userId)
+          .eq("status", "completed")
+          // Deterministic, so .range() cannot hand back the same row twice.
+          .order("id", { ascending: false })
+          .range(from, to)
+          .returns<BlockedRow[]>(),
+      (rows) => blocked.push(...rows),
+      { label: "goedgekeurd werk zonder factuur" },
+    ),
   ]);
 
   // Approved, and nothing issued for it.
-  const uninvoiced = (blocked ?? []).filter(
-    (row) => row.timesheets?.approved_at && !row.invoices,
-  );
+  const uninvoiced = blocked.filter((row) => row.timesheets?.approved_at && !row.invoices);
 
   const booked = (upcoming ?? [])
     .filter((row) => row.shifts)
@@ -221,10 +243,11 @@ export default async function FreelancerInvoicesPage({
    * saying the data could not be loaded. /zorginstelling/uren guards the
    * identical shape explicitly; this page did not.
    *
-   * The invoices themselves no longer have a cap to hit — they are paged, see
-   * above — so what is left here is the two smaller lists beside them.
+   * The invoices and the completed assignments are both paged now, and their
+   * completeness is carried separately below — this flag is for the one query
+   * that is genuinely bounded: work accepted but not yet worked.
    */
-  const loadFailed = Boolean(upcomingError || blockedError);
+  const loadFailed = Boolean(upcomingError);
 
   /*
    * forEachPage returns false when a page errored or the runaway ceiling was
@@ -232,7 +255,7 @@ export default async function FreelancerInvoicesPage({
    * below are summed from a prefix, which on this page must never be presented
    * as a year.
    */
-  const incomplete = !invoicesComplete;
+  const incomplete = !invoicesComplete || !blockedComplete;
 
   const earnings = summariseEarnings(invoices, booked);
   const receivables = summariseReceivables(invoices, now);
@@ -280,6 +303,19 @@ export default async function FreelancerInvoicesPage({
         <FormMessage kind="ok">
           Factuur opgemaakt. Hij staat klaar met nummer en al — verstuur hem hieronder wanneer je
           hem hebt nagekeken.
+        </FormMessage>
+      ) : null}
+      {/*
+        Opgemaakt, maar niet aangekomen — een derde uitkomst, en de enige waarbij
+        de zorgprofessional iets moet doen dat ze zonder deze melding niet weet.
+        Dit viel eerder onder "opgemaakt en verstuurd": ze wachtte op een betaling
+        die niemand was gevraagd te doen, en de herinneringscron slaat een factuur
+        zonder sent_at over.
+      */}
+      {params.issued === "undelivered" ? (
+        <FormMessage kind="warn">
+          Factuur opgemaakt, maar niet aangekomen bij de zorginstelling. Controleer of zij een
+          factuuradres hebben ingevuld en verstuur hem hieronder opnieuw.
         </FormMessage>
       ) : null}
       {params.error ? (

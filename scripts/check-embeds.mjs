@@ -199,12 +199,37 @@ function stripComments(sql) {
   return sql.replace(/--[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
-/** The contents of a parenthesised group starting at `open`. */
+/**
+ * The contents of a parenthesised group starting at `open`, ignoring anything
+ * inside a string literal.
+ *
+ * This was a bare paren counter, and the one shape in the repo it could not read
+ * is the one that matters most:
+ *
+ *   .select(COLUMNS.replace("timesheets(", "timesheets!inner("))
+ *
+ * Two opening parens inside string literals, neither of them closed. The counter
+ * ran past the real close looking for two more, returned null, and findSelects
+ * did `continue` — so the query behind the facility's hours-approval queue was
+ * neither checked NOR listed as unchecked, while the summary line said every
+ * embed resolves. I proved it by putting a nonexistent table in that select and
+ * watching the checker report 135 clean selects, the same count as before.
+ *
+ * A guard with a silent false negative is worse than no guard, because the
+ * codebase then trusts it. Strings are skipped whole, escapes included.
+ */
 function balanced(text, open) {
   let depth = 0;
   for (let i = open; i < text.length; i++) {
-    if (text[i] === "(") depth++;
-    else if (text[i] === ")") {
+    const c = text[i];
+
+    if (c === '"' || c === "'" || c === "\`") {
+      i = skipString(text, i);
+      continue;
+    }
+
+    if (c === "(") depth++;
+    else if (c === ")") {
       depth--;
       if (depth === 0) return text.slice(open + 1, i);
     }
@@ -212,13 +237,43 @@ function balanced(text, open) {
   return null;
 }
 
-/** Splits on commas that are not inside parentheses. */
+/**
+ * The index of the closing quote of the string starting at `i`.
+ *
+ * Returns the last index of the literal, so a `for` loop's own `i++` lands
+ * after it. A trailing backslash at end-of-input returns the end, which
+ * terminates the caller rather than looping.
+ */
+function skipString(text, i) {
+  const quote = text[i];
+  for (let j = i + 1; j < text.length; j++) {
+    if (text[j] === "\\") {
+      j++;
+      continue;
+    }
+    if (text[j] === quote) return j;
+  }
+  return text.length;
+}
+
+/**
+ * Splits on commas that are not inside parentheses or a string literal.
+ *
+ * Same blindness as balanced() had, and the same fix. A field list is not
+ * normally a JavaScript expression, but this also runs over the argument of a
+ * `.replace()` chain, where a comma between two quoted arguments would otherwise
+ * split one literal in half.
+ */
 function splitTopLevel(text) {
   const out = [];
   let depth = 0;
   let start = 0;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
+    if (c === '"' || c === "'" || c === "\`") {
+      i = skipString(text, i);
+      continue;
+    }
     if (c === "(") depth++;
     else if (c === ")") depth--;
     else if (c === "," && depth === 0) {
@@ -419,15 +474,37 @@ function findSelects(source) {
     if (!sel) continue;
 
     const open = scope.indexOf("(", sel.index);
-    const arg = balanced(scope, open);
-    if (arg === null) continue;
-
     const line = source.slice(0, m.index).split("\n").length;
+    const arg = balanced(scope, open);
+
+    /*
+     * A select whose argument cannot be read is REPORTED, never dropped.
+     *
+     * This was `continue`, which is how the approval-queue query disappeared:
+     * not checked, not counted, not listed, while the summary said every embed
+     * resolves. Anything this parser cannot read has to show up in the "not
+     * checked" list, so the number at the bottom is a claim about coverage
+     * rather than about the parser's appetite.
+     */
+    if (arg === null) {
+      found.push({ table, select: null, line });
+      continue;
+    }
     const literals = firstArgLiterals(arg);
 
-    if (literals.length === 0) {
-      // A named constant, possibly with a modifier applied to it.
-      const named = arg.match(/^\s*([A-Za-z_$][\w$]*)\b/);
+    /*
+     * A named constant, possibly with a modifier applied to it.
+     *
+     * Keyed on the argument STARTING with an identifier rather than on there
+     * being no literals in it. `COLUMNS.replace("a", "b")` has two literals — the
+     * replace arguments — so the old `literals.length === 0` guard sent it down
+     * the branch that treats the whole thing as a field list, and the branch
+     * written for this exact idiom, quoting this exact line in its comment, could
+     * never run. Class (e) sitting inside class (g).
+     */
+    const named = arg.match(/^\s*([A-Za-z_$][\w$]*)\b/);
+
+    if (named && !/^\s*["'`]/.test(arg)) {
       const bound = named ? bindings.get(named[1]) : undefined;
       if (bound === undefined) {
         found.push({ table, select: null, line });
@@ -446,7 +523,14 @@ function findSelects(source) {
       continue;
     }
 
-    found.push({ table, select: literals.join(""), line });
+    /*
+     * Anything left: a template literal with interpolation, a ternary, a call.
+     * An empty join is NOT an empty field list — it means nothing was resolved —
+     * so it goes on the unchecked list rather than passing as a select with no
+     * columns, which resolves trivially and would read as covered.
+     */
+    const joined = literals.join("");
+    found.push({ table, select: joined === "" ? null : joined, line });
   }
 
   return found;

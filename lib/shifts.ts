@@ -371,13 +371,36 @@ async function findRecipients(input: NewShift): Promise<string[]> {
       { label: "region fan-out" },
     );
 
-    // Re-exclude anyone this facility has hidden: a region-wide broadcast must
-    // not be a backdoor around that.
-    const { data: hidden } = await admin
+    /*
+     * Re-exclude anyone this facility has hidden: a region-wide broadcast must
+     * not be a backdoor around that.
+     *
+     * The error is checked, and a failed read THROWS — the same rule this
+     * function already applies to the pool read twenty lines above, under a
+     * comment saying "a read that FAILED is not an empty pool". The reasoning was
+     * applied to one read and not to this one, and the two are not symmetrical:
+     * for the pool and stars paths the exclusion is structural (.in on status)
+     * and cannot fail open, while this one is a separate query whose failure
+     * silently readmits everybody.
+     *
+     * What that costs: a facility hides somebody after a medication incident —
+     * the private per-facility filter that replaced the shared blacklist — and a
+     * transient failure here puts them back in the fan-out. They get the offer,
+     * accept it, the fee is charged, and they are rostered into a building the
+     * facility deliberately excluded them from. Neither side is told why, and the
+     * confirmation screen counts them among the recipients.
+     *
+     * Refusing to post the shift is the lesser harm. The coordinator retries.
+     */
+    const { data: hidden, error: hiddenError } = await admin
       .from("pools")
       .select("freelancer_id")
       .eq("org_id", input.orgId)
       .eq("status", "hidden");
+
+    if (hiddenError) {
+      throw new Error(`hidden pool read failed: ${hiddenError.message}`);
+    }
 
     for (const row of hidden ?? []) ids.delete(row.freelancer_id as string);
   }

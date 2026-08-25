@@ -104,10 +104,24 @@ describe("functions.sql", () => {
      * identical prose would make this fire on every edit until somebody deleted
      * it. What must not differ is a statement.
      */
+    /*
+     * The dollar-quote tag is READ, not assumed.
+     *
+     * This looked for "\n$fn$;". functions.sql uses $fn$ throughout, so it worked
+     * there and found nothing at all in schema.sql, where eighteen of the twenty
+     * delimiters are a bare $ — which is why widening the guard to schema.sql
+     * silently found ten functions instead of twenty until this was fixed. A
+     * guard that reads no bodies passes.
+     */
     const body = (sql: string, name: string): string | null => {
       const start = sql.indexOf(`create or replace function ${name}(`);
       if (start === -1) return null;
-      const end = sql.indexOf("\n$fn$;", start);
+
+      const tag = sql.slice(start).match(/\$[a-z_]*\$/);
+      if (!tag) return null;
+
+      const open = sql.indexOf(tag[0], start);
+      const end = sql.indexOf(`\n${tag[0]};`, open + tag[0].length);
       if (end === -1) return null;
 
       return sql
@@ -125,34 +139,65 @@ describe("functions.sql", () => {
       .map((f) => ({ name: f, sql: readFileSync(join(DIR, "migrations", f), "utf8") }));
 
     /*
-     * EVERY plpgsql function, not a hand-kept list of three.
+     * EVERY function in BOTH canonical files, not a hand-kept list of three.
      *
      * The list used to name accept_shift, settle_timesheet and cancel_assignment
      * — the three that existed when this was written — so anonymise_account, the
      * most destructive function in the product, was added later and checked by
      * nothing. A drift guard that covers the functions somebody remembered to add
      * is a drift guard for the functions least likely to drift.
+     *
+     * Deriving the list fixed that and left half the surface uncovered: it read
+     * functions.sql only, and the ten functions that live in schema.sql —
+     * is_staff, current_org_id, can_manage_admins and the rest, which every RLS
+     * policy in the product depends on — were still checked by nothing. A
+     * migration that redefines one of those drifts from the fresh install in
+     * silence, and the thing that drifts is who can read what.
+     *
+     * Each function is compared against whichever canonical file declares it.
      */
-    const names = [
-      ...new Set(
-        [...functions.matchAll(/create\s+or\s+replace\s+function\s+([a-z_][a-z0-9_]*)\s*\(/gi)].map(
-          (m) => m[1],
+    const canonicalSources = [
+      { file: "functions.sql", sql: functions },
+      { file: "schema.sql", sql: read("schema.sql") },
+    ];
+
+    const declared = canonicalSources.flatMap(({ file, sql }) =>
+      [
+        ...new Set(
+          [...sql.matchAll(/create\s+or\s+replace\s+function\s+([a-z_][a-z0-9_]*)\s*\(/gi)].map(
+            (m) => m[1],
+          ),
         ),
-      ),
-    ].filter((name) => body(functions, name));
+      ]
+        .filter((name) => body(sql, name))
+        .map((name) => ({ name, file, sql })),
+    );
 
-    expect(names.length, "no plpgsql function bodies found in functions.sql").toBeGreaterThan(3);
+    expect(
+      declared.length,
+      "no function bodies found in schema.sql or functions.sql",
+    ).toBeGreaterThan(10);
 
-    for (const name of names) {
-      const canonical = body(functions, name);
-      expect(canonical, `${name} is missing from functions.sql`).toBeTruthy();
+    // A function declared in both files would make "canonical" ambiguous, and the
+    // migrations could only ever match one of them.
+    const seen = new Map<string, string>();
+    for (const { name, file } of declared) {
+      expect(
+        seen.get(name) ?? file,
+        `${name} is declared in both schema.sql and functions.sql`,
+      ).toBe(file);
+      seen.set(name, file);
+    }
+
+    for (const { name, file, sql } of declared) {
+      const canonical = body(sql, name);
 
       const latest = [...migrations].reverse().find((m) => body(m.sql, name));
       if (!latest) continue;
 
       expect(
         body(latest.sql, name),
-        `${name} differs between functions.sql and migrations/${latest.name}`,
+        `${name} differs between ${file} and migrations/${latest.name}`,
       ).toBe(canonical);
     }
   });

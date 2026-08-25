@@ -169,12 +169,23 @@ export async function issueInvoiceAction(formData: FormData) {
   revalidatePath("/zorginstelling/facturen");
 
   /*
-   * "Opgemaakt" and "opgemaakt en verstuurd" are different outcomes, and this
-   * reported the second for both. Somebody with auto_send off would be told their
-   * invoice had gone to the facility when it was sitting on this very page
-   * waiting for them to release it.
+   * THREE outcomes, not two.
+   *
+   * "Opgemaakt", "opgemaakt en verstuurd", and "opgemaakt maar niet aangekomen".
+   * This reported the second for all three: it branched on `held` alone, so an
+   * invoice that was created and then FAILED to send — no billing address, or a
+   * mail outage — fell into the "sent" arm and the page said "Factuur opgemaakt
+   * en verstuurd."
+   *
+   * That is the worst of the three to get wrong, and this is the button that
+   * exists specifically for work whose invoice was blocked. The freelancer fixes
+   * what was missing, clicks here, is told the facility has it, and waits for a
+   * payment nobody was ever asked to make — sent_at is null, so the reminder cron
+   * skips it forever too. Both approval paths were taught to tell `held` from
+   * `undelivered`; this one, the third consumer, was not.
    */
-  redirect(`/professional/facturen?issued=${result.held ? "held" : "sent"}`);
+  const outcome = result.held ? "held" : result.undelivered ? "undelivered" : "sent";
+  redirect(`/professional/facturen?issued=${outcome}`);
 }
 
 /**

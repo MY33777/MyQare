@@ -243,11 +243,26 @@ export function mapAuthError(message: string | undefined): string {
  * lib/authErrors.ts fixed this for itself and left the four local copies, which
  * is the "one rule in two places" shape. There is now one implementation.
  */
+/**
+ * A page's own message for a code, then the shared one, then the fallback.
+ *
+ * The middle step is the point. A page with a local table used to fall straight
+ * to "Er ging iets mis. Probeer het opnieuw." for any code it had not been told
+ * about — including codes produced by routes it links to. /professional/facturen
+ * links to its CSV export, which redirects back with `empty_export`, and the
+ * real sentence for that ("Er zijn geen facturen in die periode. Pas het
+ * datumbereik aan…") was already written, in this very file, and unreachable
+ * from there. An empty date range read as a system failure.
+ *
+ * A local table now means "say it differently here", never "hide it here".
+ */
 export function lookupMessage(
   table: Record<string, string>,
   code: string | undefined | null,
   fallback: string,
 ): string {
   if (!code) return fallback;
-  return Object.hasOwn(table, code) ? table[code] : fallback;
+  if (Object.hasOwn(table, code)) return table[code];
+  if (Object.hasOwn(MESSAGES, code)) return MESSAGES[code];
+  return fallback;
 }

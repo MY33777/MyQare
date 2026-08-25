@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { exportFailed } from "@/lib/exportError";
 import { forEachPage } from "@/lib/pagination";
 import { getFacilityAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -15,7 +16,7 @@ import { SITE_URL } from "@/lib/site";
  */
 export async function GET(request: NextRequest) {
   const admin = await getFacilityAdmin();
-  if (!admin) return NextResponse.json({ error: "unauthorised" }, { status: 401 });
+  if (!admin) return exportFailed(new URL(request.url).origin, "/zorginstelling/facturen", "session_expired");
 
   const from = request.nextUrl.searchParams.get("from");
   const to = request.nextUrl.searchParams.get("to");
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest) {
   // Refused rather than served short. A CSV missing rows looks like one that is
   // not, and this one is reconciled against a bank statement.
   if (!complete) {
-    return NextResponse.json({ error: "export_incomplete" }, { status: 500 });
+    return exportFailed(new URL(request.url).origin, "/zorginstelling/facturen", "export_incomplete");
   }
 
   const data = rows;

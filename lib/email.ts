@@ -633,3 +633,33 @@ export async function sendAssignmentCancelledEmail(input: {
     cta: { label: "Bekijk het aanbod", href: absoluteUrl("/professional/aanbod") },
   });
 }
+
+/**
+ * A facility has added her to its pool, told to her.
+ *
+ * This happened silently. A coordinator types an email address and from that
+ * moment the facility sees her qualification, regions, indicative rate, KvK and
+ * BIG number, which approved documents she holds and until when — and can open
+ * the files themselves once she takes a shift there. She was never told, and
+ * there is no screen anywhere that lists which facilities hold her.
+ *
+ * Being in a pool is good news — it is how she gets offered work — so this is
+ * not a warning. It is the disclosure that makes it fair, and it names the one
+ * control she has.
+ */
+export async function sendAddedToPoolEmail(input: {
+  to: string;
+  facilityName: string;
+}): Promise<boolean> {
+  return send({
+    to: input.to,
+    subject: `${input.facilityName} heeft je aan hun pool toegevoegd`,
+    heading: `Je staat nu in de pool van ${input.facilityName}`,
+    body: [
+      "Dat betekent dat zij hun diensten als eerste aan jou aanbieden. Je bent nooit verplicht er een aan te nemen, en weigeren heeft geen gevolgen voor toekomstig aanbod.",
+      "Zij kunnen vanaf nu je kwalificatie, regio's, richttarief, KvK-nummer en BIG-nummer zien, en welke goedgekeurde documenten je hebt en tot wanneer die geldig zijn. De documenten zelf kunnen ze pas openen zodra je een dienst bij hen hebt aangenomen.",
+      "Wil je dit niet? Laat het hen weten — een pool is iets van hen, dus zij halen je er weer uit.",
+    ],
+    cta: { label: "Bekijk je aanbod", href: absoluteUrl("/professional/aanbod") },
+  });
+}

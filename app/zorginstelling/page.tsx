@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { EmptyState, PageHeader } from "@/components/AppHeader";
+import { FormMessage } from "@/components/AuthShell";
+import { authErrorMessage } from "@/lib/authErrors";
 import { requireFacilityAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatEuros } from "@/lib/money";
@@ -48,7 +50,21 @@ function filledBy(shift: {
   return live?.freelancers?.profiles?.full_name ?? null;
 }
 
-export default async function FacilityDashboard() {
+export default async function FacilityDashboard({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  /*
+   * The dashboard is a redirect TARGET and rendered nothing it was sent.
+   *
+   * /zorginstelling/diensten/nieuw bounces an unverified facility here with
+   * ?error=not_verified, and this page took no searchParams at all — so she
+   * clicked "Dienst plaatsen", the screen reloaded, and nothing whatsoever
+   * happened or was said. The most common reading of that is that the click
+   * did not register, so she clicks again.
+   */
+  const params = await searchParams;
   const { org } = await requireFacilityAdmin("/zorginstelling");
   const supabase = await createClient();
 
@@ -108,6 +124,10 @@ export default async function FacilityDashboard() {
           ) : null
         }
       />
+
+      {params.error ? (
+        <FormMessage kind="warn">{authErrorMessage(params.error)}</FormMessage>
+      ) : null}
 
       {/*
         Replaces the old standalone "not verified" banner. Verification is one step

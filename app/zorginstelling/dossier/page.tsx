@@ -155,15 +155,23 @@ export default async function DossierPage() {
       */}
       <form action="/zorginstelling/dossier/export" method="get" className="card p-4 mb-6">
         <div className="flex flex-wrap items-end gap-3">
+          {/*
+            The label has to name the EVENT, because the table below carries three
+            dates per row — the shift, when it was offered and when it was
+            accepted — and the export filters on the last of those. "Vanaf" alone
+            had three plausible meanings on one screen, and picking the night an
+            inspector asked about returns "geen opdrachten in deze periode" for an
+            assignment accepted three weeks earlier.
+          */}
           <div>
             <label className="label" htmlFor="from">
-              Vanaf
+              Aangenomen vanaf
             </label>
             <input className="input" id="from" name="from" type="date" />
           </div>
           <div>
             <label className="label" htmlFor="to">
-              Tot en met
+              Aangenomen tot en met
             </label>
             <input className="input" id="to" name="to" type="date" />
           </div>
@@ -192,8 +200,12 @@ export default async function DossierPage() {
           </button>
         </div>
         <p className="hint">
-          Laat de datums leeg voor het volledige dossier. Dit is het document dat je meestuurt als
-          er vragen komen over de inzet van zzp&apos;ers.
+          Laat de datums leeg voor het volledige dossier. De datums gaan over de dag waarop de
+          dienst is <strong>aangenomen</strong> — dat is meestal weken vóór de dienst zelf.
+          {" "}Dit is het document dat je meestuurt als er vragen komen over de inzet van
+          zzp&apos;ers, én waarmee je onder de Wkkgz laat zien dat je de papieren hebt gecontroleerd
+          voordat iemand werd ingezet: per opdracht staan het BIG-nummer met controledatum en welke
+          goedgekeurde documenten er op dat moment lagen.
         </p>
       </form>
 

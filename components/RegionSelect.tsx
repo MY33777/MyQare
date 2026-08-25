@@ -35,6 +35,24 @@ export function RegionSelect({
   );
 
   return (
+    <>
+    {/*
+      HOW to pick more than one, said on the control.
+
+      This is a native <select multiple>, and the hint beside it is emphatic that
+      she should choose several — "wie in Schiedam woont vinkt meestal
+      Groot-Rijnmond én Delft en Westland aan". There are no checkboxes to tick.
+      On a desktop browser a second click REPLACES the first unless she holds
+      ctrl or cmd, so somebody following that advice literally ends up with one
+      region and no idea anything went wrong — and this field decides whether she
+      ever hears about work outside a pool.
+    */}
+    {multiple ? (
+      <p className="hint mb-1">
+        Meerdere kiezen? Houd <kbd>Ctrl</kbd> (Windows) of <kbd>Cmd</kbd> (Mac) ingedrukt terwijl je
+        klikt. Op een telefoon tik je ze gewoon één voor één aan.
+      </p>
+    ) : null}
     <select
       className="select"
       id={id ?? name}
@@ -60,5 +78,6 @@ export function RegionSelect({
         </optgroup>
       ))}
     </select>
+    </>
   );
 }

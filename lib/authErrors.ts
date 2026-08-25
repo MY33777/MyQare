@@ -250,6 +250,17 @@ const MESSAGES: Record<string, string> = {
     "Deze dienst kon niet worden ingetrokken: iemand heeft hem net aangenomen. " +
     "Ga je toch niet door? Zeg de opdracht dan af — diegene heeft de avond vrijgehouden.",
 
+  /*
+   * The export routes are reached by a plain GET form, so the BROWSER navigates
+   * to them — and they used to answer with raw JSON on a white page. These two
+   * codes are what they redirect back with instead. See lib/exportError.ts.
+   */
+  session_expired:
+    "Je sessie is verlopen, dus het bestand kon niet worden gemaakt. Log opnieuw in en probeer het nog een keer.",
+
+  export_incomplete:
+    "Het bestand kon niet volledig worden opgehaald, dus we hebben het niet gemaakt — een half overzicht is misleidender dan geen. Probeer het zo opnieuw.",
+
   needs_recovery_link:
     "Een nieuw wachtwoord instellen kan alleen via de link uit de herstelmail. " +
     "Vraag er hieronder een aan.",

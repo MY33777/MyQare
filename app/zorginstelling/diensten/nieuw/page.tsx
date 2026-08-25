@@ -308,10 +308,27 @@ export default async function NewShiftPage({
             figure printed before submitting would be a guess presented as a
             count. Said in words instead.
           */}
+          {/*
+            The number is the POOL, not the reach, and it used to read as the
+            reach. findRecipients filters those same rows through
+            qualificationMatches before a single offer is written, so a pool of
+            twelve verzorgenden reached nobody at all for a shift asking for a
+            verpleegkundige — and the screen had just said twelve. The most
+            expensive early mistake in the product is posting into a set that
+            cannot match, and this line was the thing that made it look safe.
+
+            No qualification-aware count is offered instead: it would have to be
+            recomputed on every change of the kwalificatie field above, and a
+            number that is briefly wrong is worse here than no number. The
+            confirmation after posting reports the real figure.
+          */}
           <p className="hint">
             Je pool telt {poolCount} {poolCount === 1 ? "zorgprofessional" : "zorgprofessionals"},
-            waarvan {starCount} als favoriet. Een regio-aanbod gaat daarnaast naar iedereen in de
-            regio met de juiste kwalificatie, ook als je nog niet met ze hebt gewerkt.
+            waarvan {starCount} als favoriet. Dat is niet hetzelfde als het aantal dat deze dienst
+            krijgt: alleen wie de gevraagde kwalificatie heeft, krijgt hem aangeboden. Een
+            regio-aanbod gaat daarnaast naar iedereen in de gekozen regio met die kwalificatie, ook
+            als je nog niet met ze hebt gewerkt. Na plaatsen zie je aan hoeveel mensen hij echt is
+            aangeboden.
           </p>
           <p className="hint">
             Zorgprofessionals die je hebt verborgen krijgen deze dienst nooit te zien, ook niet bij

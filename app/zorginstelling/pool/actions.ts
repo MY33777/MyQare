@@ -1,6 +1,8 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { sendAddedToPoolEmail } from "@/lib/email";
+import { freelancerEmail } from "@/lib/notify";
 import { revalidatePath } from "next/cache";
 import { getFacilityAdmin } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
@@ -85,6 +87,22 @@ export async function addToPoolAction(formData: FormData) {
     );
 
   if (error) redirect(`${POOL_PATH}?error=unknown`);
+
+  /*
+   * SHE IS TOLD. This happened entirely behind her back.
+   *
+   * A coordinator types an address, and from that moment the facility can see her
+   * qualification, regions, rate, KvK, BIG number and which approved documents
+   * she holds — without her being asked, and with no screen anywhere that lists
+   * who holds her. Best effort, after the row exists: a mail that fails must not
+   * turn a completed add into an error.
+   */
+  try {
+    const to = await freelancerEmail(freelancer.profile_id);
+    if (to) await sendAddedToPoolEmail({ to, facilityName: admin.org.name });
+  } catch (cause) {
+    console.error(`[pool] add notification not sent for ${freelancer.profile_id}: ${String(cause)}`);
+  }
 
   revalidatePath(POOL_PATH);
   redirect(`${POOL_PATH}?added=1`);

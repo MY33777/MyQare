@@ -99,9 +99,21 @@ export default async function FacilityInvoicesPage({
   // early — and disagreed with the freelancer own page and the reminder cron.
   const todayKey = amsterdamDateKey();
 
-  const outstanding = invoices
-    .filter((invoice) => !invoice.paid_at)
-    .reduce((sum, invoice) => sum + invoice.total_cents, 0);
+  const unpaid = invoices.filter((invoice) => !invoice.paid_at);
+  const outstanding = unpaid.reduce((sum, invoice) => sum + invoice.total_cents, 0);
+
+  /*
+   * What of that is LATE, as a figure.
+   *
+   * The overdue judgement already existed per row and only as a small red badge
+   * beside a due date, in a table that scrolls sideways and can run to thousands
+   * of rows — so the one question a payables screen exists to answer had no
+   * answer above the fold. The freelancer's own page shows exactly this split for
+   * the same invoices; the facility, who can actually pay them, was the side
+   * without it.
+   */
+  const overdue = unpaid.filter((invoice) => invoice.due_on < todayKey);
+  const overdueCents = overdue.reduce((sum, invoice) => sum + invoice.total_cents, 0);
 
   return (
     <>
@@ -126,11 +138,35 @@ export default async function FacilityInvoicesPage({
         </FormMessage>
       ) : null}
 
-      <div className="card p-4 mb-6 inline-block">
-        <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-          Openstaand
-        </p>
-        <p className="text-2xl font-bold tnum mt-1">{formatEuros(outstanding)}</p>
+      <div className="flex flex-wrap gap-4 mb-6">
+        <div className="card p-4">
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+            Openstaand
+          </p>
+          <p className="text-2xl font-bold tnum mt-1">{formatEuros(outstanding)}</p>
+          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+            {unpaid.length} {unpaid.length === 1 ? "factuur" : "facturen"} · incl. btw
+          </p>
+        </div>
+
+        {/*
+          Only when there is something to say. A permanent "€ 0,00 te laat" tile
+          is noise on a screen somebody opens weekly; one that appears is a fact.
+        */}
+        {overdue.length > 0 ? (
+          <div className="card p-4" style={{ borderColor: "var(--danger)" }}>
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+              Waarvan te laat
+            </p>
+            <p className="text-2xl font-bold tnum mt-1" style={{ color: "var(--danger)" }}>
+              {formatEuros(overdueCents)}
+            </p>
+            <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+              {overdue.length} {overdue.length === 1 ? "factuur" : "facturen"} · je betaalt
+              rechtstreeks aan de zorgprofessional
+            </p>
+          </div>
+        ) : null}
       </div>
 
       <form action="/zorginstelling/facturen/export" method="get" className="card p-4 mb-6">

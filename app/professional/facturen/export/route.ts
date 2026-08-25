@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { exportFailed } from "@/lib/exportError";
 import { forEachPage } from "@/lib/pagination";
 import { getFreelancer } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -16,7 +17,7 @@ import { amsterdamDateKey } from "@/lib/timezone";
  */
 export async function GET(request: NextRequest) {
   const freelancer = await getFreelancer();
-  if (!freelancer) return NextResponse.json({ error: "unauthorised" }, { status: 401 });
+  if (!freelancer) return exportFailed(new URL(request.url).origin, "/professional/facturen", "session_expired");
 
   const from = request.nextUrl.searchParams.get("from");
   const to = request.nextUrl.searchParams.get("to");
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest) {
    * Belastingdienst.
    */
   if (!complete) {
-    return NextResponse.json({ error: "export_incomplete" }, { status: 500 });
+    return exportFailed(new URL(request.url).origin, "/professional/facturen", "export_incomplete");
   }
 
   const data = rows;

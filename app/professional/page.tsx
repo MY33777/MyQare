@@ -8,6 +8,12 @@ import { creditBalanceCents } from "@/lib/credits";
 import { formatEuros } from "@/lib/money";
 import { formatShiftWindow } from "@/lib/hours";
 import { summaryFromRpc } from "@/lib/ratings";
+import {
+  getInvoiceSettings,
+  missingInvoiceFields,
+  MISSING_FIELD_LABELS,
+  type MissingField,
+} from "@/lib/invoiceSettings";
 import { amsterdamDateKey } from "@/lib/timezone";
 import { FEE_PERCENT_LABEL } from "@/lib/fees";
 import { DOCUMENT_KIND_LABELS, type DocumentKind } from "@/lib/documents";
@@ -59,7 +65,20 @@ export default async function FreelancerDashboard() {
       .eq("freelancer_id", userId)
       .is("responded_at", null)
       .order("created_at", { ascending: false })
-      .limit(10)
+      /*
+       * The cap runs BEFORE the dead offers are filtered out below.
+       *
+       * At 10, ten offers she never answered are a permanent lid: nothing in the
+       * product ever clears an ignored offer — responded_at is set only by
+       * accepting or declining — so the tile printed "0 open aanbod" and the
+       * dashboard said "Geen open aanbod" while /professional/aanbod, reading the
+       * same table with a higher cap, listed live work. The one screen she opens
+       * first told her there was nothing.
+       *
+       * Raised to match the inbox. This is a count on a dashboard, not a list;
+       * one round trip is the right shape and the number now means something.
+       */
+      .limit(300)
       .returns<OfferRow[]>(),
     /*
      * Through the function, not the rows.
@@ -93,6 +112,27 @@ export default async function FreelancerDashboard() {
   ]);
 
   const rating = summaryFromRpc(ratingRows);
+
+  /*
+   * What still stops an invoice being raised for her.
+   *
+   * Read here rather than inferred, because this is the same function
+   * createInvoiceForAssignment gates on — one rule, one place.
+   *
+   * A failed settings read throws, which is right where an invoice is being
+   * made and wrong on a dashboard: the banner simply does not appear rather
+   * than taking down the screen she opens first.
+   */
+  let invoiceMissing: MissingField[] = [];
+
+  try {
+    const settings = await getInvoiceSettings(userId);
+    invoiceMissing = missingInvoiceFields(settings, freelancer?.vat_exempt ?? null);
+  } catch (cause) {
+    console.error(
+      `[professional] invoice settings unreadable for ${userId}: ${String(cause)}`,
+    );
+  }
   const expiredDocuments = documents ?? [];
 
   // Only offers whose shift is still open are actionable — a shift someone else
@@ -213,6 +253,39 @@ export default async function FreelancerDashboard() {
               .join(", ")}
             . Instellingen kunnen je hierdoor niet inplannen.{" "}
             <Link href="/professional/documenten">Vernieuw je documenten</Link>.
+          </p>
+        </div>
+      ) : null}
+
+      {/*
+        THE FOUR BLANK FIELDS NOBODY MENTIONS.
+
+        Onboarding asks for a name, a phone number, a qualification and regions —
+        never for an address or an IBAN. So missingInvoiceFields() returns four
+        blocking items for every account from the moment it is created, and
+        createInvoiceForAssignment refuses while any of them is blank. She works a
+        shift, the facility approves the hours, the fee is taken, and no invoice
+        is ever raised.
+
+        The dashboard warned about the VAT question and about lapsed documents and
+        said nothing about this, while the only screen that names the missing
+        fields is /professional/facturen — a page with no reason to visit until
+        you are wondering where your money is.
+      */}
+      {invoiceMissing.length > 0 ? (
+        <div
+          className="card p-4 mb-6"
+          style={{ borderColor: "var(--warn)", background: "var(--warn-subtle)" }}
+        >
+          <p className="font-semibold" style={{ color: "var(--warn)" }}>
+            Je factuurgegevens zijn nog niet compleet
+          </p>
+          <p className="text-sm mt-1" style={{ color: "var(--warn)" }}>
+            Nog in te vullen:{" "}
+            {invoiceMissing.map((field) => MISSING_FIELD_LABELS[field] ?? field).join(", ")}. Zonder
+            deze gegevens kunnen we geen factuur namens je opmaken — je kunt wél diensten aannemen,
+            maar je krijgt er dan nog niet voor betaald.{" "}
+            <Link href="/professional/facturatie">Vul ze aan</Link>.
           </p>
         </div>
       ) : null}

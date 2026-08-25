@@ -359,8 +359,16 @@ export default async function TimesheetsPage({
                     <p className="font-bold tnum">
                       {formatEuros(Math.round((claimed * row.agreed_rate_cents) / 60))}
                     </p>
+                    {/*
+                      The basis, named. This is the opdrachtwaarde exclusive of
+                      VAT, and approving creates an invoice that is 21% higher for
+                      a non-exempt professional — tens of euros per timesheet,
+                      first visible on a different screen. A bold amount with no
+                      basis beside a Goedkeuren button is a number a coordinator
+                      reasonably reads as "what this costs".
+                    */}
                     <p className="text-sm tnum" style={{ color: "var(--text-muted)" }}>
-                      {formatMinutes(claimed)} @ {formatEuros(row.agreed_rate_cents)}/uur
+                      {formatMinutes(claimed)} @ {formatEuros(row.agreed_rate_cents)}/uur · excl. btw
                     </p>
                   </div>
                 </div>

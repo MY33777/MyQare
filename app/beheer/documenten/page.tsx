@@ -15,6 +15,19 @@ import { reviewDocumentAction } from "../actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { authErrorMessage } from "@/lib/authErrors";
 
+/**
+ * How many pending documents this screen reads.
+ *
+ * The header exists so a reviewer knows whether to keep going, and it printed the
+ * length of a CAPPED list — so at 180 pending it read "Nog 50 te beoordelen",
+ * which is the one number on the screen that cannot be true. She plans three
+ * quarters of an hour, clears the fifty, and the list refills.
+ *
+ * Named rather than inline, because the cap and the guard that reports it
+ * drifting apart is a shape three audits have caught in this codebase.
+ */
+const REVIEW_CAP = 50;
+
 export const metadata: Metadata = { title: "Documenten beoordelen" };
 
 type PendingDocument = {
@@ -61,7 +74,7 @@ export default async function ReviewDocumentsPage({
     )
     .eq("status", "pending")
     .order("created_at", { ascending: true })
-    .limit(50)
+    .limit(REVIEW_CAP)
     .returns<PendingDocument[]>();
 
   /*
@@ -97,6 +110,7 @@ export default async function ReviewDocumentsPage({
             ? "Controleer of een document echt is, bij deze persoon hoort, en nog geldig is."
             : "Nog " +
               withLinks.length +
+              (withLinks.length >= REVIEW_CAP ? "+" : "") +
               " te beoordelen, oudste eerst. Controleer of het document echt is, bij deze persoon hoort, en nog geldig is."
         }
       />

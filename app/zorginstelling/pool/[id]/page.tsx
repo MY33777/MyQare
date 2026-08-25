@@ -124,10 +124,21 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
         .single<{ rating_count: number; shrunk_score: number | string | null }>(),
       supabase
         .from("documents")
-        .select("id, kind, file_path, expires_on, status")
+        .select("id, kind, file_path, expires_on, status, created_at")
         .eq("freelancer_id", id)
         .eq("status", "approved")
-        .returns<{ id: string; kind: string; file_path: string; expires_on: string | null; status: string }[]>(),
+        /*
+         * Newest first, so the collapse below keeps the current one.
+         *
+         * Uploading never replaces a row — deleteDocument refuses approved
+         * documents, because facilities relied on them — so a renewed VOG leaves
+         * two approved VOG rows, and this table had no ordering at all. A
+         * coordinator saw the lapsed one in red beside the valid one, in
+         * whichever order Postgres happened to return them, and concluded the
+         * papers were not in order.
+         */
+        .order("created_at", { ascending: false })
+        .returns<{ id: string; kind: string; file_path: string; expires_on: string | null; status: string; created_at: string }[]>(),
     ]);
 
   if (!freelancer) notFound();
@@ -162,8 +173,20 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
    * Pool membership answers "is their VOG valid"; opening the file itself needs a
    * real engagement behind it.
    */
+  /*
+   * One row per kind: the most recent approved one.
+   *
+   * The superseded ones are not deleted and not hidden from the person they
+   * belong to — they are simply not what this screen is answering. The question
+   * here is "are her papers in order", and a stale VOG next to a current one
+   * answers it wrongly.
+   */
+  const currentPerKind = [
+    ...new Map((documents ?? []).map((doc) => [doc.kind, doc])).values(),
+  ];
+
   const withLinks = await Promise.all(
-    (documents ?? []).map(async (document) => ({
+    currentPerKind.map(async (document) => ({
       ...document,
       url: hasWorkedHere ? await documentUrl(document.file_path) : null,
     })),

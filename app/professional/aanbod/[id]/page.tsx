@@ -34,7 +34,7 @@ type OfferDetail = {
     description: string | null;
     status: string;
     respond_by: string | null;
-    organisations: { name: string } | null;
+    organisations: { name: string; city: string | null } | null;
   } | null;
 };
 
@@ -60,7 +60,7 @@ export default async function OfferDetailPage({
   const { data: offer } = await supabase
     .from("shift_offers")
     .select(
-      "id, responded_at, response, viewed_at, shifts(id, profession, department, location, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, respond_by, organisations(name))",
+      "id, responded_at, response, viewed_at, shifts(id, profession, department, location, starts_at, ends_at, hourly_rate_cents, break_minutes, description, status, respond_by, organisations(name, city))",
     )
     .eq("shift_id", id)
     .eq("freelancer_id", userId)
@@ -195,9 +195,27 @@ export default async function OfferDetailPage({
           </div>
           <div>
             <dt className="text-sm" style={{ color: "var(--text-muted)" }}>
-              Locatie
+              Waar
             </dt>
-            <dd className="font-semibold">{shift.location ?? "—"}</dd>
+            {/*
+              The town, which appeared on no freelancer-facing screen at all.
+
+              `location` defaults on the posting form to the facility's own NAME,
+              so this row read "Locatie: Zorgcentrum De Maasoever" directly under
+              a page header that already said Zorgcentrum De Maasoever. She is
+              deciding at 22:00 whether to work tomorrow, and the one thing that
+              decides it — how far away it is — was the one thing missing. The
+              organisation's city is the fallback, because it is the field a
+              facility actually fills in.
+            */}
+            <dd className="font-semibold">
+              {shift.organisations?.city ?? "Plaats niet ingevuld"}
+              {shift.location && shift.location !== shift.organisations?.name ? (
+                <span className="block text-sm font-normal" style={{ color: "var(--text-muted)" }}>
+                  {shift.location}
+                </span>
+              ) : null}
+            </dd>
           </div>
         </dl>
 

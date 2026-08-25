@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { exportFailed } from "@/lib/exportError";
 
 /** How many assignments one dossier will carry. Stated in the PDF when reached. */
 const DOSSIER_CAP = 1000;
@@ -41,7 +42,7 @@ type Row = {
 export async function GET(request: NextRequest) {
   const admin = await getFacilityAdmin();
   if (!admin) {
-    return NextResponse.json({ error: "unauthorised" }, { status: 401 });
+    return exportFailed(new URL(request.url).origin, "/zorginstelling/dossier", "session_expired");
   }
 
   const from = request.nextUrl.searchParams.get("from");
@@ -101,7 +102,7 @@ export async function GET(request: NextRequest) {
    */
   if (freelancerId) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(freelancerId)) {
-      return NextResponse.json({ error: "bad_freelancer_id" }, { status: 400 });
+      return exportFailed(new URL(request.url).origin, "/zorginstelling/dossier", "unknown");
     }
     query = query.eq("assignments.freelancer_id", freelancerId);
   }
@@ -153,7 +154,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await query.returns<Row[]>();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return exportFailed(new URL(request.url).origin, "/zorginstelling/dossier", "unknown");
   }
 
 /**

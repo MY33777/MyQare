@@ -428,7 +428,8 @@ export default async function TimesheetsPage({
                         name="reason"
                         type="text"
                         placeholder="Wat klopt er niet?"
-                      />
+                        required
+                    />
                     </div>
                     <SubmitButton className="btn btn-secondary">
                       Versturen

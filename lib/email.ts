@@ -1,6 +1,6 @@
 import { Resend } from "resend";
 import { formatEuros } from "@/lib/money";
-import { formatMinutes, formatShiftWindow } from "@/lib/hours";
+import { formatDate, formatMinutes, formatShiftWindow } from "@/lib/hours";
 import { absoluteUrl, SITE_NAME } from "@/lib/site";
 
 /*
@@ -228,7 +228,7 @@ export async function sendInvoiceEmail(input: {
       heading: `Factuur ${input.invoiceNumber} is de deur uit`,
       body: [
         `Je factuur van ${formatEuros(input.totalCents)} voor gewerkte uren bij ${input.facilityName} is verstuurd.`,
-        `${input.facilityName} moet hem voor ${input.dueOn} voldoen. Betaling loopt rechtstreeks tussen jullie; wij innen niets.`,
+        `${input.facilityName} moet hem voor ${formatDate(input.dueOn)} voldoen. Betaling loopt rechtstreeks tussen jullie; wij innen niets.`,
         input.pdf
           ? "De factuur zit als pdf bij dit bericht, zodat je hem meteen in je eigen administratie kunt opbergen."
           : "De pdf is nog niet klaar — je kunt hem straks downloaden vanaf je factuuroverzicht.",
@@ -246,7 +246,7 @@ export async function sendInvoiceEmail(input: {
     heading: `Factuur ${input.invoiceNumber}`,
     body: [
       `${input.freelancerName} heeft een factuur van ${formatEuros(input.totalCents)} opgemaakt voor gewerkte uren bij ${input.facilityName}.`,
-      `Te voldoen voor ${input.dueOn}.`,
+      `Te voldoen voor ${formatDate(input.dueOn)}.`,
       input.pdf
         ? "De factuur zit als pdf bij dit bericht."
         : "De pdf volgt zodra hij klaar is; je kunt hem ook downloaden in MyQare.",

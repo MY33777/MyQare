@@ -34,6 +34,8 @@ export function ShiftCostPreview() {
 
       const startsAt = value("starts_at");
       const endsAt = value("ends_at");
+      const pattern = value("repeat_pattern");
+      const repeatCount = Math.max(1, Math.min(31, Number(value("repeat_count") || 1) || 1));
       if (!startsAt || !endsAt) {
         setSummary(null);
         setWarning(null);
@@ -94,7 +96,55 @@ export function ShiftCostPreview() {
             )
           : null;
 
-      setSummary(amount ? `${duration} te declareren · ${amount}` : `${duration} te declareren`);
+      /*
+       * THE WHOLE SERIES, not the first night of it.
+       *
+       * This computed one occurrence, so a coordinator picking "Elke werkdag" and
+       * typing 5 read "7 uur 30 min te declareren · € 318,75" while she was about
+       * to create five shifts worth five times that — and five separate fan-outs
+       * to her pool. Which five dates a Thursday start produces is a question
+       * about weekend skipping that nothing on the screen answered; she found out
+       * on the list page afterwards, and until now there was no way to undo it.
+       *
+       * The dates are expanded here rather than imported from lib/recurrence.ts
+       * because that module is server-side and this is a client island reading
+       * the DOM. The rule is small and the server remains the authority — this is
+       * a preview, and its only job is to be right about what she typed.
+       */
+      const occurrences: Date[] = [];
+
+      if (pattern && pattern !== "none") {
+        const cursor = new Date(start);
+        while (occurrences.length < repeatCount) {
+          const isWeekend = cursor.getDay() === 0 || cursor.getDay() === 6;
+          if (pattern !== "weekdays" || !isWeekend) occurrences.push(new Date(cursor));
+          cursor.setDate(cursor.getDate() + (pattern === "weekly" ? 7 : 1));
+          // A pathological guard: "weekdays" advances a day at a time and could
+          // otherwise spin if the count were ever unbounded.
+          if (occurrences.length === 0 && cursor.getTime() - start.getTime() > 60 * 86_400_000) break;
+        }
+      }
+
+      const dateList = occurrences
+        .map((d) =>
+          d.toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" }),
+        )
+        .join(" · ");
+
+      const seriesTotal =
+        Number.isFinite(rateCents) && rateCents > 0 && occurrences.length > 1
+          ? new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" }).format(
+              (billable * rateCents * occurrences.length) / 60 / 100,
+            )
+          : null;
+
+      const one = amount ? `${duration} te declareren · ${amount}` : `${duration} te declareren`;
+
+      setSummary(
+        occurrences.length > 1
+          ? `${occurrences.length} diensten${seriesTotal ? ` · samen ${seriesTotal}` : ""} — ${dateList}`
+          : one,
+      );
 
       // Twelve hours is a long shift; sixteen is almost always a wrong end date.
       setWarning(total > 16 * 60 ? "Deze dienst duurt meer dan 16 uur. Klopt de einddatum?" : null);

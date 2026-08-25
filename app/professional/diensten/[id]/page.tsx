@@ -329,8 +329,15 @@ export default async function AssignmentDetailPage({
                 placeholder="bijv. ziek, dubbele boeking"
               />
             </div>
+            {/*
+              "Annuleren" is the word every other dialog in every other product
+              uses for "never mind, close this". On the one button that tells a
+              facility their night cover has gone, it is the most dangerous label
+              available — and it sits inside a <details> somebody opened to read
+              what would happen. Named after what it does instead.
+            */}
             <SubmitButton className="btn btn-danger">
-              Annuleren
+              Dienst afzeggen
             </SubmitButton>
           </form>
         </details>

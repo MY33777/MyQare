@@ -256,8 +256,18 @@ export default async function DocumentsPage({
                     above with the right kind already selected, which is the
                     action a rejection actually calls for.
                   */}
+                  {/*
+                    Carrying the kind, which is the whole point of the link.
+                    "The upload form sits above with the right kind already
+                    selected" was not true: the select keeps whatever was there,
+                    which is the first option, VOG. So the button on a rejected
+                    diploma jumped to a form that said VOG, and the most likely
+                    outcome is a second VOG uploaded over a diploma that is still
+                    missing — after which she is waiting on a review that will
+                    never resolve the thing blocking her.
+                  */}
                   {rejected ? (
-                    <a className="btn btn-primary" href={`#kind`}>
+                    <a className="btn btn-primary" href={`?kind=${document.kind}#kind`}>
                       Opnieuw uploaden
                     </a>
                   ) : null}

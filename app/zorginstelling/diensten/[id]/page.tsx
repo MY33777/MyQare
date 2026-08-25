@@ -10,6 +10,7 @@ import { billableMinutes, formatDateTime, formatMinutes, formatTime } from "@/li
 import { formatEuros } from "@/lib/money";
 import { qualificationLabel } from "@/lib/qualifications";
 import { SHIFT_STATUS_LABELS, VISIBILITY_LABELS, type ShiftVisibility } from "@/lib/shifts";
+import { withdrawShiftAction } from "@/app/zorginstelling/diensten/withdrawActions";
 import { cancelAssignmentAction } from "@/lib/cancelActions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { regionLabel } from "@/lib/regions";
@@ -164,6 +165,39 @@ export default async function FacilityShiftDetailPage({
   const expired = offers.filter((offer) => offer.response === "expired");
   const silent = offers.filter((offer) => !offer.response);
 
+  /*
+   * What the status actually IS, as opposed to what the column says.
+   *
+   * Three things end an open shift and only one of them is written down: it can
+   * be accepted (status flips to 'filled'), the deadline to respond can pass, or
+   * the shift itself can start. The last two happen by the clock and nothing
+   * updates the row, so the screen has to work them out — the same three
+   * conditions /professional/aanbod already applies before showing an offer.
+   */
+  const now = new Date();
+  const started = new Date(shift.starts_at) <= now;
+  const deadlinePassed = Boolean(shift.respond_by && new Date(shift.respond_by) < now);
+  const lapsed = shift.status === "open" && (started || deadlinePassed);
+
+  const statusLabel = lapsed
+    ? started
+      ? "Niet ingevuld"
+      : "Reactietermijn verlopen"
+    : (SHIFT_STATUS_LABELS[shift.status] ?? shift.status);
+
+  const statusBadge = lapsed
+    ? "badge badge-warn"
+    : shift.status === "filled"
+      ? "badge badge-ok"
+      : shift.status === "open"
+        ? "badge badge-brand"
+        : shift.status === "cancelled"
+          ? "badge badge-danger"
+          : "badge badge-neutral";
+
+  // Withdrawing is only meaningful while it is genuinely still on offer.
+  const canWithdraw = shift.status === "open" && !started;
+
   return (
     <div className="max-w-3xl">
       <PageHeader
@@ -247,19 +281,39 @@ export default async function FacilityShiftDetailPage({
               Status
             </dt>
             <dd>
-              <span
-                className={
-                  shift.status === "filled"
-                    ? "badge badge-ok"
-                    : shift.status === "open"
-                      ? "badge badge-brand"
-                      : "badge badge-neutral"
-                }
-              >
-                {SHIFT_STATUS_LABELS[shift.status] ?? shift.status}
-              </span>
+              {/*
+                "Open" is a claim about the future, and nothing in the product
+                ever moves an unfilled shift off it — functions.sql writes
+                'expired' only from 'filled'. So a shift nobody took still read
+                "Open" a week after the night it was for, and the deadline the
+                coordinator set was never shown back to her at all, though the
+                freelancer side filters on it in three places and prints it twice.
+                Computed here rather than written to the column, because the
+                column is what accept_shift guards on.
+              */}
+              <span className={statusBadge}>{statusLabel}</span>
             </dd>
           </div>
+          {/*
+            The deadline she set, or the one the form promised to set for her
+            ("tweederde van de tijd tot die dienst, met een maximum van 48 uur").
+            respond_by was fetched and typed on this page and rendered nowhere,
+            while the freelancer's side prints it twice — so the two halves of one
+            agreement were visible to only one of the parties.
+          */}
+          {shift.respond_by ? (
+            <div>
+              <dt className="label">Reageren voor</dt>
+              <dd className="tnum">
+                {formatDateTime(shift.respond_by)}
+                {deadlinePassed && shift.status === "open" ? (
+                  <span className="block text-xs" style={{ color: "var(--warn)" }}>
+                    Verstreken — niemand kan deze dienst nog aannemen.
+                  </span>
+                ) : null}
+              </dd>
+            </div>
+          ) : null}
         </dl>
 
         {shift.description ? (
@@ -274,6 +328,26 @@ export default async function FacilityShiftDetailPage({
         accepted, which is useless to the coordinator on the day — they need a name
         and a number.
       */}
+      {/*
+        THE WAY BACK, which did not exist.
+        See app/zorginstelling/diensten/withdrawActions.ts.
+      */}
+      {canWithdraw ? (
+        <div className="card p-5 mb-6">
+          <h2 className="font-bold mb-2">Toch niet nodig?</h2>
+          <p className="text-sm mb-3" style={{ color: "var(--text-muted)" }}>
+            Haal de dienst van het bord. Hij verdwijnt uit ieders aanbod en er is niets in rekening
+            gebracht. Klopt er iets niet aan de tijden of het tarief? Haal deze weg en plaats een
+            nieuwe — een geplaatste dienst kan niet worden aangepast, omdat mensen er al op
+            gereageerd kunnen hebben.
+          </p>
+          <form action={withdrawShiftAction}>
+            <input type="hidden" name="shift_id" value={shift.id} />
+            <SubmitButton className="btn btn-secondary">Dienst intrekken</SubmitButton>
+          </form>
+        </div>
+      ) : null}
+
       {assignment ? (
         <div className="card p-6 mb-6" style={{ borderColor: "var(--ok)" }}>
           <h2 className="font-bold mb-2">Wie komt er</h2>

@@ -20,20 +20,58 @@ type ShiftRow = {
   hourly_rate_cents: number;
   break_minutes: number;
   status: string;
+  respond_by: string | null;
   shift_offers: { id: string; response: string | null }[];
 };
 
-function statusBadgeClass(status: string): string {
-  if (status === "filled") return "badge badge-ok";
-  if (status === "open") return "badge badge-brand";
-  if (status === "cancelled") return "badge badge-danger";
-  return "badge badge-neutral";
+/**
+ * What the status IS, not what the column says.
+ *
+ * Three things end an open shift and only one is written down: acceptance flips
+ * the row to 'filled', while a passed deadline and a shift that has simply begun
+ * change nothing at all — functions.sql writes 'expired' only from 'filled'. So a
+ * shift nobody took still read "Open" a week after the night it was for, on the
+ * screen a coordinator scans to see what still needs covering.
+ *
+ * Computed rather than written, because the column is what accept_shift guards
+ * on and a cron that rewrites history is a worse answer than a screen that reads
+ * the clock. The freelancer's side already applies these same three conditions
+ * before showing an offer.
+ */
+function shiftStatus(shift: { status: string; starts_at: string; respond_by: string | null }): {
+  label: string;
+  className: string;
+} {
+  const now = Date.now();
+
+  if (shift.status === "open") {
+    if (new Date(shift.starts_at).getTime() <= now) {
+      return { label: "Niet ingevuld", className: "badge badge-warn" };
+    }
+    if (shift.respond_by && new Date(shift.respond_by).getTime() < now) {
+      return { label: "Reactietermijn verlopen", className: "badge badge-warn" };
+    }
+    return { label: "Open", className: "badge badge-brand" };
+  }
+
+  const label = SHIFT_STATUS_LABELS[shift.status] ?? shift.status;
+
+  if (shift.status === "filled") return { label, className: "badge badge-ok" };
+  if (shift.status === "cancelled") return { label, className: "badge badge-danger" };
+  return { label, className: "badge badge-neutral" };
 }
 
 export default async function ShiftsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ created?: string; offered?: string; shifts?: string; failed?: string }>;
+  searchParams: Promise<{
+    created?: string;
+    offered?: string;
+    shifts?: string;
+    failed?: string;
+    withdrawn?: string;
+    error?: string;
+  }>;
 }) {
   const { org } = await requireFacilityAdmin("/zorginstelling/diensten");
   const params = await searchParams;
@@ -42,7 +80,8 @@ export default async function ShiftsPage({
   const { data: shifts } = await supabase
     .from("shifts")
     .select(
-      "id, profession, department, starts_at, ends_at, hourly_rate_cents, break_minutes, status, shift_offers(id, response)",
+      // respond_by, so the list can tell an open shift from a lapsed one.
+      "id, profession, department, starts_at, ends_at, hourly_rate_cents, break_minutes, status, respond_by, shift_offers(id, response)",
     )
     .eq("org_id", org.id)
     .order("starts_at", { ascending: false })
@@ -80,6 +119,12 @@ export default async function ShiftsPage({
         pool for a failure on our side. The coordinator then goes looking for a
         shift that does not exist.
       */}
+      {params.withdrawn ? (
+        <FormMessage kind="ok">
+          Dienst ingetrokken. Hij staat niet meer in het aanbod en er is niets in rekening gebracht.
+        </FormMessage>
+      ) : null}
+
       {posted !== null && posted === 0 ? (
         <FormMessage kind="error">
           Er is geen enkele dienst geplaatst — er ging iets mis aan onze kant, niet aan die van
@@ -147,9 +192,10 @@ export default async function ShiftsPage({
                       ) : null}
                     </td>
                     <td>
-                      <span className={statusBadgeClass(shift.status)}>
-                        {SHIFT_STATUS_LABELS[shift.status] ?? shift.status}
-                      </span>
+                      {(() => {
+                        const state = shiftStatus(shift);
+                        return <span className={state.className}>{state.label}</span>;
+                      })()}
                     </td>
                     <td>
                       <div className="flex gap-2 justify-end">

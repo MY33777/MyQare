@@ -21,8 +21,18 @@ const PILLARS = [
     body: "Bij elke opdracht leggen we vast wie aanbood, aan hoeveel mensen tegelijk, wie accepteerde, welk tarief gold en dat weigeren zonder gevolgen kon. Exporteerbaar als pdf, per periode.",
   },
   {
-    title: "Geen bemiddelingskosten",
-    body: "De instelling en de zorgprofessional spreken zelf het tarief af. Wij onderhandelen niet mee, sturen niemand aan en rekenen de instelling niets.",
+    /*
+     * "Geen bemiddelingskosten" is what the ledger writes off her balance, under
+     * that exact word, at the moment she accepts a shift. Two screens in one
+     * product using one term for opposite claims is the kind of thing somebody
+     * notices at precisely the wrong moment — reading the pillar, then reading
+     * "Bemiddelingsvergoeding − € 7,26".
+     *
+     * The true claim is narrower and stronger: the FACILITY pays nothing, and we
+     * take no cut of the rate the two of them agree. Say that.
+     */
+    title: "De instelling betaalt niets",
+    body: "De instelling en de zorgprofessional spreken zelf het tarief af. Wij onderhandelen niet mee, sturen niemand aan en rekenen de instelling niets. De zorgprofessional betaalt 1,5% van de opdrachtwaarde plus btw, alleen bij een dienst die ze aanneemt.",
   },
   {
     title: "Facturen zonder werk",

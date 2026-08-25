@@ -63,6 +63,20 @@ export default function TarievenPage() {
             <li>Volledig terugbetaald als de dienst wordt geannuleerd</li>
             <li>Facturen worden voor je opgemaakt en verstuurd</li>
             <li>De btw op onze kosten is voor jou aftrekbaar als voorbelasting</li>
+            {/*
+              The condition nobody was told about before signing up.
+
+              The fee comes off a PREPAID balance at the moment of acceptance, so
+              a zzp'er with an empty balance cannot take work — she has to put her
+              own money in first. That is a real barrier and it appeared on no
+              public page: she met it for the first time on a shift she wanted,
+              at the moment she wanted it. Saying it here costs a line; not saying
+              it costs the shift.
+            */}
+            <li>
+              Je vult vooraf een klein saldo op waarvan dit wordt afgeschreven — vanaf € 5,00, met
+              iDEAL. Zonder saldo kun je geen dienst aannemen.
+            </li>
           </ul>
         </div>
       </div>

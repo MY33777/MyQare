@@ -240,17 +240,48 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
               Beoordeling
             </dt>
             <dd className="font-semibold tnum">
-              {rating.score.toFixed(1)}
-              {/* The count sits next to the score, always. A 9.0 from one shift
-                  and a 9.0 from twenty are not the same claim. */}
-              <span className="text-sm font-normal ml-1" style={{ color: "var(--text-muted)" }}>
-                ({rating.count})
-              </span>
-              {rating.provisional ? (
-                <span className="block text-xs font-normal" style={{ color: "var(--text-muted)" }}>
-                  voorlopig
-                </span>
-              ) : null}
+              {/*
+                NOTHING is not a number.
+
+                The shown score is pulled toward a 6,0 baseline in proportion to
+                how few ratings there are — which is right, and which at zero
+                ratings produces exactly 6,0. So a zzp'er who has never been rated
+                was presented to a facility as a 6,0: a below-average mark she
+                cannot see, cannot answer, and did not earn. A coordinator
+                choosing between two names reads it as a judgement, because on
+                every other screen in the world a number out of ten is one.
+
+                The count was already beside it, and it was not enough — "6,0 (0)"
+                still reads as a score with a footnote.
+              */}
+              {rating.count === 0 ? (
+                <>
+                  <span style={{ color: "var(--text-muted)" }}>Nog niet beoordeeld</span>
+                  <span
+                    className="block text-xs font-normal"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Zij heeft nog geen beoordelingen. Dat zegt niets over haar werk.
+                  </span>
+                </>
+              ) : (
+                <>
+                  {rating.score.toFixed(1).replace(".", ",")}
+                  {/* The count sits next to the score, always. A 9,0 from one
+                      shift and a 9,0 from twenty are not the same claim. */}
+                  <span className="text-sm font-normal ml-1" style={{ color: "var(--text-muted)" }}>
+                    ({rating.count})
+                  </span>
+                  {rating.provisional ? (
+                    <span
+                      className="block text-xs font-normal"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      voorlopig — nog weinig beoordelingen, dus dit cijfer beweegt nog
+                    </span>
+                  ) : null}
+                </>
+              )}
             </dd>
           </div>
           <div>

@@ -241,6 +241,15 @@ const MESSAGES: Record<string, string> = {
   rate_limited_contact:
     "Je hebt net al een bericht gestuurd. Wacht even voor je er nog een stuurt — we lezen ze allemaal.",
 
+  /*
+   * The race the withdraw button has to be honest about: somebody accepted while
+   * she was looking at the page. A silent success would leave her believing the
+   * shift is off the board while a zzp'er is on her way.
+   */
+  shift_not_open:
+    "Deze dienst kon niet worden ingetrokken: iemand heeft hem net aangenomen. " +
+    "Ga je toch niet door? Zeg de opdracht dan af — diegene heeft de avond vrijgehouden.",
+
   needs_recovery_link:
     "Een nieuw wachtwoord instellen kan alleen via de link uit de herstelmail. " +
     "Vraag er hieronder een aan.",

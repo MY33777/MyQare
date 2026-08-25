@@ -29,15 +29,41 @@ export default async function OnboardingPage({
 
   if (!user) redirect("/login?next=%2Fonboarding");
 
-  // Already onboarded — skip straight through rather than offering to do it twice.
+  /*
+   * Already onboarded — skip through rather than offering to do it twice.
+   *
+   * A PROFILE ROW IS NOT THE SAME AS FINISHED, and this guard treated it as one.
+   * Onboarding writes `profiles` first and `freelancers` last, so a failure
+   * between the two leaves an account with a profile and no freelancers row.
+   * lib/auth.ts says exactly that, and two actions deliberately send such a
+   * person here to finish the job: startTopupAction redirects with
+   * ?error=finish_onboarding_first, and updateProfileAction with
+   * ?error=no_freelancer_row ("Doorloop het aanmeldformulier nog één keer").
+   *
+   * Both messages were computed on the line above and then thrown away, because
+   * this redirected on the profile row alone — bouncing her to a dashboard that
+   * renders blank and says nothing. The form below would have completed the
+   * repair; completeOnboardingAction upserts for this case on purpose.
+   *
+   * So: a facility_admin is finished once the profile exists. A freelancer is
+   * not, and is only sent away once the row that makes her account work is there.
+   */
   const { data: profile } = await supabase
     .from("profiles")
     .select("role")
     .eq("id", user.id)
     .maybeSingle<{ role: string }>();
 
+  if (profile?.role === "facility_admin") redirect("/zorginstelling");
+
   if (profile) {
-    redirect(profile.role === "facility_admin" ? "/zorginstelling" : "/professional");
+    const { data: freelancerRow } = await supabase
+      .from("freelancers")
+      .select("profile_id")
+      .eq("profile_id", user.id)
+      .maybeSingle<{ profile_id: string }>();
+
+    if (freelancerRow) redirect("/professional");
   }
 
   const metadata = user.user_metadata ?? {};

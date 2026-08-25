@@ -142,6 +142,15 @@ export default async function BalancePage({
           <div className="mt-4 flex flex-wrap gap-2">
             {PRESETS.map((cents) => (
               <form key={cents} action={startTopupAction}>
+                {/*
+                  The one-tap amounts forgot where she came from.
+                  The typed-amount form above carries `next`, so somebody who
+                  arrived from a shift she could not afford lands back on it — and
+                  these four buttons, which are the ones an actual person taps,
+                  dropped it and returned her to this page. She then has to find
+                  the shift again, on a phone, having just paid for it.
+                */}
+                <input type="hidden" name="next" value={safeNextPath(params.next) ?? ""} />
                 <input type="hidden" name="amount" value={(cents / 100).toFixed(2)} />
                 <button className="btn btn-secondary" type="submit">
                   {formatEuros(cents)}

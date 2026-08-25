@@ -41,16 +41,53 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
   const { org } = await requireFacilityAdmin(`/zorginstelling/pool/${id}`);
   const supabase = await createClient();
 
-  // Scoped through pools, so RLS answers "is this person in my pool?" as part of
-  // the query rather than being checked afterwards.
-  const { data: membership } = await supabase
-    .from("pools")
-    .select("status, note")
-    .eq("org_id", org.id)
-    .eq("freelancer_id", id)
-    .maybeSingle<{ status: string; note: string | null }>();
+  /*
+   * A POOL ROW OR A LIVE ENGAGEMENT. Either is a basis for being on this page.
+   *
+   * It used to be the pool row alone, and this is the screen the shift page's
+   * "Documenten bekijken" link points at — so for anyone hired through a
+   * region-wide offer it was a permanent 404. Region-wide offers reach people the
+   * facility has never worked with; accepting one creates an assignment and no
+   * pool row. That is precisely the case where the facility has a Wkkgz duty to
+   * have checked the papers, and the only screen that shows them said the person
+   * did not exist.
+   *
+   * The database already agreed: documents_select grants a read on any
+   * non-cancelled assignment. Only this page's own guard was narrower than the
+   * policy behind it.
+   */
+  const [{ data: membership, error: membershipError }, { data: engagement, error: engagementError }] =
+    await Promise.all([
+      supabase
+        .from("pools")
+        .select("status, note")
+        .eq("org_id", org.id)
+        .eq("freelancer_id", id)
+        .maybeSingle<{ status: string; note: string | null }>(),
+      supabase
+        .from("assignments")
+        .select("id")
+        .eq("org_id", org.id)
+        .eq("freelancer_id", id)
+        .neq("status", "cancelled")
+        .limit(1)
+        .returns<{ id: string }[]>(),
+    ]);
 
-  if (!membership) notFound();
+  /*
+   * A failed read is not "no relationship". Falling through to notFound() would
+   * tell a coordinator that somebody they have on shift tonight does not exist,
+   * which is worse than an error page.
+   */
+  if (membershipError || engagementError) {
+    throw new Error(
+      `pool detail lookup failed: ${(membershipError ?? engagementError)!.message}`,
+    );
+  }
+
+  const hasEngagement = (engagement ?? []).length > 0;
+
+  if (!membership && !hasEngagement) notFound();
 
   const [{ data: freelancer }, { data: assignments }, { data: ratingRows }, { data: documents }] =
     await Promise.all([
@@ -342,6 +379,26 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
 
       <div className="card p-5">
         <h2 className="font-bold mb-3">In jouw pool</h2>
+        {/*
+          Somebody hired through a regio-brede dienst has no pool row, and this
+          page is reachable for them now. The pool controls need one to act on, so
+          the offer is to CREATE it rather than to toggle a status that does not
+          exist — which is also the thing a coordinator wants after a first shift
+          that went well.
+        */}
+        {!membership ? (
+          <>
+            <p className="text-sm mb-3" style={{ color: "var(--text-muted)" }}>
+              Deze zorgprofessional heeft bij jullie gewerkt via een regio-brede dienst en staat
+              nog niet in je pool. Je ziet de documenten omdat er een opdracht loopt of liep.
+            </p>
+            <form action={setPoolStatusAction}>
+              <input type="hidden" name="freelancer_id" value={id} />
+              <input type="hidden" name="status" value="member" />
+              <SubmitButton className="btn btn-primary">Toevoegen aan je pool</SubmitButton>
+            </form>
+          </>
+        ) : (
         <div className="flex flex-wrap gap-2">
           <form action={setPoolStatusAction}>
             <input type="hidden" name="freelancer_id" value={id} />
@@ -368,10 +425,13 @@ export default async function PoolMemberPage({ params }: { params: Promise<{ id:
             </form>
           )}
         </div>
-        <p className="text-sm mt-3" style={{ color: "var(--text-muted)" }}>
-          Verbergen geldt alleen voor {org.name}. Andere instellingen merken er niets van en het
-          werk van deze zorgprofessional elders verandert niet.
-        </p>
+        )}
+        {membership ? (
+          <p className="text-sm mt-3" style={{ color: "var(--text-muted)" }}>
+            Verbergen geldt alleen voor {org.name}. Andere instellingen merken er niets van en het
+            werk van deze zorgprofessional elders verandert niet.
+          </p>
+        ) : null}
       </div>
     </div>
   );

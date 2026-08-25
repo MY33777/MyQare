@@ -193,16 +193,46 @@ export async function GET(request: NextRequest) {
      * One mail per facility. Somebody in a pool who also has two assignments there
      * is one facility with one duty, not three copies of the same warning.
      */
-    const recipients = new Map<string, { name: string; billingEmail: string }>();
+    const recipients = new Map<
+      string,
+      { name: string; billingEmail: string; viaPool: boolean }
+    >();
 
-    for (const row of [...(pools ?? []), ...(engagements ?? [])]) {
+    /*
+     * The pool rows first, so a facility that has BOTH keeps the pool wording —
+     * which is the truer of the two for them, and the link they expect.
+     *
+     * The flag exists because the mail says why the recipient is getting it. It
+     * used to say "X staat in de pool van Y" to everybody and point at the pool
+     * page, and widening this cron to cover live assignments made that false for
+     * exactly the population the widening was for: people hired through a
+     * region-wide shift, who have no pool row and do not appear on that page.
+     */
+    for (const row of pools ?? []) {
       const org = row.organisations;
       if (!org?.billing_email) continue;
       // Unverified facilities are not in the product yet and get no named
       // person's expiry dates.
       if (!org.verified_at) continue;
       if (!recipients.has(org.billing_email)) {
-        recipients.set(org.billing_email, { name: org.name, billingEmail: org.billing_email });
+        recipients.set(org.billing_email, {
+          name: org.name,
+          billingEmail: org.billing_email,
+          viaPool: true,
+        });
+      }
+    }
+
+    for (const row of engagements ?? []) {
+      const org = row.organisations;
+      if (!org?.billing_email) continue;
+      if (!org.verified_at) continue;
+      if (!recipients.has(org.billing_email)) {
+        recipients.set(org.billing_email, {
+          name: org.name,
+          billingEmail: org.billing_email,
+          viaPool: false,
+        });
       }
     }
 
@@ -213,6 +243,8 @@ export async function GET(request: NextRequest) {
         to,
         facilityName: facility.name,
         freelancerName: name,
+        freelancerId: document.freelancer_id,
+        viaPool: facility.viaPool,
         documentLabel: label,
         expiresOn: document.expires_on,
         daysRemaining: days,

@@ -185,6 +185,8 @@ export async function completeOnboardingAction(formData: FormData) {
   }
 
   let orgId: string | null = null;
+  // Claimed only once the profile it belongs to actually exists. See below.
+  let consumedInviteId: string | null = null;
 
   if (role === "facility_admin") {
     /*
@@ -243,12 +245,20 @@ export async function completeOnboardingAction(formData: FormData) {
     if (invite) {
       orgId = invite.org_id;
 
-      // Marked used rather than deleted: "who let them in, and when" is the
-      // question asked afterwards, and a deleted row cannot answer it.
-      await admin
-        .from("organisation_invites")
-        .update({ accepted_at: new Date().toISOString() })
-        .eq("id", invite.id);
+      /*
+       * CLAIMED AFTER the profile exists, not before.
+       *
+       * This marked the invite used right here, several statements above the
+       * profiles insert — so an insert that failed for any transient reason left
+       * the invite consumed and the person with no profile. Their retry finds no
+       * open invite, falls through to the "no invite, is this KvK known?" branch,
+       * and is told to ask a colleague to invite them. They were invited. The
+       * invite was spent by an attempt that failed.
+       *
+       * Marked used rather than deleted, still: "who let them in, and when" is
+       * the question asked afterwards, and a deleted row cannot answer it.
+       */
+      consumedInviteId = invite.id;
     }
 
     /*
@@ -336,7 +346,31 @@ export async function completeOnboardingAction(formData: FormData) {
   }
 
   if (profileError) {
-    if (profileError.code !== "23505") redirect("/onboarding?error=unknown");
+    if (profileError.code !== "23505") {
+      /*
+       * THE ORGANISATION GOES BACK TOO, or the facility can never onboard.
+       *
+       * This redirected with the organisation still standing. The insert above
+       * had already created it, so a profiles insert that failed for any reason
+       * OTHER than a duplicate key — a dropped connection, a statement timeout, a
+       * check constraint — left an organisation with no member, no owner and no
+       * route to deletion anywhere in the product. verifyOrganisationAction is
+       * the only staff-side write to that table and it can only set or clear
+       * verified_at.
+       *
+       * The message then tells them to try again, and the retry is refused: the
+       * KvK duplicate guard finds the orphan from attempt one and answers "vraag
+       * een collega die al toegang heeft om je uit te nodigen". There is no
+       * colleague. The organisation has nobody in it. Every further attempt hits
+       * the same wall.
+       *
+       * The cleanup was written and wired only into the duplicate-key branch
+       * below, which is the one path where the submission SUCCEEDED. The path
+       * that actually strands people had none.
+       */
+      await discardOrphanOrganisation(admin, createdOrgId);
+      redirect("/onboarding?error=unknown");
+    }
 
     /*
      * A duplicate key means the profile already exists — and this branch used to
@@ -376,6 +410,27 @@ export async function completeOnboardingAction(formData: FormData) {
     }
 
     // A freelancer falls through to the upsert below, which is the whole point.
+  }
+
+  /*
+   * The invite is spent now that the profile it admitted somebody to exists.
+   *
+   * Logged rather than fatal: a claim that fails leaves an invite that can be
+   * used again, which is a far smaller problem than the one this ordering fixes
+   * — and the org membership is already established by the profile row above.
+   */
+  if (consumedInviteId) {
+    const { error: claimError } = await admin
+      .from("organisation_invites")
+      .update({ accepted_at: new Date().toISOString() })
+      .eq("id", consumedInviteId)
+      .is("accepted_at", null);
+
+    if (claimError) {
+      console.error(
+        `[onboarding] invite ${consumedInviteId} not marked used for ${user.id}: ${claimError.message}`,
+      );
+    }
   }
 
   if (role === "freelancer") {

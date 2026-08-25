@@ -132,6 +132,14 @@ function escapeHtml(value: string): string {
 }
 
 export async function sendShiftOfferEmail(input: {
+  /**
+   * Whether this person is in the facility's pool, or was reached by a
+   * region-wide broadcast. Decides the footnote, which used to claim the first
+   * for everybody. Required rather than defaulted: a new caller has to think
+   * about it, because guessing wrong tells somebody a false fact about a
+   * relationship they do not have.
+   */
+  viaPool: boolean;
   to: string;
   freelancerName: string;
   facilityName: string;
@@ -153,8 +161,23 @@ export async function sendShiftOfferEmail(input: {
       "Je bent vrij om deze dienst te weigeren. Weigeren heeft geen gevolgen voor toekomstig aanbod.",
     ],
     cta: { label: "Dienst bekijken", href: absoluteUrl(`/professional/aanbod/${input.shiftId}`) },
-    footnote:
-      "Je ontvangt dit omdat je in de pool van deze zorginstelling zit. Wil je geen aanbod meer van hen? Laat het hen weten of pas je profiel aan.",
+    /*
+     * WHY THIS PERSON GOT THIS MAIL, truthfully, and what to do about it.
+     *
+     * One fixed sentence went out for every offer: "je ontvangt dit omdat je in
+     * de pool van deze zorginstelling zit". For a region-wide fan-out that is
+     * false — findRecipients pages the whole freelancers table and matches on
+     * qualification and region, and lib/shifts.ts says so in its own comment:
+     * "Region-wide offers reach people the facility has never worked with".
+     *
+     * It also pointed at the wrong lever. Somebody told they are in a hospital's
+     * pool replies to the hospital asking to be removed; there is no row to
+     * remove, nothing changes, and the offers keep coming. The control that
+     * actually governs the channel they were reached on is their own region list.
+     */
+    footnote: input.viaPool
+      ? "Je ontvangt dit omdat je in de pool van deze zorginstelling zit. Wil je geen aanbod meer van hen? Laat het hen weten of pas je profiel aan."
+      : "Je ontvangt dit omdat deze dienst openstaat in een regio die in jouw profiel staat, en je de gevraagde kwalificatie hebt. Je zit niet in de pool van deze zorginstelling. Wil je minder aanbod? Pas je regio's aan bij Profiel.",
   });
 }
 
@@ -259,9 +282,16 @@ export async function sendFacilityDocumentExpiryEmail(input: {
   to: string;
   facilityName: string;
   freelancerName: string;
+  /** Needed for the link when there is no pool row to point at. */
+  freelancerId: string;
   documentLabel: string;
   expiresOn: string;
   daysRemaining: number;
+  /**
+   * Pool row, or live assignment. The round-10 fix widened this cron to cover
+   * both and left the message claiming the first for everybody.
+   */
+  viaPool: boolean;
 }): Promise<boolean> {
   const when =
     input.daysRemaining === 0
@@ -273,13 +303,24 @@ export async function sendFacilityDocumentExpiryEmail(input: {
     subject: `Document van ${input.freelancerName} ${when}`,
     heading: `Een document ${when}`,
     body: [
-      `${input.freelancerName} staat in de pool van ${input.facilityName}.`,
+      /*
+       * Same correction as the offer mail. The round-10 fix widened this cron to
+       * notify facilities that have a live ASSIGNMENT as well as those with a
+       * pool row — which was right, the Wkkgz duty follows the engagement — and
+       * left the sentence claiming pool membership for all of them, pointing at a
+       * pool page where they do not appear.
+       */
+      input.viaPool
+        ? `${input.freelancerName} staat in de pool van ${input.facilityName}.`
+        : `${input.freelancerName} heeft een opdracht bij ${input.facilityName} en staat niet in jullie pool.`,
       `${input.documentLabel} ${when} (${input.expiresOn}).`,
       "Je krijgt dit bericht omdat je onder de Wkkgz zelf moet kunnen aantonen dat je dit " +
         "hebt gecontroleerd voordat iemand wordt ingezet. De zorgprofessional heeft dezelfde " +
         "melding gekregen.",
     ],
-    cta: { label: "Bekijk de pool", href: absoluteUrl("/zorginstelling/pool") },
+    cta: input.viaPool
+      ? { label: "Bekijk de pool", href: absoluteUrl("/zorginstelling/pool") }
+      : { label: "Bekijk de zorgprofessional", href: absoluteUrl(`/zorginstelling/pool/${input.freelancerId}`) },
   });
 }
 

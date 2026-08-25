@@ -213,6 +213,30 @@ async function notifyRecipients(
 
     const names = new Map((profiles ?? []).map((row) => [row.id, row.full_name]));
 
+    /*
+     * Who among these is actually in this facility's pool.
+     *
+     * Asked, rather than assumed. The footnote on the offer mail makes a claim
+     * about how the facility got this person's address, and it used to make the
+     * same claim for everybody: "je ontvangt dit omdat je in de pool van deze
+     * zorginstelling zit". For a region-wide fan-out that is false, and it sent
+     * people to ask a hospital they have never worked with to take them out of a
+     * list they are not on.
+     *
+     * A read that fails leaves this empty, which makes every footnote the
+     * region-wide one. That is the safe direction: it describes the mechanism
+     * accurately for the region case and understates a real pool membership,
+     * rather than inventing one.
+     */
+    const { data: poolRows } = await admin
+      .from("pools")
+      .select("freelancer_id")
+      .eq("org_id", input.orgId)
+      .in("freelancer_id", recipients)
+      .returns<{ freelancer_id: string }[]>();
+
+    const inPool = new Set((poolRows ?? []).map((row) => row.freelancer_id));
+
     await Promise.all(
       recipients.map(async (freelancerId) => {
         // Email addresses live on the auth record, not on profiles, so there is
@@ -232,6 +256,7 @@ async function notifyRecipients(
           rateCents: input.hourlyRateCents,
           earningsCents: earnings,
           shiftId,
+          viaPool: inPool.has(freelancerId),
         });
       }),
     );
